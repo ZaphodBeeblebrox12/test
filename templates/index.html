@@ -35,9 +35,16 @@
                     <a href="{% url 'telegram_login' %}" class="btn btn-outline-info">
                         <i class="bi bi-telegram"></i> Telegram
                     </a>
-                    <a href="{% provider_login_url 'google' %}" class="btn btn-outline-danger">
-                        <i class="bi bi-google"></i> Google
-                    </a>
+                    {% get_providers as socialaccount_providers %}
+                    {% if socialaccount_providers %}
+                        {% for provider in socialaccount_providers %}
+                            {% if provider.id == 'google' %}
+                                <a href="{% provider_login_url 'google' %}" class="btn btn-outline-danger">
+                                    <i class="bi bi-google"></i> Google
+                                </a>
+                            {% endif %}
+                        {% endfor %}
+                    {% endif %}
                 </div>
             </div>
             {% endif %}
