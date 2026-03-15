@@ -1,14 +1,20 @@
 """
-Debug view to check Telegram settings
+Debug views for accounts.
 """
-from django.conf import settings
 from django.http import JsonResponse
+from django.contrib.admin.views.decorators import staff_member_required
+
+from apps.accounts.models import User
 
 
-def debug_telegram_config(request):
-    """Debug endpoint to check Telegram configuration."""
+@staff_member_required
+def debug_users_list(request):
+    """List all users for debugging."""
+    users = User.objects.all().values(
+        'id', 'username', 'email', 'telegram_id', 'telegram_username',
+        'is_banned', 'is_staff', 'is_superuser', 'date_joined'
+    )[:100]
     return JsonResponse({
-        'TELEGRAM_BOT_USERNAME': getattr(settings, 'TELEGRAM_BOT_USERNAME', 'NOT SET'),
-        'TELEGRAM_BOT_TOKEN_CONFIGURED': bool(settings.TELEGRAM_BOT_TOKEN),
-        'TELEGRAM_BOT_TOKEN_PREFIX': settings.TELEGRAM_BOT_TOKEN.split(':')[0] if settings.TELEGRAM_BOT_TOKEN else 'NOT SET',
+        'users': list(users),
+        'count': User.objects.count()
     })

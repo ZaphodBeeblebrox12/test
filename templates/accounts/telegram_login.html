@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% load socialaccount %}
+
+{% block title %}Login with Telegram - Community Platform{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 text-center">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-telegram display-4 text-info"></i>
+                    <h4 class="mt-2">Login with Telegram</h4>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">Click the button below to authenticate with your Telegram account.</p>
+
+                    <script async src="https://telegram.org/js/telegram-widget.js?22" 
+                            data-telegram-login="{{ bot_username }}" 
+                            data-size="large" 
+                            data-auth-url="{{ callback_url }}" 
+                            data-request-access="write"></script>
+
+                    <hr class="my-4">
+
+                    <p class="text-muted">Or login with:</p>
+                    <div class="d-flex justify-content-center gap-2">
+                        <a href="{% url 'account_login' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-envelope"></i> Email
+                        </a>
+                        <a href="{% provider_login_url 'google' %}" class="btn btn-outline-danger">
+                            <i class="bi bi-google"></i> Google
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

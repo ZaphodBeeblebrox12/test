@@ -1,18 +1,10 @@
 """
-URL configuration for accounts app (admin endpoints).
+Admin URL configuration for accounts.
 """
 from django.urls import path
 
-from .views import (
-    ban_user,
-    staff_approval_action,
-    staff_approvals_list,
-    unban_user,
-)
+from apps.accounts.debug_views import debug_users_list
 
 urlpatterns = [
-    path("staff-approvals/", staff_approvals_list, name="staff-approvals-list"),
-    path("staff-approvals/action/", staff_approval_action, name="staff-approval-action"),
-    path("ban/", ban_user, name="ban-user"),
-    path("unban/", unban_user, name="unban-user"),
+    path("debug/users/", debug_users_list, name="admin_debug_users"),
 ]

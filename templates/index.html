@@ -1,35 +1,77 @@
 {% extends "base.html" %}
+{% load socialaccount %}
 
-{% block title %}Community Platform - Welcome{% endblock %}
+{% block title %}Welcome - Community Platform{% endblock %}
 
 {% block content %}
-<header>
-    <h1>Community Platform</h1>
-    <p>A modern platform for community management with Telegram integration</p>
-    <a href="/auth/telegram/" class="cta-button">Sign in with Telegram</a>
-</header>
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 text-center">
+            <h1 class="display-4 mb-4">Welcome to Community Platform</h1>
+            <p class="lead mb-4">A modern platform for community building with Telegram and Google integration.</p>
 
-<section class="features">
-    <div class="container">
-        <h2>Features</h2>
-        <div class="feature-grid">
-            <div class="feature-card">
-                <h3>Telegram Authentication</h3>
-                <p>Secure login using Telegram's official Login Widget with HMAC-SHA256 verification.</p>
+            {% if user.is_authenticated %}
+            <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
+                <a href="{% url 'dashboard' %}" class="btn btn-primary btn-lg px-4 gap-3">
+                    <i class="bi bi-speedometer2"></i> Go to Dashboard
+                </a>
+                <a href="{% url 'profile' %}" class="btn btn-outline-secondary btn-lg px-4">
+                    <i class="bi bi-person"></i> View Profile
+                </a>
             </div>
-            <div class="feature-card">
-                <h3>Role Management</h3>
-                <p>Flexible user roles (Admin, Staff, User) with approval workflows for staff.</p>
+            {% else %}
+            <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
+                <a href="{% url 'account_login' %}" class="btn btn-primary btn-lg px-4 gap-3">
+                    <i class="bi bi-box-arrow-in-right"></i> Login
+                </a>
+                <a href="{% url 'account_signup' %}" class="btn btn-outline-secondary btn-lg px-4">
+                    <i class="bi bi-person-plus"></i> Sign Up
+                </a>
             </div>
-            <div class="feature-card">
-                <h3>Ban System</h3>
-                <p>Comprehensive ban/unban system with audit logging for accountability.</p>
+
+            <div class="mt-4">
+                <p class="text-muted">Or login with:</p>
+                <div class="d-flex justify-content-center gap-3">
+                    <a href="{% url 'telegram_login' %}" class="btn btn-outline-info">
+                        <i class="bi bi-telegram"></i> Telegram
+                    </a>
+                    <a href="{% provider_login_url 'google' %}" class="btn btn-outline-danger">
+                        <i class="bi bi-google"></i> Google
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row mt-5">
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-shield-check display-4 text-primary mb-3"></i>
+                    <h5>Secure Authentication</h5>
+                    <p class="text-muted">Login with Telegram or Google for a seamless experience.</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-bell display-4 text-success mb-3"></i>
+                    <h5>Real-time Notifications</h5>
+                    <p class="text-muted">Stay updated with in-app and Telegram notifications.</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <i class="bi bi-graph-up display-4 text-info mb-3"></i>
+                    <h5>Activity Tracking</h5>
+                    <p class="text-muted">Track your activity and manage your account easily.</p>
+                </div>
             </div>
         </div>
     </div>
-</section>
-
-<footer>
-    <p>&copy; 2025 Community Platform. Built with Django.</p>
-</footer>
+</div>
 {% endblock %}

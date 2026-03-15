@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% load socialaccount %}
+
+{% block title %}Sign Up - Community Platform{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header text-center">
+                    <h4><i class="bi bi-person-plus"></i> Sign Up</h4>
+                </div>
+                <div class="card-body">
+                    <form method="post" action="{% url 'account_signup' %}">
+                        {% csrf_token %}
+
+                        {% if form.non_field_errors %}
+                        <div class="alert alert-danger">
+                            {{ form.non_field_errors }}
+                        </div>
+                        {% endif %}
+
+                        <div class="mb-3">
+                            <label for="id_username" class="form-label">Username</label>
+                            <input type="text" name="username" id="id_username" class="form-control" required>
+                            {% if form.username.errors %}
+                            <div class="text-danger small">{{ form.username.errors }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="id_email" class="form-label">Email</label>
+                            <input type="email" name="email" id="id_email" class="form-control" required>
+                            {% if form.email.errors %}
+                            <div class="text-danger small">{{ form.email.errors }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="id_password1" class="form-label">Password</label>
+                            <input type="password" name="password1" id="id_password1" class="form-control" required>
+                            {% if form.password1.errors %}
+                            <div class="text-danger small">{{ form.password1.errors }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="id_password2" class="form-label">Confirm Password</label>
+                            <input type="password" name="password2" id="id_password2" class="form-control" required>
+                            {% if form.password2.errors %}
+                            <div class="text-danger small">{{ form.password2.errors }}</div>
+                            {% endif %}
+                        </div>
+
+                        {% if redirect_field_value %}
+                        <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
+                        {% endif %}
+
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-person-plus"></i> Sign Up
+                        </button>
+                    </form>
+
+                    <hr>
+
+                    <div class="text-center">
+                        <p class="text-muted">Or sign up with:</p>
+                        <div class="d-flex justify-content-center gap-2">
+                            <a href="{% url 'telegram_login' %}" class="btn btn-outline-info">
+                                <i class="bi bi-telegram"></i> Telegram
+                            </a>
+                            <a href="{% provider_login_url 'google' %}" class="btn btn-outline-danger">
+                                <i class="bi bi-google"></i> Google
+                            </a>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <p class="text-center mb-0">
+                        Already have an account? <a href="{% url 'account_login' %}">Log in</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

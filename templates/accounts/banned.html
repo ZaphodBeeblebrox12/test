@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Account Banned - Community Platform{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 text-center">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <i class="bi bi-ban display-4"></i>
+                    <h3 class="mt-2">Account Banned</h3>
+                </div>
+                <div class="card-body">
+                    <p class="lead">Your account has been banned from accessing this platform.</p>
+                    {% if ban_reason %}
+                    <div class="alert alert-secondary">
+                        <strong>Reason:</strong> {{ ban_reason }}
+                    </div>
+                    {% endif %}
+                    <p class="text-muted">If you believe this is an error, please contact support.</p>
+                    <a href="{% url 'account_logout' %}" class="btn btn-outline-danger">
+                        <i class="bi bi-box-arrow-right"></i> Logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

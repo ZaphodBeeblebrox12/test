@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% load custom_filters %}
+
+{% block title %}Activity Log - Community Platform{% endblock %}
+{% block page_title %}Activity Log{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-clock-history"></i> Your Activity History
+    </div>
+    <div class="card-body">
+        {% if activities %}
+        <div class="timeline">
+            {% for activity in activities %}
+            <div class="d-flex mb-4">
+                <div class="flex-shrink-0">
+                    <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                        <i class="bi bi-activity"></i>
+                    </div>
+                </div>
+                <div class="flex-grow-1 ms-3">
+                    <div class="d-flex justify-content-between">
+                        <h6 class="mb-1">{{ activity.action|title|replace:"_| " }}</h6>
+                        <small class="text-muted">{{ activity.created_at|date:"M d, Y H:i" }}</small>
+                    </div>
+                    <p class="text-muted mb-1">
+                        {% if activity.action == "login_telegram" %}
+                        <i class="bi bi-telegram text-info"></i> Logged in via Telegram
+                        {% elif activity.action == "login_google" %}
+                        <i class="bi bi-google text-danger"></i> Logged in via Google
+                        {% elif activity.action == "profile_updated" %}
+                        <i class="bi bi-person-gear text-primary"></i> Profile updated
+                        {% elif activity.action == "telegram_connected" %}
+                        <i class="bi bi-telegram text-success"></i> Telegram account connected
+                        {% elif activity.action == "staff_approved" %}
+                        <i class="bi bi-shield-check text-success"></i> Staff role approved
+                        {% else %}
+                        {{ activity.action }}
+                        {% endif %}
+                    </p>
+                    {% if activity.metadata %}
+                    <small class="text-muted">
+                        {% for key, value in activity.metadata.items %}
+                        {{ key }}: {{ value }}{% if not forloop.last %}, {% endif %}
+                        {% endfor %}
+                    </small>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-clock-history display-4 text-muted mb-3"></i>
+            <h5>No activity recorded</h5>
+            <p class="text-muted">Your recent activity will appear here.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

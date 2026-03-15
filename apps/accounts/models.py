@@ -5,6 +5,8 @@ import uuid
 
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -23,28 +25,34 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     # Standard username field (auto-generated from telegram or manual)
     username = models.CharField(
-        max_length=255, 
+        max_length=255,
         unique=True,
         help_text=_("Unique username for login")
     )
 
     # Telegram fields (optional, for Telegram auth)
     telegram_id = models.BigIntegerField(
-        null=True, 
-        blank=True, 
+        null=True,
+        blank=True,
         unique=True,
         help_text=_("Telegram user ID (optional)")
     )
     telegram_username = models.CharField(
-        max_length=255, 
+        max_length=255,
         blank=True,
         help_text=_("Telegram username without @")
+    )
+    telegram_verified = models.BooleanField(
+        default=False,
+        help_text=_("Whether Telegram has been verified via widget")
     )
 
     # Profile fields
     first_name = models.CharField(max_length=255, blank=True)
     last_name = models.CharField(max_length=255, blank=True)
-    email = models.EmailField(blank=True, null=True)
+    email = models.EmailField(blank=True, null=True, unique=True)
+    bio = models.TextField(blank=True, help_text=_("User biography"))
+    avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
 
     # Role and permissions
     role = models.CharField(
@@ -114,13 +122,35 @@ class User(AbstractBaseUser, PermissionsMixin):
         return not self.is_banned and self.is_active
 
 
-class Profile(models.Model):
-    """User profile extension."""
+class UserPreference(models.Model):
+    """User preferences and settings."""
 
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
-        related_name="profile"
+        related_name="preferences"
+    )
+    timezone = models.CharField(max_length=50, default="UTC")
+    language = models.CharField(max_length=10, default="en")
+    notifications_enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("user preference")
+        verbose_name_plural = _("user preferences")
+
+    def __str__(self) -> str:
+        return f"Preferences for {self.user}"
+
+
+class Profile(models.Model):
+    """User profile extension (legacy, merged into User)."""
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="profile_legacy"
     )
     timezone = models.CharField(max_length=50, default="UTC")
     language = models.CharField(max_length=10, default="en")
@@ -135,3 +165,10 @@ class Profile(models.Model):
 
     def __str__(self) -> str:
         return f"Profile for {self.user}"
+
+
+@receiver(post_save, sender=User)
+def create_user_preferences(sender, instance, created, **kwargs):
+    """Automatically create UserPreference when a new user is created."""
+    if created:
+        UserPreference.objects.get_or_create(user=instance)

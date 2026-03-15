@@ -1,11 +1,10 @@
 """
-URL configuration for core app.
+Core URL configuration.
 """
 from django.urls import path
 
-from .views import health_check, index
+from apps.core.views import index
 
 urlpatterns = [
     path("", index, name="index"),
-    path("health/", health_check, name="health-check"),
 ]

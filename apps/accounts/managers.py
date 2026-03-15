@@ -2,44 +2,43 @@
 Custom user manager for community platform.
 """
 from django.contrib.auth.models import BaseUserManager
-from django.utils.translation import gettext_lazy as _
 
 
 class UserManager(BaseUserManager):
-    """Custom user manager supporting both username and Telegram auth."""
+    """Custom user manager."""
 
-    def create_user(self, username=None, password=None, **extra_fields):
+    use_in_migrations = True
+
+    def create_user(self, username, email=None, password=None, **extra_fields):
         """Create and save a regular user."""
         if not username:
-            # Auto-generate username from telegram_id or email if available
-            if extra_fields.get("telegram_id"):
-                username = f"tg_{extra_fields['telegram_id']}"
-            elif extra_fields.get("email"):
-                username = extra_fields["email"].split("@")[0]
-            else:
-                raise ValueError(_("User must have a username or telegram_id/email"))
+            raise ValueError('The username must be set')
 
-        extra_fields.setdefault("is_active", True)
-        user = self.model(username=username, **extra_fields)
+        email = self.normalize_email(email) if email else None
+        user = self.model(
+            username=username,
+            email=email,
+            **extra_fields
+        )
+
         if password:
             user.set_password(password)
+        else:
+            user.set_unusable_password()
+
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, username=None, password=None, **extra_fields):
+    def create_superuser(self, username, email=None, password=None, **extra_fields):
         """Create and save a superuser."""
-        extra_fields.setdefault("is_staff", True)
-        extra_fields.setdefault("is_superuser", True)
-        extra_fields.setdefault("role", "admin")
-        extra_fields.setdefault("is_staff_approved", True)
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('is_active', True)
+        extra_fields.setdefault('role', 'admin')
 
-        if extra_fields.get("is_staff") is not True:
-            raise ValueError(_("Superuser must have is_staff=True."))
-        if extra_fields.get("is_superuser") is not True:
-            raise ValueError(_("Superuser must have is_superuser=True."))
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('Superuser must have is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('Superuser must have is_superuser=True.')
 
-        return self.create_user(username, password, **extra_fields)
-
-    def get_by_natural_key(self, username):
-        """Get user by username for authentication."""
-        return self.get(username=username)
+        return self.create_user(username, email, password, **extra_fields)

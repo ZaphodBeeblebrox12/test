@@ -8,10 +8,13 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("accounts/", include("allauth.urls")),
     path("api/auth/", include("apps.accounts.urls")),
     path("api/admin/", include("apps.accounts.admin_urls")),
     path("auth/telegram/", include("apps.accounts.telegram_urls")),
+    path("api/", include("apps.api.urls")),
     path("", include("apps.core.urls")),
+    path("", include("apps.accounts.profile_urls")),
 ]
 
 if settings.DEBUG:

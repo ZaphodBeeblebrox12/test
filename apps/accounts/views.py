@@ -1,295 +1,310 @@
 """
-Views for accounts app with VERBOSE DEBUG logging.
+Account views for community platform.
 """
-import logging
+import hashlib
+import hmac
+import json
+from datetime import datetime
+
+from django.conf import settings
 from django.contrib.auth import login
-from django.http import HttpRequest
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
+from django.http import JsonResponse
+from django.shortcuts import render, redirect
+from django.utils.decorators import method_decorator
+from django.views import View
 from django.views.decorators.csrf import csrf_exempt
-from rest_framework import status
+from django.views.decorators.http import require_http_methods
+from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from apps.audit.models import AuditLog
-from integrations.telegram.auth import parse_telegram_auth_data, verify_telegram_auth_hash
-
-from .models import Profile, User
-from .serializers import (
-    BanUserSerializer,
-    StaffApprovalSerializer,
-    TelegramAuthSerializer,
-    UserSerializer,
+from apps.accounts.models import User, UserPreference
+from apps.accounts.serializers import (
+    UserSerializer, UserProfileSerializer, UserPreferenceSerializer
 )
+from apps.audit.models import AuditLog
 
-logger = logging.getLogger(__name__)
+
+def check_banned(view_func):
+    """Decorator to check if user is banned."""
+    def wrapper(request, *args, **kwargs):
+        if request.user.is_authenticated and request.user.is_banned:
+            return render(request, "accounts/banned.html", {
+                "ban_reason": request.user.ban_reason
+            })
+        return view_func(request, *args, **kwargs)
+    return wrapper
 
 
-def generate_username_from_telegram(data: dict) -> str:
-    """Generate a unique username from Telegram data."""
+@method_decorator(login_required, name="dispatch")
+@method_decorator(check_banned, name="dispatch")
+class DashboardView(View):
+    """User dashboard view."""
+    
+    def get(self, request):
+        user = request.user
+        
+        # Get recent activity
+        recent_activity = AuditLog.objects.filter(
+            user=user
+        ).order_by("-created_at")[:10]
+        
+        # Get recent notifications
+        from apps.notifications.models import Notification
+        recent_notifications = Notification.objects.filter(
+            user=user
+        ).order_by("-created_at")[:5]
+        
+        # Get unread notification count
+        unread_count = Notification.objects.filter(
+            user=user, is_read=False
+        ).count()
+        
+        context = {
+            "user": user,
+            "telegram_connected": bool(user.telegram_id and user.telegram_verified),
+            "recent_activity": recent_activity,
+            "recent_notifications": recent_notifications,
+            "unread_count": unread_count,
+        }
+        return render(request, "accounts/dashboard.html", context)
+
+
+@method_decorator(login_required, name="dispatch")
+@method_decorator(check_banned, name="dispatch")
+class ProfileView(View):
+    """User profile view and edit."""
+    
+    def get(self, request):
+        return render(request, "accounts/profile.html", {
+            "user": request.user,
+            "telegram_connected": bool(request.user.telegram_id and request.user.telegram_verified),
+        })
+    
+    def post(self, request):
+        user = request.user
+        
+        # Update editable fields
+        user.first_name = request.POST.get("first_name", user.first_name)
+        user.last_name = request.POST.get("last_name", user.last_name)
+        user.email = request.POST.get("email", user.email)
+        user.bio = request.POST.get("bio", user.bio)
+        
+        # Handle avatar upload
+        if "avatar" in request.FILES:
+            user.avatar = request.FILES["avatar"]
+        
+        user.save()
+        
+        # Update preferences
+        pref, _ = UserPreference.objects.get_or_create(user=user)
+        pref.timezone = request.POST.get("timezone", pref.timezone)
+        pref.language = request.POST.get("language", pref.language)
+        pref.save()
+        
+        # Log the update
+        AuditLog.log(
+            action="profile_updated",
+            user=user,
+            object_type="user",
+            object_id=user.id,
+            metadata={"fields_updated": ["first_name", "last_name", "email", "bio", "avatar", "timezone", "language"]}
+        )
+        
+        return redirect("profile")
+
+
+@method_decorator(login_required, name="dispatch")
+@method_decorator(check_banned, name="dispatch")
+class ActivityLogView(View):
+    """User activity log view."""
+    
+    def get(self, request):
+        activities = AuditLog.objects.filter(
+            user=request.user
+        ).order_by("-created_at")
+        
+        return render(request, "accounts/activity.html", {
+            "activities": activities
+        })
+
+
+@method_decorator(login_required, name="dispatch")
+@method_decorator(check_banned, name="dispatch")
+class NotificationsView(View):
+    """User notifications view."""
+    
+    def get(self, request):
+        from apps.notifications.models import Notification
+        notifications = Notification.objects.filter(
+            user=request.user
+        ).order_by("-created_at")
+        
+        return render(request, "accounts/notifications.html", {
+            "notifications": notifications
+        })
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def telegram_connect(request):
+    """
+    Connect Telegram account to user profile.
+    Verifies Telegram widget hash and stores telegram_id.
+    """
+    user = request.user
+    
+    data = request.data
+    
+    # Required fields from Telegram widget
+    check_hash = data.get("hash")
     telegram_id = data.get("id")
     username = data.get("username", "")
-
-    if username:
-        base_username = f"tg_{username}"
-    else:
-        base_username = f"tg_{telegram_id}"
-
-    # Ensure uniqueness
-    counter = 0
-    final_username = base_username
-    while User.objects.filter(username=final_username).exists():
-        counter += 1
-        final_username = f"{base_username}_{counter}"
-
-    return final_username
-
-
-@csrf_exempt
-@api_view(["POST"])
-@permission_classes([AllowAny])
-def telegram_auth(request: HttpRequest) -> Response:
-    """
-    Handle Telegram Login Widget authentication with VERBOSE logging.
-    """
-    logger.info("=" * 80)
-    logger.info("TELEGRAM AUTH REQUEST RECEIVED")
-    logger.info("=" * 80)
-    logger.info(f"Request method: {request.method}")
-    logger.info(f"Request content type: {request.content_type}")
-    logger.info(f"Request POST data: {request.POST}")
-    logger.info(f"Request body: {request.body}")
-
-    # Try to get data from POST or JSON
-    data = request.data if hasattr(request, 'data') else request.POST
-    logger.info(f"Data received: {data}")
-
-    serializer = TelegramAuthSerializer(data=data)
-    if not serializer.is_valid():
-        logger.error(f"SERIALIZER ERRORS: {serializer.errors}")
+    
+    if not check_hash or not telegram_id:
         return Response(
-            {"error": "Invalid data", "details": serializer.errors}, 
+            {"error": "Missing required fields"},
             status=status.HTTP_400_BAD_REQUEST
         )
-
-    validated_data = serializer.validated_data
-    logger.info(f"Validated data: {validated_data}")
-
-    # Verify hash
-    from django.conf import settings
-    logger.info(f"TELEGRAM_BOT_TOKEN configured: {bool(settings.TELEGRAM_BOT_TOKEN)}")
-    logger.info(f"TELEGRAM_BOT_TOKEN length: {len(settings.TELEGRAM_BOT_TOKEN) if settings.TELEGRAM_BOT_TOKEN else 0}")
-
-    hash_valid = verify_telegram_auth_hash(validated_data, settings.TELEGRAM_BOT_TOKEN)
-    logger.info(f"Hash verification result: {hash_valid}")
-
-    if not hash_valid:
-        logger.error("HASH VERIFICATION FAILED!")
-        logger.error(f"Received hash: {validated_data.get('hash')}")
+    
+    # Verify Telegram hash
+    bot_token = settings.TELEGRAM_BOT_TOKEN
+    if not bot_token:
         return Response(
-            {"error": "Invalid authentication hash"},
-            status=status.HTTP_403_FORBIDDEN
+            {"error": "Telegram bot not configured"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
-    # Parse auth data
-    auth_data = parse_telegram_auth_data(validated_data)
-    logger.info(f"Parsed auth data: id={auth_data.id}, username={auth_data.username}, auth_date={auth_data.auth_date}")
-
-    # Try to find existing user by telegram_id
-    logger.info(f"Looking for existing user with telegram_id={auth_data.id}")
-    try:
-        user = User.objects.get(telegram_id=auth_data.id)
-        created = False
-        logger.info(f"FOUND EXISTING USER: {user.username} (ID: {user.id})")
-        # Update user info
-        user.telegram_username = auth_data.username
-        user.first_name = auth_data.first_name
-        user.last_name = auth_data.last_name
-        user.save()
-        logger.info("Updated user info from Telegram")
-    except User.DoesNotExist:
-        logger.info(f"NO EXISTING USER FOUND with telegram_id={auth_data.id}")
-        # Create new user with auto-generated username
-        username = generate_username_from_telegram(validated_data)
-        logger.info(f"Generated new username: {username}")
-
-        try:
-            user = User.objects.create(
-                username=username,
-                telegram_id=auth_data.id,
-                telegram_username=auth_data.username,
-                first_name=auth_data.first_name,
-                last_name=auth_data.last_name,
-            )
-            logger.info(f"CREATED NEW USER: {user.username} (ID: {user.id})")
-            # Create profile for new user
-            Profile.objects.create(
-                user=user,
-                avatar_url=auth_data.photo_url,
-            )
-            logger.info("Created user profile")
-            created = True
-        except Exception as e:
-            logger.error(f"ERROR CREATING USER: {str(e)}")
-            return Response(
-                {"error": f"Failed to create user: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-    # Check if banned
-    if user.is_banned:
-        logger.warning(f"BANNED USER ATTEMPTED LOGIN: {user.username}")
+    
+    # Create data_check_string
+    data_fields = []
+    for key in ["auth_date", "first_name", "id", "last_name", "photo_url", "username"]:
+        if key in data and data[key]:
+            data_fields.append(f"{key}={data[key]}")
+    data_fields.sort()
+    data_check_string = chr(10).join(data_fields)
+    
+    # Calculate secret key
+    secret_key = hashlib.sha256(bot_token.encode()).digest()
+    
+    # Calculate hash
+    calculated_hash = hmac.new(
+        secret_key,
+        data_check_string.encode(),
+        hashlib.sha256
+    ).hexdigest()
+    
+    if calculated_hash != check_hash:
         return Response(
-            {"error": "Account is banned"},
-            status=status.HTTP_403_FORBIDDEN
+            {"error": "Invalid Telegram hash"},
+            status=status.HTTP_400_BAD_REQUEST
         )
-
-    # Log the user in
-    logger.info(f"Logging in user: {user.username}")
-    login(request, user)
-
-    # Log audit event
-    AuditLog.objects.create(
+    
+    # Check if telegram_id is already connected to another user
+    existing_user = User.objects.filter(
+        telegram_id=telegram_id
+    ).exclude(id=user.id).first()
+    
+    if existing_user:
+        return Response(
+            {"error": "This Telegram account is already connected to another user"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Store Telegram info
+    user.telegram_id = telegram_id
+    user.telegram_username = username
+    user.telegram_verified = True
+    user.save()
+    
+    # Log the connection
+    AuditLog.log(
+        action="telegram_connected",
         user=user,
-        action="user_created" if created else "user_login",
-        object_type="User",
-        object_id=str(user.id),
-        metadata={
-            "telegram_id": auth_data.id,
-            "username": auth_data.username,
-            "auth_date": auth_data.auth_date,
-        }
+        object_type="user",
+        object_id=user.id,
+        metadata={"telegram_id": telegram_id, "telegram_username": username}
     )
-
-    logger.info(f"AUTH SUCCESSFUL for user: {user.username}")
-    logger.info("=" * 80)
-
+    
     return Response({
         "success": True,
-        "user": UserSerializer(user).data,
-        "created": created,
+        "telegram_id": telegram_id,
+        "telegram_username": username,
+        "telegram_verified": True
     })
 
 
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def current_user(request: HttpRequest) -> Response:
-    """Get current authenticated user."""
-    return Response(UserSerializer(request.user).data)
+class UserMeAPIView(APIView):
+    """Get current user info."""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data)
 
 
-@api_view(["GET"])
-@permission_classes([IsAdminUser])
-def staff_approvals_list(request: HttpRequest) -> Response:
-    """List pending staff approvals."""
-    pending_staff = User.objects.filter(
-        role=User.Role.STAFF,
-        is_staff_approved=False
-    )
-    return Response(UserSerializer(pending_staff, many=True).data)
-
-
-@api_view(["POST"])
-@permission_classes([IsAdminUser])
-def staff_approval_action(request: HttpRequest) -> Response:
-    """Approve or reject a staff user."""
-    serializer = StaffApprovalSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    user_id = serializer.validated_data["user_id"]
-    action = serializer.validated_data["action"]
-
-    try:
-        user = User.objects.get(id=user_id, role=User.Role.STAFF)
-    except User.DoesNotExist:
-        return Response(
-            {"error": "Staff user not found"},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    if action == "approve":
-        user.approve_staff()
-        AuditLog.objects.create(
-            user=request.user,
-            action="staff_approved",
-            object_type="User",
-            object_id=str(user.id),
-            metadata={"approved_user": str(user.id)}
-        )
-        return Response({"status": "approved", "user": UserSerializer(user).data})
-    else:
-        user.role = User.Role.USER
+class UserProfileAPIView(APIView):
+    """Get or update user profile."""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        serializer = UserProfileSerializer(request.user)
+        return Response(serializer.data)
+    
+    def patch(self, request):
+        user = request.user
+        
+        # Update user fields
+        allowed_fields = ["first_name", "last_name", "email", "bio"]
+        for field in allowed_fields:
+            if field in request.data:
+                setattr(user, field, request.data[field])
+        
+        # Handle avatar
+        if "avatar" in request.FILES:
+            user.avatar = request.FILES["avatar"]
+        
         user.save()
-        AuditLog.objects.create(
-            user=request.user,
-            action="staff_rejected",
-            object_type="User",
-            object_id=str(user.id),
-            metadata={"rejected_user": str(user.id)}
+        
+        # Update preferences
+        pref_fields = ["timezone", "language", "notifications_enabled"]
+        pref, _ = UserPreference.objects.get_or_create(user=user)
+        for field in pref_fields:
+            if field in request.data:
+                setattr(pref, field, request.data[field])
+        pref.save()
+        
+        # Log update
+        AuditLog.log(
+            action="profile_updated",
+            user=user,
+            object_type="user",
+            object_id=user.id,
+            metadata={"source": "api"}
         )
-        return Response({"status": "rejected", "user": UserSerializer(user).data})
+        
+        serializer = UserProfileSerializer(user)
+        return Response(serializer.data)
 
 
-@api_view(["POST"])
-@permission_classes([IsAdminUser])
-def ban_user(request: HttpRequest) -> Response:
-    """Ban a user."""
-    serializer = BanUserSerializer(data=request.data)
-    if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    user_id = serializer.validated_data["user_id"]
-    reason = serializer.validated_data.get("reason", "")
-
-    try:
-        user = User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        return Response(
-            {"error": "User not found"},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    if user.is_admin:
-        return Response(
-            {"error": "Cannot ban admin users"},
-            status=status.HTTP_403_FORBIDDEN
-        )
-
-    user.ban(reason)
-
-    AuditLog.objects.create(
-        user=request.user,
-        action="user_banned",
-        object_type="User",
-        object_id=str(user.id),
-        metadata={"reason": reason}
-    )
-
-    return Response({"status": "banned", "user": UserSerializer(user).data})
-
-
-@api_view(["POST"])
-@permission_classes([IsAdminUser])
-def unban_user(request: HttpRequest) -> Response:
-    """Unban a user."""
-    user_id = request.data.get("user_id")
-
-    try:
-        user = User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        return Response(
-            {"error": "User not found"},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-    user.unban()
-
-    AuditLog.objects.create(
-        user=request.user,
-        action="user_unbanned",
-        object_type="User",
-        object_id=str(user.id),
-        metadata={}
-    )
-
-    return Response({"status": "unbanned", "user": UserSerializer(user).data})
+class UserActivityAPIView(APIView):
+    """Get user activity log."""
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        activities = AuditLog.objects.filter(
+            user=request.user
+        ).order_by("-created_at")[:50]
+        
+        data = [{
+            "id": str(a.id),
+            "action": a.action,
+            "object_type": a.object_type,
+            "object_id": a.object_id,
+            "metadata": a.metadata,
+            "created_at": a.created_at.isoformat(),
+        } for a in activities]
+        
+        return Response(data)
