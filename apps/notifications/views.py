@@ -2,6 +2,8 @@
 Notifications views.
 """
 from django.utils import timezone
+from django.shortcuts import render
+from django.contrib.auth.decorators import login_required
 from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -64,3 +66,9 @@ def unread_notification_count(request):
         is_read=False
     ).count()
     return Response({"unread_count": count})
+
+
+@login_required
+def notifications_list_view(request):
+    """Render notifications list page."""
+    return render(request, "notifications/list.html")

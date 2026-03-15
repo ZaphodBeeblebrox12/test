@@ -50,12 +50,13 @@ LOCAL_APPS = [
     "apps.core",
     "apps.system_settings",
     "apps.audit",
-    # NOTE: apps.api and apps.notifications are commented out until they are created
-    "apps.notifications",
     "apps.api",
+    "apps.notifications",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
+
+SITE_ID = 1
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -67,8 +68,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
-    # NOTE: BanEnforcementMiddleware is commented out until apps.api is created
-    # "apps.api.middleware.BanEnforcementMiddleware",
+    "apps.api.middleware.BanEnforcementMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -84,6 +84,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.notifications.context_processors.unread_notification_count",
             ],
         },
     },
@@ -147,8 +148,7 @@ AUTHENTICATION_BACKENDS = [
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",
-        # NOTE: APIKeyAuthentication is commented out until apps.api is created
-        # "apps.api.authentication.APIKeyAuthentication",
+        "apps.api.authentication.APIKeyAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
