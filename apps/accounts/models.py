@@ -128,7 +128,8 @@ class UserPreference(models.Model):
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
-        related_name="preferences"
+        related_name="preferences",  # ← COMMA ADDED HERE
+        primary_key=True,  # FIXED: Added primary_key=True to match migration
     )
     timezone = models.CharField(max_length=50, default="UTC")
     language = models.CharField(max_length=10, default="en")
@@ -150,7 +151,8 @@ class Profile(models.Model):
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
-        related_name="profile_legacy"
+        related_name="profile_legacy",  # ← COMMA ADDED HERE
+        primary_key=True,  # FIXED: Added primary_key=True to match migration
     )
     timezone = models.CharField(max_length=50, default="UTC")
     language = models.CharField(max_length=10, default="en")
