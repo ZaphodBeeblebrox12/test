@@ -11,7 +11,6 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('accounts', '0001_initial'),  # Depends on accounts placeholder migration
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
