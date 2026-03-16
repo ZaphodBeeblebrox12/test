@@ -8,12 +8,11 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    # allauth URLs (includes email verification)
     path("accounts/", include("allauth.urls")),
-    # API endpoints
     path("api/auth/", include("apps.accounts.urls")),
     path("api/admin/", include("apps.accounts.admin_urls")),
     path("auth/telegram/", include("apps.accounts.telegram_urls")),
+    path("auth/discord/", include("apps.accounts.discord_urls")),  # Discord OAuth URLs
     path("api/", include("apps.api.urls")),
     path("", include("apps.core.urls")),
     path("", include("apps.accounts.profile_urls")),

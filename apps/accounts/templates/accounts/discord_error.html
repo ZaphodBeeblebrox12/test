@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}Discord Error{% endblock %}
+
+{% block content %}
+<div style="max-width: 500px; margin: 100px auto; padding: 40px; background: white; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); text-align: center;">
+    <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
+    <h1 style="color: #333; margin-bottom: 10px;">{{ error_title|default:"Error" }}</h1>
+    <p style="color: #666; margin-bottom: 30px;">{{ error }}</p>
+    <a href="{% url 'profile' %}" style="display: inline-block; padding: 12px 24px; background: #5865F2; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">
+        Back to Profile
+    </a>
+</div>
+{% endblock %}
