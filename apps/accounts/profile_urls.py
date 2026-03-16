@@ -1,5 +1,5 @@
 """
-Profile and dashboard URL configuration.
+Profile URLs for user dashboard and profile management.
 """
 from django.urls import path
 

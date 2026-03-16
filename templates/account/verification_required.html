@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Email Verification Required - Community Platform{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card border-warning">
+                <div class="card-header bg-warning text-dark">
+                    <h4 class="mb-0"><i class="bi bi-envelope-exclamation"></i> Verification Required</h4>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
+                        <strong>Your email address is not verified.</strong>
+                    </div>
+
+                    <p>
+                        To access this page, you need to verify your email address first.
+                    </p>
+
+                    <p>
+                        We've sent a verification email to <strong>{{ request.user.email }}</strong>.
+                        Please check your inbox and click the confirmation link.
+                    </p>
+
+                    <hr class="my-4">
+
+                    <div class="d-grid gap-2">
+                        <a href="{% url 'account_email' %}" class="btn btn-primary">
+                            <i class="bi bi-envelope"></i> Manage Email Addresses
+                        </a>
+                        <a href="{% url 'account_logout' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </a>
+                    </div>
+
+                    <div class="mt-3 text-muted">
+                        <small>
+                            <i class="bi bi-info-circle"></i>
+                            If you didn't receive the email, check your spam folder or request a new one from the email management page.
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

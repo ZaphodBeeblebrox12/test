@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Logout - Community Platform{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-secondary text-white">
+                    <h4 class="mb-0"><i class="bi bi-box-arrow-right"></i> Logout</h4>
+                </div>
+                <div class="card-body">
+                    <p class="lead">Are you sure you want to log out?</p>
+
+                    <form method="post" action="{% url 'account_logout' %}">
+                        {% csrf_token %}
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-danger">
+                                <i class="bi bi-box-arrow-right"></i> Yes, Log Out
+                            </button>
+                            <a href="{% url 'index' %}" class="btn btn-outline-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

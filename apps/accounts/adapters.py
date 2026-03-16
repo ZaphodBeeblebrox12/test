@@ -4,6 +4,7 @@ Custom allauth adapter for Google authentication.
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.account.adapter import DefaultAccountAdapter
 from allauth.exceptions import ImmediateHttpResponse
+from allauth.account.models import EmailAddress
 from django.contrib import messages
 from django.http import HttpResponseRedirect
 from django.urls import reverse
@@ -43,6 +44,7 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
     def save_user(self, request, sociallogin, form=None):
         """
         Save user with telegram_verified=False for Google users.
+        Google users are automatically verified via allauth.
         """
         user = super().save_user(request, sociallogin, form)
 
@@ -79,10 +81,43 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
 
 
 class CustomAccountAdapter(DefaultAccountAdapter):
-    """Custom account adapter."""
+    """Custom account adapter with email verification support."""
 
     def get_login_redirect_url(self, request):
+        """Redirect after login - check if email is verified."""
+        user = request.user
+
+        # Check if user needs email verification
+        if user.email and not self._is_email_verified(user):
+            # Redirect to verification sent page
+            return reverse('account_email_verification_sent')
+
         return "/dashboard/"
 
     def get_logout_redirect_url(self, request):
         return "/"
+
+    def _is_email_verified(self, user):
+        """Check if user's email is verified."""
+        try:
+            email_address = EmailAddress.objects.filter(user=user, verified=True).first()
+            return email_address is not None
+        except:
+            return False
+
+    def send_confirmation_mail(self, request, emailconfirmation, signup):
+        """Send confirmation email with custom context."""
+        ctx = {
+            "user": emailconfirmation.email_address.user,
+            "activate_url": self.get_email_confirmation_url(
+                request, emailconfirmation
+            ),
+            "current_site": self.get_current_site(request),
+            "key": emailconfirmation.key,
+        }
+        if signup:
+            email_template = 'account/email/email_confirmation_signup'
+        else:
+            email_template = 'account/email/email_confirmation_message'
+
+        self.send_mail(email_template, emailconfirmation.email_address.email, ctx)

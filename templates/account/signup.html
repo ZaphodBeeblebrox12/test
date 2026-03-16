@@ -1,89 +1,140 @@
 {% extends "base.html" %}
-{% load socialaccount %}
 
 {% block title %}Sign Up - Community Platform{% endblock %}
 
 {% block content %}
-<div class="container py-5">
+<div class="container mt-5">
     <div class="row justify-content-center">
         <div class="col-md-6">
             <div class="card">
-                <div class="card-header text-center">
-                    <h4><i class="bi bi-person-plus"></i> Sign Up</h4>
+                <div class="card-header bg-success text-white">
+                    <h4 class="mb-0"><i class="bi bi-person-plus"></i> Sign Up</h4>
                 </div>
                 <div class="card-body">
+                    <!-- Back to Home Link -->
+                    <div class="text-center mb-3">
+                        <a href="{% url 'index' %}" class="text-muted" style="font-size: 14px;">
+                            <i class="bi bi-arrow-left"></i> Back to Home
+                        </a>
+                    </div>
+
+                    {% if form.errors %}
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-triangle"></i> 
+                            <strong>Please correct the errors below:</strong>
+                            <ul class="mb-0 mt-2">
+                                {% for field in form %}
+                                    {% for error in field.errors %}
+                                        <li><strong>{{ field.label }}:</strong> {{ error }}</li>
+                                    {% endfor %}
+                                {% endfor %}
+                                {% for error in form.non_field_errors %}
+                                    <li>{{ error }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    {% endif %}
+
                     <form method="post" action="{% url 'account_signup' %}">
                         {% csrf_token %}
 
-                        {% if form.non_field_errors %}
-                        <div class="alert alert-danger">
-                            {{ form.non_field_errors }}
-                        </div>
-                        {% endif %}
-
                         <div class="mb-3">
-                            <label for="id_username" class="form-label">Username</label>
-                            <input type="text" name="username" id="id_username" class="form-control" required>
-                            {% if form.username.errors %}
-                            <div class="text-danger small">{{ form.username.errors }}</div>
-                            {% endif %}
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="id_email" class="form-label">Email</label>
-                            <input type="email" name="email" id="id_email" class="form-control" required>
+                            <label for="id_email" class="form-label">Email *</label>
+                            <input type="email" name="email" id="id_email" class="form-control {% if form.email.errors %}is-invalid{% endif %}" placeholder="Email address" required autofocus value="{{ form.email.value|default:'' }}">
                             {% if form.email.errors %}
-                            <div class="text-danger small">{{ form.email.errors }}</div>
+                                <div class="invalid-feedback">{{ form.email.errors.0 }}</div>
                             {% endif %}
                         </div>
 
                         <div class="mb-3">
-                            <label for="id_password1" class="form-label">Password</label>
-                            <input type="password" name="password1" id="id_password1" class="form-control" required>
+                            <label for="id_password1" class="form-label">Password *</label>
+                            <input type="password" name="password1" id="id_password1" class="form-control {% if form.password1.errors %}is-invalid{% endif %}" placeholder="Password" required>
                             {% if form.password1.errors %}
-                            <div class="text-danger small">{{ form.password1.errors }}</div>
+                                <div class="invalid-feedback">{{ form.password1.errors.0 }}</div>
+                            {% else %}
+                                <div class="form-text">
+                                    <small>
+                                        Password must be at least 8 characters and not too common.
+                                        <br>Tip: Use a mix of letters, numbers, and symbols.
+                                    </small>
+                                </div>
                             {% endif %}
                         </div>
 
                         <div class="mb-3">
-                            <label for="id_password2" class="form-label">Confirm Password</label>
-                            <input type="password" name="password2" id="id_password2" class="form-control" required>
+                            <label for="id_password2" class="form-label">Password (again) *</label>
+                            <input type="password" name="password2" id="id_password2" class="form-control {% if form.password2.errors %}is-invalid{% endif %}" placeholder="Confirm password" required>
                             {% if form.password2.errors %}
-                            <div class="text-danger small">{{ form.password2.errors }}</div>
+                                <div class="invalid-feedback">{{ form.password2.errors.0 }}</div>
                             {% endif %}
                         </div>
 
-                        {% if redirect_field_value %}
-                        <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
-                        {% endif %}
-
-                        <button type="submit" class="btn btn-primary w-100">
-                            <i class="bi bi-person-plus"></i> Sign Up
-                        </button>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-success">Sign Up</button>
+                        </div>
                     </form>
 
-                    <hr>
+                    <hr class="my-4">
 
                     <div class="text-center">
-                        <p class="text-muted">Or sign up with:</p>
-                        <div class="d-flex justify-content-center gap-2">
-                            <a href="{% url 'telegram_login' %}" class="btn btn-outline-info">
-                                <i class="bi bi-telegram"></i> Telegram
-                            </a>
-                            <a href="{% provider_login_url 'google' %}" class="btn btn-outline-danger">
+                        <p class="mb-2">Or sign up with:</p>
+                        <div class="d-grid gap-2">
+                            <button type="button" class="btn btn-outline-danger" onclick="openGoogleSignupPopup()">
                                 <i class="bi bi-google"></i> Google
+                            </button>
+                            <a href="{% url 'telegram_login' %}" class="btn btn-outline-primary">
+                                <i class="bi bi-telegram"></i> Telegram
                             </a>
                         </div>
                     </div>
 
-                    <hr>
+                    <hr class="my-4">
 
-                    <p class="text-center mb-0">
-                        Already have an account? <a href="{% url 'account_login' %}">Log in</a>
-                    </p>
+                    <div class="text-center">
+                        <p class="mb-0">
+                            Already have an account? <a href="{% url 'account_login' %}">Login</a>
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function openGoogleSignupPopup() {
+        var width = 500;
+        var height = 600;
+        var left = (window.innerWidth - width) / 2;
+        var top = (window.innerHeight - height) / 2;
+
+        var authWindow = window.open(
+            '{% url "google_login" %}',
+            'googleOAuth',
+            'width=' + width + ',height=' + height + ',top=' + top + ',left=' + left + ',toolbar=no,menubar=no,scrollbars=yes,resizable=yes'
+        );
+
+        if (!authWindow || authWindow.closed || typeof authWindow.closed === 'undefined') {
+            alert('Popup was blocked. Please allow popups for this site.');
+            window.location.href = '{% url "google_login" %}';
+        } else {
+            // Poll for window close
+            var checkClosed = setInterval(function() {
+                if (authWindow.closed) {
+                    clearInterval(checkClosed);
+                    // Check if user is now logged in
+                    fetch('{% url "api_user_me" %}')
+                        .then(response => {
+                            if (response.ok) {
+                                window.location.href = '{% url "dashboard" %}';
+                            }
+                        })
+                        .catch(() => {});
+                }
+            }, 1000);
+        }
+    }
+</script>
 {% endblock %}

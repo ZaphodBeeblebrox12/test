@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Email Confirmed - Community Platform{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h4 class="mb-0"><i class="bi bi-check-circle-fill"></i> Email Verified!</h4>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-success">
+                        <strong>Success!</strong> Your email address has been confirmed.
+                    </div>
+
+                    <p class="lead">
+                        Your account is now fully activated. You can now access all features of the platform.
+                    </p>
+
+                    <div class="d-grid gap-2 mt-4">
+                        <a href="{% url 'dashboard' %}" class="btn btn-primary btn-lg">
+                            <i class="bi bi-speedometer2"></i> Go to Dashboard
+                        </a>
+                        <a href="{% url 'profile' %}" class="btn btn-outline-primary">
+                            <i class="bi bi-person"></i> View Profile
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

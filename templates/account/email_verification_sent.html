@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Verification Email Sent - Community Platform{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h4 class="mb-0"><i class="bi bi-envelope-check"></i> Check Your Email</h4>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle-fill"></i>
+                        <strong>Verification email sent!</strong>
+                    </div>
+
+                    <p class="lead">
+                        We've sent a verification email to <strong>{{ email }}</strong>.
+                    </p>
+
+                    <p>
+                        Please check your inbox and click the confirmation link to verify your email address and activate your account.
+                    </p>
+
+                    <hr class="my-4">
+
+                    <div class="alert alert-light border">
+                        <h6><i class="bi bi-clock"></i> Important:</h6>
+                        <ul class="mb-0">
+                            <li>The confirmation link will expire in 3 days</li>
+                            <li>You must verify your email before accessing protected pages</li>
+                            <li>Check your spam folder if you don't see the email</li>
+                        </ul>
+                    </div>
+
+                    <div class="d-grid gap-2 mt-4">
+                        <a href="{% url 'account_login' %}" class="btn btn-outline-primary">
+                            <i class="bi bi-box-arrow-in-right"></i> Back to Login
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
