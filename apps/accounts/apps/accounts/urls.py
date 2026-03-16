@@ -18,7 +18,7 @@ urlpatterns = [
     # Discord endpoints
     path("discord/connect/", discord_connect_api, name="api_discord_connect"),
 
-    # User API endpoints - FIXED paths and names
+    # User API endpoints - using names that match your templates
     path("me/", UserMeAPIView.as_view(), name="api_user_me"),
     path("profile/", UserProfileAPIView.as_view(), name="api_user_profile"),
     path("activity/", UserActivityAPIView.as_view(), name="api_user_activity"),
