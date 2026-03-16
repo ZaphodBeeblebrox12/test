@@ -14,7 +14,7 @@ from .managers import UserManager
 
 
 class User(AbstractBaseUser, PermissionsMixin):
-    """Custom User model with Telegram integration."""
+    """Custom User model with Telegram and Discord integration."""
 
     class Role(models.TextChoices):
         ADMIN = "admin", _("Admin")
@@ -23,7 +23,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # Standard username field (auto-generated from telegram or manual)
+    # Standard username field
     username = models.CharField(
         max_length=255,
         unique=True,
@@ -45,6 +45,29 @@ class User(AbstractBaseUser, PermissionsMixin):
     telegram_verified = models.BooleanField(
         default=False,
         help_text=_("Whether Telegram has been verified via widget")
+    )
+
+    # Discord fields (optional, for Discord auth)
+    discord_id = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        unique=True,
+        help_text=_("Discord user ID")
+    )
+    discord_username = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_("Discord username")
+    )
+    discord_avatar = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_("Discord avatar hash")
+    )
+    discord_verified = models.BooleanField(
+        default=False,
+        help_text=_("Whether Discord has been verified via OAuth")
     )
 
     # Profile fields
@@ -128,8 +151,8 @@ class UserPreference(models.Model):
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
-        related_name="preferences",  # ← COMMA ADDED HERE
-        primary_key=True,  # FIXED: Added primary_key=True to match migration
+        related_name="preferences",
+        primary_key=True,
     )
     timezone = models.CharField(max_length=50, default="UTC")
     language = models.CharField(max_length=10, default="en")
@@ -151,8 +174,8 @@ class Profile(models.Model):
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
-        related_name="profile_legacy",  # ← COMMA ADDED HERE
-        primary_key=True,  # FIXED: Added primary_key=True to match migration
+        related_name="profile_legacy",
+        primary_key=True,
     )
     timezone = models.CharField(max_length=50, default="UTC")
     language = models.CharField(max_length=10, default="en")
@@ -167,6 +190,30 @@ class Profile(models.Model):
 
     def __str__(self) -> str:
         return f"Profile for {self.user}"
+
+
+# Discord Admin Configuration Model
+class DiscordAppConfig(models.Model):
+    """Discord OAuth2 application configuration."""
+
+    name = models.CharField(max_length=100, default="Community Platform")
+    client_id = models.CharField(max_length=255, help_text="Discord Application Client ID")
+    client_secret = models.CharField(max_length=255, help_text="Discord Application Client Secret")
+    redirect_uri = models.URLField(
+        default="http://localhost:8000/auth/discord/callback/",
+        help_text="Must match Discord app settings"
+    )
+    is_active = models.BooleanField(default=True, help_text="Enable Discord login")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Discord App Configuration"
+        verbose_name_plural = "Discord App Configuration"
+
+    def __str__(self):
+        return f"Discord App: {self.name} ({'Active' if self.is_active else 'Inactive'})"
 
 
 @receiver(post_save, sender=User)

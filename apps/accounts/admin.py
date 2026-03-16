@@ -1,70 +1,85 @@
 """
-Admin configuration for accounts.
+Accounts admin with Discord app configuration.
 """
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from django.utils.translation import gettext_lazy as _
+from django.utils.html import format_html
+from django.urls import path
+from django.http import HttpResponseRedirect
+from django.contrib import messages
 
-from apps.accounts.models import User, UserPreference, Profile
+from apps.accounts.models import User, UserPreference, Profile, DiscordAppConfig
+
+
+@admin.register(DiscordAppConfig)
+class DiscordAppConfigAdmin(admin.ModelAdmin):
+    """Admin for Discord OAuth2 app configuration."""
+
+    list_display = ['name', 'client_id_masked', 'redirect_uri', 'is_active', 'updated_at']
+    list_editable = ['is_active']
+    fields = ['name', 'client_id', 'client_secret', 'redirect_uri', 'is_active']
+
+    def client_id_masked(self, obj):
+        if obj.client_id:
+            return obj.client_id[:10] + "..." + obj.client_id[-4:]
+        return "Not set"
+    client_id_masked.short_description = "Client ID"
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context['title'] = 'Discord App Configuration'
+        return super().changelist_view(request, extra_context=extra_context)
 
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    """Custom User admin."""
+    """User admin with Discord fields."""
 
     list_display = [
         'username', 'email', 'first_name', 'last_name', 'role',
-        'telegram_username', 'telegram_verified', 'is_banned',
-        'is_staff', 'date_joined', 'last_login'
+        'telegram_status', 'discord_status', 'is_active', 'date_joined'
     ]
-    list_filter = [
-        'role', 'is_banned', 'telegram_verified', 'is_staff',
-        'is_superuser', 'is_active', 'date_joined'
-    ]
-    search_fields = ['username', 'email', 'telegram_username', 'first_name', 'last_name']
-    readonly_fields = ['id', 'date_joined', 'last_login', 'banned_at']
+    list_filter = ['role', 'is_active', 'is_staff', 'telegram_verified', 'discord_verified']
+    search_fields = ['username', 'email', 'telegram_username', 'discord_username']
 
-    fieldsets = (
-        (None, {'fields': ('id', 'username', 'password')}),
-        (_('Personal info'), {'fields': ('first_name', 'last_name', 'email', 'bio', 'avatar')}),
-        (_('Telegram'), {'fields': ('telegram_id', 'telegram_username', 'telegram_verified')}),
-        (_('Permissions'), {
-            'fields': ('role', 'is_staff', 'is_staff_approved', 'is_superuser', 'is_active'),
+    fieldsets = BaseUserAdmin.fieldsets + (
+        ('Telegram', {
+            'fields': ('telegram_id', 'telegram_username', 'telegram_verified'),
+            'classes': ('collapse',),
         }),
-        (_('Ban status'), {'fields': ('is_banned', 'ban_reason', 'banned_at')}),
-        (_('Important dates'), {'fields': ('last_login', 'date_joined')}),
+        ('Discord', {
+            'fields': ('discord_id', 'discord_username', 'discord_avatar', 'discord_verified'),
+            'classes': ('collapse',),
+        }),
+        ('Profile', {
+            'fields': ('bio', 'avatar'),
+        }),
+        ('Role & Status', {
+            'fields': ('role', 'is_staff_approved', 'is_banned', 'ban_reason'),
+        }),
     )
 
-    actions = ['ban_users', 'unban_users', 'approve_staff']
+    def telegram_status(self, obj):
+        if obj.telegram_verified:
+            return format_html('<span style="color: green;">✓ @{}</span>', obj.telegram_username)
+        return format_html('<span style="color: gray;">✗</span>')
+    telegram_status.short_description = 'Telegram'
 
-    @admin.action(description='Ban selected users')
-    def ban_users(self, request, queryset):
-        for user in queryset:
-            user.ban()
-
-    @admin.action(description='Unban selected users')
-    def unban_users(self, request, queryset):
-        for user in queryset:
-            user.unban()
-
-    @admin.action(description='Approve staff role')
-    def approve_staff(self, request, queryset):
-        for user in queryset.filter(role='staff'):
-            user.approve_staff()
+    def discord_status(self, obj):
+        if obj.discord_verified:
+            return format_html('<span style="color: #5865F2;">✓ {}</span>', obj.discord_username)
+        return format_html('<span style="color: gray;">✗</span>')
+    discord_status.short_description = 'Discord'
 
 
 @admin.register(UserPreference)
 class UserPreferenceAdmin(admin.ModelAdmin):
-    """User preference admin."""
-
     list_display = ['user', 'timezone', 'language', 'notifications_enabled']
     list_filter = ['language', 'notifications_enabled']
-    search_fields = ['user__username', 'user__email']
+    search_fields = ['user__username']
 
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-    """Profile admin (legacy)."""
-
     list_display = ['user', 'timezone', 'language', 'created_at']
     search_fields = ['user__username']
