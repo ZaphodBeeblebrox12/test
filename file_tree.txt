@@ -1,5 +1,6 @@
-Folder PATH listing
-Volume serial number is 421D-F8AC
+## Project Structure
+
+```
 C:.
 |   .env.example
 |   .gitignore
@@ -230,3 +231,4 @@ C:.
 \---utils
         __init__.py
         
+```
