@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - {{ user.first_name|default:user.username }}{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row">
+        <!-- Left Column - User Info & Subscription -->
+        <div class="col-md-4">
+            <!-- Welcome Card -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h4 class="card-title">Welcome back, {{ user.first_name|default:user.username }}!</h4>
+                    <p class="card-text text-muted">Here's what's happening with your account today.</p>
+                </div>
+            </div>
+
+            <!-- Account Status Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Account Status</h5>
+                </div>
+                <div class="card-body">
+                    {% if user.is_banned %}
+                        <span class="badge bg-danger">Banned</span>
+                    {% else %}
+                        <span class="badge bg-success">Active</span>
+                    {% endif %}
+                    <hr>
+                    <p class="mb-1"><strong>Role:</strong> {{ user.get_role_display }}</p>
+                    <p class="mb-0"><strong>Member Since:</strong> {{ user.date_joined|date:"M d, Y" }}</p>
+                </div>
+            </div>
+
+            <!-- Subscription Status Card -->
+            <div class="card mb-4 border-primary">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        {% if current_plan %}
+                            {{ current_plan.name }}
+                        {% else %}
+                            Free Plan
+                        {% endif %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if subscription %}
+                        <span class="badge bg-success mb-2">Active</span>
+                        <p class="mb-1"><strong>Started:</strong> {{ subscription.started_at|date:"M d, Y" }}</p>
+                        {% if subscription.expires_at %}
+                            <p class="mb-1"><strong>Expires:</strong> {{ subscription.expires_at|date:"M d, Y" }}</p>
+                        {% endif %}
+                        {% if subscription.plan_price %}
+                            <p class="mb-0"><strong>Billing:</strong> ${{ subscription.plan_price.price_dollars }} / {{ subscription.plan_price.interval }}</p>
+                        {% endif %}
+
+                        {% if current_plan %}
+                        <hr>
+                        <h6>Plan Features:</h6>
+                        <ul class="list-unstyled mb-0">
+                            <li><i class="bi bi-check-circle-fill text-success"></i> {{ current_plan.max_projects }} Projects</li>
+                            <li><i class="bi bi-check-circle-fill text-success"></i> {{ current_plan.max_storage_mb }} MB Storage</li>
+                            <li><i class="bi bi-check-circle-fill text-success"></i> {{ current_plan.api_calls_per_day }} API Calls/Day</li>
+                        </ul>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge bg-secondary mb-2">Free</span>
+                        <p class="text-muted">You are on the free plan with limited features.</p>
+
+                        {% if available_plans %}
+                        <hr>
+                        <h6>Available Plans:</h6>
+                        <div class="list-group list-group-flush">
+                            {% for plan in available_plans %}
+                                {% if not current_plan or plan.id != current_plan.id %}
+                                <div class="list-group-item px-0">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span>{{ plan.name }}</span>
+                                        {% with plan.prices.first as price %}
+                                            {% if price %}
+                                                <span class="badge bg-primary">${{ price.price_dollars }}</span>
+                                            {% endif %}
+                                        {% endwith %}
+                                    </div>
+                                </div>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    {% endif %}
+
+                    <div class="mt-3">
+                        <a href="{% url 'profile' %}" class="btn btn-outline-primary btn-sm w-100">Manage Subscription</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Telegram Connection Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Telegram</h5>
+                </div>
+                <div class="card-body">
+                    {% if telegram_connected %}
+                        <div class="d-flex align-items-center">
+                            <span class="badge bg-success me-2">Connected</span>
+                            {% if user.telegram_username %}
+                                <span class="text-muted">@{{ user.telegram_username }}</span>
+                            {% endif %}
+                        </div>
+                    {% else %}
+                        <span class="badge bg-secondary">Not Connected</span>
+                        <p class="text-muted small mt-2">Connect your Telegram account for notifications</p>
+                        <a href="{% url 'telegram_login' %}" class="btn btn-primary btn-sm">Connect Now</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column - Activity & Notifications -->
+        <div class="col-md-8">
+            <!-- Recent Activity -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Recent Activity</h5>
+                    <a href="{% url 'activity' %}" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
+                <div class="card-body">
+                    {% if recent_activity %}
+                        <div class="list-group list-group-flush">
+                            {% for activity in recent_activity %}
+                            <div class="list-group-item px-0">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <p class="mb-1">{{ activity.action|title }}</p>
+                                    <small class="text-muted">{{ activity.created_at|timesince }} ago</small>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted text-center py-3">No recent activity</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Recent Notifications -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        Recent Notifications
+                        {% if unread_count > 0 %}
+                            <span class="badge bg-danger ms-2">{{ unread_count }}</span>
+                        {% endif %}
+                    </h5>
+                    <a href="{% url 'notifications' %}" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
+                <div class="card-body">
+                    {% if recent_notifications %}
+                        <div class="list-group list-group-flush">
+                            {% for notification in recent_notifications %}
+                            <div class="list-group-item px-0">
+                                <div class="d-flex w-100 justify-content-between">
+                                    <h6 class="mb-1">{{ notification.title }}</h6>
+                                    {% if not notification.is_read %}
+                                        <span class="badge bg-primary">New</span>
+                                    {% endif %}
+                                </div>
+                                <p class="mb-1 text-muted">{{ notification.message|truncatechars:50 }}</p>
+                                <small class="text-muted">{{ notification.created_at|timesince }} ago</small>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted text-center py-3">No notifications</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

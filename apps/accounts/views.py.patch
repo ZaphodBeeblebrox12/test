@@ -1,0 +1,45 @@
+--- a/apps/accounts/views.py
++++ b/apps/accounts/views.py
+@@ -12,6 +12,8 @@ from rest_framework.views import APIView
+
+ from apps.accounts.models import User, UserPreference
+ from apps.accounts.serializers import (
+     UserSerializer, UserProfileSerializer, UserPreferenceSerializer
+ )
+ from apps.audit.models import AuditLog
++from apps.subscriptions.models import Subscription, Plan
++
+
+ def check_banned(view_func):
+     """Decorator to check if user is banned."""
+@@ -35,6 +37,19 @@ class DashboardView(View):
+         # Get unread notification count
+         unread_count = Notification.objects.filter(
+             user=user, is_read=False
+         ).count()
++        
++        # Get subscription data
++        try:
++            subscription = Subscription.objects.select_related(
++                'plan', 'plan_price'
++            ).get(user=user, is_active=True, status=Subscription.Status.ACTIVE)
++            current_plan = subscription.plan
++        except Subscription.DoesNotExist:
++            subscription = None
++            current_plan = None
++        
++        # Get available plans for upgrade
++        available_plans = Plan.objects.filter(is_active=True).order_by('display_order')
+
+         context = {
+             "user": user,
+@@ -42,6 +57,9 @@ class DashboardView(View):
+             "recent_activity": recent_activity,
+             "recent_notifications": recent_notifications,
+             "unread_count": unread_count,
++            "subscription": subscription,
++            "current_plan": current_plan,
++            "available_plans": available_plans,
+         }
+         return render(request, "accounts/dashboard.html", context)
+ 
