@@ -227,16 +227,19 @@ C:.
 |   |   |   admin.py
 |   |   |   models.py
 |   |   |   serializers.py
+|   |   |   services.py
 |   |   |   urls.py
 |   |   |   views.py
 |   |   |   __init__.py
 |   |   |   
 |   |   +---migrations
 |   |   |   |   0001_initial.py
+|   |   |   |   0002_plan_upgrade_priority_subscription_granted_by_and_more.py
 |   |   |   |   __init__.py
 |   |   |   |   
 |   |   |   \---__pycache__
 |   |   |           0001_initial.cpython-312.pyc
+|   |   |           0002_plan_upgrade_priority_subscription_granted_by_and_more.cpython-312.pyc
 |   |   |           __init__.cpython-312.pyc
 |   |   |           
 |   |   \---__pycache__

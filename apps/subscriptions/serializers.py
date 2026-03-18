@@ -1,9 +1,12 @@
 """
-Subscription serializers for API responses.
+Subscription serializers for API responses - Phase 3B.
 """
 from rest_framework import serializers
 
-from .models import Plan, PlanPrice, Subscription, SubscriptionHistory
+from .models import (
+    Plan, PlanPrice, Subscription, SubscriptionHistory,
+    PlanDiscount, GiftSubscription
+)
 
 
 class PlanPriceSerializer(serializers.ModelSerializer):
@@ -28,10 +31,29 @@ class PlanPriceSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class PlanDiscountSerializer(serializers.ModelSerializer):
+    """Serializer for plan discounts."""
+
+    class Meta:
+        model = PlanDiscount
+        fields = [
+            "id",
+            "code",
+            "description",
+            "discount_type",
+            "discount_value",
+            "valid_from",
+            "valid_until",
+            "is_active",
+        ]
+        read_only_fields = fields
+
+
 class PlanSerializer(serializers.ModelSerializer):
     """Serializer for subscription plans."""
 
     prices = PlanPriceSerializer(many=True, read_only=True)
+    discounts = PlanDiscountSerializer(many=True, read_only=True)
 
     class Meta:
         model = Plan
@@ -40,12 +62,14 @@ class PlanSerializer(serializers.ModelSerializer):
             "tier",
             "name",
             "description",
+            "upgrade_priority",
             "max_projects",
             "max_storage_mb",
             "api_calls_per_day",
             "is_active",
             "display_order",
             "prices",
+            "discounts",
             "created_at",
         ]
         read_only_fields = fields
@@ -56,6 +80,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
 
     plan = PlanSerializer(read_only=True)
     plan_price = PlanPriceSerializer(read_only=True)
+    applied_discount = PlanDiscountSerializer(read_only=True)
 
     class Meta:
         model = Subscription
@@ -63,11 +88,18 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             "id",
             "plan",
             "plan_price",
+            "applied_discount",
+            "is_admin_grant",
+            "granted_by",
+            "granted_reason",
+            "is_trial",
+            "trial_days",
             "status",
             "is_active",
             "started_at",
             "expires_at",
             "canceled_at",
+            "prorated_credit_cents",
             "payment_provider",
             "created_at",
             "updated_at",
@@ -92,3 +124,39 @@ class SubscriptionHistorySerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = fields
+
+
+class GiftSubscriptionSerializer(serializers.ModelSerializer):
+    """Serializer for gift subscriptions."""
+
+    plan_name = serializers.CharField(source="plan.name", read_only=True)
+    sender_username = serializers.CharField(source="sender.username", read_only=True)
+    redeemed_by_username = serializers.CharField(
+        source="redeemed_by.username", 
+        read_only=True
+    )
+
+    class Meta:
+        model = GiftSubscription
+        fields = [
+            "id",
+            "code",
+            "plan",
+            "plan_name",
+            "duration_days",
+            "sender",
+            "sender_username",
+            "recipient_email",
+            "message",
+            "status",
+            "redeemed_by",
+            "redeemed_by_username",
+            "redeemed_at",
+            "expires_at",
+            "created_at",
+        ]
+        read_only_fields = [
+            "id", "code", "sender", "sender_username",
+            "redeemed_by", "redeemed_by_username", "redeemed_at",
+            "created_at"
+        ]
