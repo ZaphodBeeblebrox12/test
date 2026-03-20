@@ -215,6 +215,8 @@ class SubscriptionService:
         import secrets
         code = secrets.token_urlsafe(16)[:20].upper()
 
+        # FIXED: redeemed_by and redeemed_at are NOT set here
+        # They will be set when someone actually redeems the gift
         gift = GiftSubscription.objects.create(
             code=code,
             plan=plan,
@@ -222,7 +224,8 @@ class SubscriptionService:
             sender=sender,
             recipient_email=recipient_email,
             message=message,
-            expires_at=timezone.now() + timezone.timedelta(days=365)  # Gift codes valid for 1 year
+            status=GiftSubscription.Status.PENDING,  # FIXED: Explicitly set to PENDING
+            expires_at=timezone.now() + timezone.timedelta(days=365)
         )
 
         SubscriptionEvent.log_event(

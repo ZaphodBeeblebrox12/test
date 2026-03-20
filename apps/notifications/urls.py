@@ -1,5 +1,5 @@
 """
-Notifications URLs.
+Notifications URLs with badge counter endpoints.
 """
 from django.urls import path
 
@@ -8,18 +8,18 @@ from apps.notifications.views import (
     mark_notification_read,
     mark_all_notifications_read,
     unread_notification_count,
-    notifications_list_view,
 )
 
-app_name = "notifications"
-
 urlpatterns = [
-    # Template view for /notifications/ page
-    path("notifications/", notifications_list_view, name="list"),
-
-    # API endpoints (mounted under api/notifications/ in config/urls.py)
+    # List notifications with filtering
     path("", NotificationListAPIView.as_view(), name="api_notifications_list"),
+
+    # Badge counter endpoint (lightweight)
     path("unread-count/", unread_notification_count, name="api_notifications_unread_count"),
+
+    # Mark single notification as read (FIXED: added <uuid:pk> parameter)
     path("<uuid:pk>/read/", mark_notification_read, name="api_notification_read"),
-    path("read-all/", mark_all_notifications_read, name="api_notifications_read_all"),
+
+    # Mark all notifications as read
+    path("mark-all-read/", mark_all_notifications_read, name="api_notifications_mark_all_read"),
 ]
