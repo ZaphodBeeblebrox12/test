@@ -198,27 +198,51 @@ C:.
 |   |           
 |   +---notifications
 |   |   |   admin.py
+|   |   |   apps.py
 |   |   |   context_processors.py
+|   |   |   helpers.py
 |   |   |   models.py
 |   |   |   serializers.py
+|   |   |   signals.py
 |   |   |   urls.py
 |   |   |   views.py
 |   |   |   __init__.py
 |   |   |   
+|   |   +---management
+|   |   |   |   __init__.py
+|   |   |   |   
+|   |   |   +---commands
+|   |   |   |       check_expiration_warnings.py
+|   |   |   |       __init__.py
+|   |   |   |       
+|   |   |   \---__pycache__
+|   |   |           __init__.cpython-312.pyc
+|   |   |           
 |   |   +---migrations
 |   |   |   |   0001_initial.py
 |   |   |   |   0002_rename_notificatio_user_id_7c0f9d_idx_notificatio_user_id_05b4bc_idx_and_more.py
+|   |   |   |   0003_notification_badge_counter.py
+|   |   |   |   0004_add_expired_type.py
+|   |   |   |   0004_rename_notif_type_read_idx_notificatio_notific_09a8d2_idx_and_more.py
+|   |   |   |   0005_merge_20260319_1853.py
 |   |   |   |   __init__.py
 |   |   |   |   
 |   |   |   \---__pycache__
 |   |   |           0001_initial.cpython-312.pyc
 |   |   |           0002_rename_notificatio_user_id_7c0f9d_idx_notificatio_user_id_05b4bc_idx_and_more.cpython-312.pyc
+|   |   |           0003_notification_badge_counter.cpython-312.pyc
+|   |   |           0004_add_expired_type.cpython-312.pyc
+|   |   |           0004_rename_notif_type_read_idx_notificatio_notific_09a8d2_idx_and_more.cpython-312.pyc
+|   |   |           0005_merge_20260319_1853.cpython-312.pyc
 |   |   |           __init__.cpython-312.pyc
 |   |   |           
 |   |   \---__pycache__
 |   |           admin.cpython-312.pyc
+|   |           apps.cpython-312.pyc
+|   |           helpers.cpython-312.pyc
 |   |           models.cpython-312.pyc
 |   |           serializers.cpython-312.pyc
+|   |           signals.cpython-312.pyc
 |   |           urls.cpython-312.pyc
 |   |           views.cpython-312.pyc
 |   |           __init__.cpython-312.pyc
