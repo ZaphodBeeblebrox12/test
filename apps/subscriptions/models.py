@@ -131,15 +131,26 @@ class PlanPrice(models.Model):
         ordering = ["plan", "interval"]
 
     def __str__(self) -> str:
-        price_dollars = self.price_cents / 100
-        return f"{self.plan.name} - {self.interval} (${price_dollars:.2f})"
+        return f"{self.plan.name} - {self.interval} ({self.formatted_price})"
 
     @property
     def price_dollars(self) -> float:
         return self.price_cents / 100
 
+    @property
+    def formatted_price(self) -> str:
+        """
+        Return formatted price with proper currency symbol.
 
-# Phase 3B: Plan Discount model
+        Example:
+            - USD: "$9.99"
+            - INR: "₹332.32"
+            - JPY: "¥1000"
+        """
+        from apps.subscriptions.utils.currency_utils import format_currency
+        return format_currency(self.price_cents, self.currency)
+
+
 class PlanDiscount(models.Model):
     """Discount codes and promotions for plans."""
 
@@ -431,7 +442,6 @@ class Subscription(models.Model):
         return self.plan.can_upgrade_to(target_plan)
 
 
-# Phase 3B: Gift Subscriptions
 class GiftSubscription(models.Model):
     """Gift subscriptions that can be redeemed by users."""
 
@@ -619,7 +629,6 @@ class SubscriptionHistory(models.Model):
         return f"{self.user.username} - {self.event_type} at {self.created_at}"
 
 
-# Phase 3B: Subscription Event model for event system
 class SubscriptionEvent(models.Model):
     """Event system for subscription-related events."""
 
