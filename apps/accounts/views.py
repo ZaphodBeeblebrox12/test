@@ -46,6 +46,8 @@ class DashboardView(View):
 
     def get(self, request):
         from apps.subscriptions.models import Subscription, Plan
+        from apps.subscriptions.pricing_service import get_price_for_user
+
         user = request.user
 
         # Get recent activity
@@ -74,8 +76,12 @@ class DashboardView(View):
             subscription = None
             current_plan = None
 
-        # Get available plans for upgrade
+        # Get available plans for upgrade with geo-based pricing
         available_plans = Plan.objects.filter(is_active=True).order_by('display_order')
+
+        # Attach resolved price based on user's geo-location
+        for plan in available_plans:
+            plan.resolved_price = get_price_for_user(plan, request, request.user)
 
         context = {
             "user": user,
@@ -291,7 +297,7 @@ class UserProfileAPIView(APIView):
         for field in pref_fields:
             if field in request.data:
                 setattr(pref, field, request.data[field])
-        pref.save()
+                pref.save()
 
         # Log update
         AuditLog.log(

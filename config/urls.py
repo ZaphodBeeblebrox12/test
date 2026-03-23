@@ -13,6 +13,7 @@ urlpatterns = [
     path("api/admin/", include("apps.accounts.admin_urls")),
     path("auth/telegram/", include("apps.accounts.telegram_urls")),
     path("auth/discord/", include("apps.accounts.discord_urls")),  # Discord OAuth URLs
+    path("api/subscriptions/", include("apps.subscriptions.urls")),  # Subscription APIs
     path("api/", include("apps.api.urls")),
     path("", include("apps.core.urls")),
     path("", include("apps.accounts.profile_urls")),
