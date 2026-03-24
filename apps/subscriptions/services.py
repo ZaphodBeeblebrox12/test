@@ -55,23 +55,59 @@ def get_region_for_country(country_code: str) -> Optional[str]:
     return COUNTRY_TO_REGION.get(country_code.upper()) if country_code else None
 
 
+def get_request_country(request) -> str:
+    """
+    Get the country code from request using priority order:
+    1. Cloudflare header (HTTP_CF_IPCOUNTRY) - PRIMARY
+    2. django-ipware for IP detection - FALLBACK (logs IP, no fake mapping)
+    3. settings.DEFAULT_COUNTRY or "US" - FINAL FALLBACK
+
+    Args:
+        request: Django HTTP request object
+
+    Returns:
+        str: Two-letter country code (uppercase)
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # 1. Cloudflare header (PRIMARY)
+    cf_country = request.META.get("HTTP_CF_IPCOUNTRY", "").upper()
+    if cf_country and cf_country != "XX" and len(cf_country) == 2:
+        return cf_country
+
+    # 2. IPWARE fallback (detects IP, logs, but no geo mapping)
+    client_ip, is_routable = get_client_ip(request)
+    if client_ip:
+        if is_routable:
+            logger.debug(f"IP detected ({client_ip}) but no geo mapping available, using default country")
+        else:
+            logger.debug(f"Private/non-routable IP detected ({client_ip}), using default country")
+        # Intentionally fall through to default — no fake country mapping
+
+    # 3. Default fallback (FINAL)
+    default_country = getattr(settings, "DEFAULT_COUNTRY", "US")
+    return default_country.upper()
+
+
 def get_pricing_country(request) -> Optional[str]:
     """
     Get the country code for pricing based on request.
     Priority:
     1. ?test_country=XX query param (only if DEBUG=True)
-    2. IP-based geolocation (via django-ipware)
+    2. Cloudflare header (HTTP_CF_IPCOUNTRY)
+    3. IP-based geolocation (via django-ipware)
+    4. settings.DEFAULT_COUNTRY or "US"
     """
-    if getattr(settings, 'DEBUG', False):
-        test_country = request.GET.get('test_country')
+    # Debug override
+    if getattr(settings, "DEBUG", False):
+        test_country = request.GET.get("test_country")
         if test_country:
             return test_country.upper()
 
-    client_ip, is_routable = get_client_ip(request)
-    if not client_ip:
-        return None
-
-    return None
+    # Use the new get_request_country helper
+    return get_request_country(request)
 
 
 def resolve_plan_price(plan: Plan, interval: str, request) -> GeoPlanPrice:

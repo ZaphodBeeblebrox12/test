@@ -3,11 +3,70 @@ Admin configuration for subscriptions with unified Plan + Geo Pricing management
 """
 from django.contrib import admin
 from django.utils.html import format_html
+from django import forms
+from django.core.exceptions import ValidationError
 
 from .models import (
     Plan, PlanPrice, Subscription, SubscriptionHistory,
     UpgradeHistory, GiftSubscription, GeoPlanPrice
 )
+
+
+# =============================================================================
+# ADMIN FORM VALIDATION
+# =============================================================================
+
+class GeoPlanPriceForm(forms.ModelForm):
+    """Form for GeoPlanPrice with price_cents validation."""
+
+    class Meta:
+        model = GeoPlanPrice
+        fields = '__all__'
+
+    def clean_price_cents(self):
+        """Validate price_cents is a non-negative integer."""
+        price_cents = self.cleaned_data.get('price_cents')
+
+        # Check if value is None
+        if price_cents is None:
+            raise ValidationError("Price is required.")
+
+        # Check if value is integer (PositiveIntegerField should handle this, but double-check)
+        try:
+            price_cents = int(price_cents)
+        except (TypeError, ValueError):
+            raise ValidationError("Price must be a whole number (no letters or decimals).")
+
+        # Check non-negative
+        if price_cents < 0:
+            raise ValidationError("Price cannot be negative.")
+
+        return price_cents
+
+
+class PlanPriceForm(forms.ModelForm):
+    """Form for PlanPrice with price_cents validation."""
+
+    class Meta:
+        model = PlanPrice
+        fields = '__all__'
+
+    def clean_price_cents(self):
+        """Validate price_cents is a non-negative integer."""
+        price_cents = self.cleaned_data.get('price_cents')
+
+        if price_cents is None:
+            raise ValidationError("Price is required.")
+
+        try:
+            price_cents = int(price_cents)
+        except (TypeError, ValueError):
+            raise ValidationError("Price must be a whole number (no letters or decimals).")
+
+        if price_cents < 0:
+            raise ValidationError("Price cannot be negative.")
+
+        return price_cents
 
 
 # =============================================================================
@@ -17,18 +76,28 @@ from .models import (
 class PlanPriceInline(admin.TabularInline):
     """Inline admin for base plan prices (global pricing)."""
     model = PlanPrice
+    form = PlanPriceForm
     extra = 1
     fields = ["interval", "price_cents", "currency", "is_active"]
     verbose_name = "Base Price (Global)"
     verbose_name_plural = "Base Prices (Global - Managed Here)"
 
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        # Add number input type for better UX
+        formset.form.base_fields['price_cents'].widget.attrs['type'] = 'number'
+        formset.form.base_fields['price_cents'].widget.attrs['min'] = '0'
+        formset.form.base_fields['price_cents'].widget.attrs['step'] = '1'
+        return formset
+
 
 class GeoPlanPriceInline(admin.TabularInline):
     """Inline admin for geo-specific plan prices - OVERRIDES ONLY."""
     model = GeoPlanPrice
+    form = GeoPlanPriceForm
     extra = 0
-    fields = ["interval", "price_cents", "currency", "country", "region", "is_active", "price_type_display"]
-    readonly_fields = ["price_type_display"]
+    fields = ["interval", "price_cents", "currency", "country", "region", "is_active", "price_type_badge"]
+    readonly_fields = ["price_type_badge"]
     verbose_name = "Geo Price Override"
     verbose_name_plural = "Geo Price Overrides (Country/Region Specific)"
 
@@ -37,29 +106,40 @@ class GeoPlanPriceInline(admin.TabularInline):
             'all': ('admin/css/widgets.css',)
         }
 
-    def price_type_display(self, obj=None):
-        """Display price type badge."""
+    def price_type_badge(self, obj=None):
+        """Display compact price type badge with emoji + code."""
         if obj and obj.pk:
             if obj.country:
                 return format_html(
-                    '<span style="background: #28a745; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em;">🇺🇳 Country: {}</span>',
-                    obj.country
+                    '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
+                    'background:#e8f5e9;color:#2e7d32;border-radius:4px;font-size:12px;'
+                    'font-weight:500;border:1px solid #c8e6c9;">🇺🇳 {}</span>',
+                    obj.country.upper()
                 )
             elif obj.region:
                 return format_html(
-                    '<span style="background: #17a2b8; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em;">🌎 Region: {}</span>',
-                    obj.region
+                    '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
+                    'background:#fff3e0;color:#ef6c00;border-radius:4px;font-size:12px;'
+                    'font-weight:500;border:1px solid #ffe0b2;">🌎 {}</span>',
+                    obj.region.upper()
                 )
             return format_html(
-                '<span style="background: #dc3545; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em;">⚠️ REQUIRED</span>'
+                '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
+                'background:#ffebee;color:#c62828;border-radius:4px;font-size:12px;'
+                'font-weight:500;border:1px solid #ffcdd2;">⚠️ REQUIRED</span>'
             )
         return format_html(
-            '<span style="color: #6c757d; font-style: italic;">Save to see type</span>'
+            '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
+            'color:#9e9e9e;font-size:12px;font-style:italic;">Save to see type</span>'
         )
-    price_type_display.short_description = "Type"
+    price_type_badge.short_description = "Type"
 
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
+        # Add number input type and validation attributes
+        formset.form.base_fields['price_cents'].widget.attrs['type'] = 'number'
+        formset.form.base_fields['price_cents'].widget.attrs['min'] = '0'
+        formset.form.base_fields['price_cents'].widget.attrs['step'] = '1'
         formset.form.base_fields['country'].widget.attrs['placeholder'] = 'e.g., IN, US, DE'
         formset.form.base_fields['country'].help_text = "Country code for country-specific override. Leave empty if using region."
         formset.form.base_fields['region'].widget.attrs['placeholder'] = 'e.g., APAC, EU, NA'
@@ -110,15 +190,15 @@ class PlanAdmin(admin.ModelAdmin):
         geo_label = f"{geo_count} geo"
 
         return format_html(
-            '<span style="font-size: 0.9em;">{} <span style="color: #6c757d;">|</span> {}</span>',
+            '{} | {}',
             format_html(
-                '<span style="background: #e9ecef; padding: 1px 6px; border-radius: 3px;">{}</span>',
+                '<span style="color:#2e7d32;font-weight:500;">{}</span>',
                 base_label
-            ) if base_count else format_html('<span style="color: #dc3545;">No base</span>'),
+            ) if base_count else format_html('<span style="color:#9e9e9e;">No base</span>'),
             format_html(
-                '<span style="background: #d4edda; padding: 1px 6px; border-radius: 3px;">{}</span>',
+                '<span style="color:#1565c0;font-weight:500;">{}</span>',
                 geo_label
-            ) if geo_count else format_html('<span style="color: #6c757d;">No geo</span>')
+            ) if geo_count else format_html('<span style="color:#9e9e9e;">No geo</span>')
         )
     pricing_summary.short_description = "Pricing"
 
@@ -136,13 +216,15 @@ class GeoPlanPriceAdmin(admin.ModelAdmin):
     This is for advanced/bulk management only.
     """
 
+    form = GeoPlanPriceForm
+
     list_display = [
         "plan",
         "interval",
         "price_cents",
         "currency",
-        "geo_display",
-        "price_type_display",
+        "geo_badge",
+        "price_type_badge",
         "is_active",
     ]
     list_filter = [
@@ -166,47 +248,73 @@ class GeoPlanPriceAdmin(admin.ModelAdmin):
         ("Geo Override Target", {
             "fields": ("country", "region"),
             "description": """
-                <b>⚠️ REQUIRED: Specify either COUNTRY or REGION (not both empty)</b><br><br>
-                • <b>Country-specific:</b> Enter country code (e.g., IN, US, DE), leave region empty<br>
-                • <b>Regional:</b> Enter region code (e.g., APAC, EU, NA), leave country empty<br>
-                • <b>Global pricing is managed in PlanPrice, NOT here</b><br><br>
-                GeoPlanPrice is for <b>overrides only</b>.
-            """
+**⚠️ REQUIRED: Specify either COUNTRY or REGION (not both empty)**
+
+• **Country-specific:** Enter country code (e.g., IN, US, DE), leave region empty
+
+• **Regional:** Enter region code (e.g., APAC, EU, NA), leave country empty
+
+• **Global pricing is managed in PlanPrice, NOT here**
+
+GeoPlanPrice is for **overrides only**.
+"""
         }),
         ("Status", {
             "fields": ("is_active",)
         }),
     )
 
-    def geo_display(self, obj: GeoPlanPrice) -> str:
+    def geo_badge(self, obj: GeoPlanPrice) -> str:
         if obj.country:
             return format_html(
-                '<span style="color: green; font-weight: bold;">🇺🇳 {}</span>',
-                obj.country
+                '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
+                'background:#e3f2fd;color:#1565c0;border-radius:4px;font-size:12px;'
+                'font-weight:500;border:1px solid #bbdefb;">🇺🇳 {}</span>',
+                obj.country.upper()
             )
         elif obj.region:
             return format_html(
-                '<span style="color: blue;">🌎 {}</span>',
-                obj.region
+                '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
+                'background:#f3e5f5;color:#7b1fa2;border-radius:4px;font-size:12px;'
+                'font-weight:500;border:1px solid #e1bee7;">🌎 {}</span>',
+                obj.region.upper()
             )
         return format_html(
-            '<span style="color: #dc3545; font-weight: bold;">⚠️ INVALID - No geo specified</span>'
+            '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
+            'background:#ffebee;color:#c62828;border-radius:4px;font-size:12px;'
+            'font-weight:500;border:1px solid #ffcdd2;">⚠️ INVALID - No geo specified</span>'
         )
-    geo_display.short_description = "Override Target"
+    geo_badge.short_description = "Override Target"
 
-    def price_type_display(self, obj: GeoPlanPrice) -> str:
+    def price_type_badge(self, obj: GeoPlanPrice) -> str:
         if obj.country:
             return format_html(
-                '<span style="background: #d4edda; padding: 2px 6px; border-radius: 3px;">Country</span>'
+                '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
+                'background:#e8f5e9;color:#2e7d32;border-radius:4px;font-size:12px;'
+                'font-weight:500;border:1px solid #c8e6c9;">🇺🇳 {}</span>',
+                obj.country.upper()
             )
         elif obj.region:
             return format_html(
-                '<span style="background: #d1ecf1; padding: 2px 6px; border-radius: 3px;">Region</span>'
+                '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
+                'background:#fff3e0;color:#ef6c00;border-radius:4px;font-size:12px;'
+                'font-weight:500;border:1px solid #ffe0b2;">🌎 {}</span>',
+                obj.region.upper()
             )
         return format_html(
-            '<span style="background: #dc3545; color: white; padding: 2px 6px; border-radius: 3px;">INVALID</span>'
+            '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
+            'background:#ffebee;color:#c62828;border-radius:4px;font-size:12px;'
+            'font-weight:500;border:1px solid #ffcdd2;">⚠️ INVALID</span>'
         )
-    price_type_display.short_description = "Type"
+    price_type_badge.short_description = "Type"
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        # Add number input type for better UX
+        form.base_fields['price_cents'].widget.attrs['type'] = 'number'
+        form.base_fields['price_cents'].widget.attrs['min'] = '0'
+        form.base_fields['price_cents'].widget.attrs['step'] = '1'
+        return form
 
 
 # =============================================================================
@@ -216,6 +324,8 @@ class GeoPlanPriceAdmin(admin.ModelAdmin):
 @admin.register(PlanPrice)
 class PlanPriceAdmin(admin.ModelAdmin):
     """Admin for base plan pricing (legacy global prices)."""
+
+    form = PlanPriceForm
 
     list_display = [
         "plan",
@@ -227,6 +337,13 @@ class PlanPriceAdmin(admin.ModelAdmin):
     list_filter = ["interval", "currency", "is_active"]
     search_fields = ["plan__name"]
     list_select_related = ["plan"]
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        form.base_fields['price_cents'].widget.attrs['type'] = 'number'
+        form.base_fields['price_cents'].widget.attrs['min'] = '0'
+        form.base_fields['price_cents'].widget.attrs['step'] = '1'
+        return form
 
 
 @admin.register(Subscription)
@@ -292,18 +409,26 @@ class SubscriptionAdmin(admin.ModelAdmin):
     def source_display(self, obj: Subscription) -> str:
         if obj.is_gift:
             return format_html(
-                '<span style="background: #fff3cd; padding: 2px 6px; border-radius: 3px;">🎁 Gift</span>'
+                '<span style="display:inline-block;white-space:nowrap;padding:2px 8px;'
+                'background:#f3e5f5;color:#7b1fa2;border-radius:4px;font-size:12px;'
+                'font-weight:500;">🎁 Gift</span>'
             )
         elif obj.is_admin_grant:
             return format_html(
-                '<span style="background: #d4edda; padding: 2px 6px; border-radius: 3px;">👤 Admin</span>'
+                '<span style="display:inline-block;white-space:nowrap;padding:2px 8px;'
+                'background:#e8f5e9;color:#2e7d32;border-radius:4px;font-size:12px;'
+                'font-weight:500;">👤 Admin</span>'
             )
         elif obj.payment_provider == "trial":
             return format_html(
-                '<span style="background: #d1ecf1; padding: 2px 6px; border-radius: 3px;">🎯 Trial</span>'
+                '<span style="display:inline-block;white-space:nowrap;padding:2px 8px;'
+                'background:#e3f2fd;color:#1565c0;border-radius:4px;font-size:12px;'
+                'font-weight:500;">🎯 Trial</span>'
             )
         return format_html(
-            '<span style="background: #f8f9fa; padding: 2px 6px; border-radius: 3px;">💳 Paid</span>'
+            '<span style="display:inline-block;white-space:nowrap;padding:2px 8px;'
+            'background:#fff3e0;color:#ef6c00;border-radius:4px;font-size:12px;'
+            'font-weight:500;">💳 Paid</span>'
         )
     source_display.short_description = "Source"
 
@@ -352,7 +477,9 @@ class SubscriptionHistoryAdmin(admin.ModelAdmin):
         }
         color = colors.get(obj.event_type, "#6c757d")
         return format_html(
-            '<span style="background: {}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.85em;">{}</span>',
+            '<span style="display:inline-block;white-space:nowrap;padding:2px 8px;'
+            'background:{};color:#fff;border-radius:4px;font-size:12px;'
+            'font-weight:500;">{}</span>',
             color,
             obj.get_event_type_display()
         )
