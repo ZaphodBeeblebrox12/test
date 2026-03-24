@@ -54,6 +54,7 @@ LOCAL_APPS = [
     "apps.notifications",
     "apps.system_settings",
     "apps.subscriptions",
+    "apps.payments",
 
 ]
 
