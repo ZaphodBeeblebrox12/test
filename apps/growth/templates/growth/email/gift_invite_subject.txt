@@ -1,0 +1,1 @@
+You've received a gift subscription from {{ sender_name }}!

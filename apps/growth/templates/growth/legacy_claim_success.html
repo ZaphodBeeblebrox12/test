@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Gift Claimed Successfully{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card shadow-sm border-success">
+                <div class="card-body text-center p-5">
+                    <div class="mb-4">
+                        <span class="display-1 text-success">✓</span>
+                    </div>
+
+                    <h1 class="h3 mb-3 text-success">Gift Claimed Successfully!</h1>
+
+                    <p class="mb-4">
+                        Your gift subscription has been activated using the gift code.
+                    </p>
+
+                    {% if subscription %}
+                    <div class="alert alert-success">
+                        <p class="mb-1">
+                            <strong>Plan:</strong> {{ subscription.plan.name }}
+                        </p>
+                        <p class="mb-1">
+                            <strong>Status:</strong> Active
+                        </p>
+                        <p class="mb-0">
+                            <strong>Expires:</strong> {{ subscription.expires_at|date:"F d, Y" }}
+                        </p>
+                    </div>
+                    {% endif %}
+
+                    <div class="d-grid gap-2 d-sm-flex justify-content-sm-center mt-4">
+                        <a href="{% url 'index' %}" class="btn btn-primary btn-lg px-4">
+                            Go to Dashboard
+                        </a>
+                        <a href="{% url 'profile' %}" class="btn btn-outline-primary btn-lg px-4">
+                            View Subscription
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

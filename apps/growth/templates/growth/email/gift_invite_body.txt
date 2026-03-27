@@ -1,0 +1,18 @@
+Hi there!
+
+Great news! {{ sender_name }} has gifted you a {{ plan_name }} subscription for {{ duration_days }} days.
+
+{% if message %}
+They included this message:
+"{{ message }}"
+
+{% endif %}
+To claim your gift, click the link below:
+{{ claim_url }}
+
+This gift link will expire on {{ expires_at|date:"F d, Y" }}.
+
+If you don't have an account yet, you'll be able to create one when you click the link.
+
+Enjoy!
+The Team

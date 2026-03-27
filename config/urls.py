@@ -7,16 +7,20 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 urlpatterns = [
+    # Growth admin views - MUST be first to work properly
+    path("admin/", include("apps.growth.admin_urls")),
     path("admin/", admin.site.urls),
+
     path("accounts/", include("allauth.urls")),
     path("api/auth/", include("apps.accounts.urls")),
     path("api/admin/", include("apps.accounts.admin_urls")),
     path("auth/telegram/", include("apps.accounts.telegram_urls")),
-    path("auth/discord/", include("apps.accounts.discord_urls")),  # Discord OAuth URLs
+    path("auth/discord/", include("apps.accounts.discord_urls")),
     path("api/", include("apps.api.urls")),
     path("", include("apps.core.urls")),
     path("", include("apps.accounts.profile_urls")),
     path("", include("apps.payments.urls")),
+    path("growth/", include("apps.growth.urls")),
 ]
 
 if settings.DEBUG:

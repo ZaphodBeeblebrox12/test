@@ -1,0 +1,12 @@
+Hi {{ user.username }},
+
+Your gift subscription has been successfully activated!
+
+Plan: {{ plan_name }}
+Duration: {{ duration_days }} days
+Expires: {{ subscription_expires|date:"F d, Y" }}
+
+You can now enjoy all the benefits of your subscription.
+
+Thank you,
+The Team

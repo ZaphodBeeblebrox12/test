@@ -34,8 +34,8 @@ DJANGO_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "django.contrib.sites", 
-    
+    "django.contrib.sites",
+
 ]
 
 THIRD_PARTY_APPS = [
@@ -55,7 +55,7 @@ LOCAL_APPS = [
     "apps.system_settings",
     "apps.subscriptions",
     "apps.payments",
-
+    "apps.growth",  # ADDED: Growth module for gift invites
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

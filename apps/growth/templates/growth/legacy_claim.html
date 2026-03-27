@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Claim Gift by Code{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-body p-5">
+                    <h1 class="h3 mb-4 text-center">Claim Your Gift</h1>
+
+                    <p class="text-muted text-center mb-4">
+                        Enter the gift code you received to claim your subscription.
+                    </p>
+
+                    {% if error %}
+                    <div class="alert alert-danger" role="alert">
+                        {{ error }}
+                    </div>
+                    {% endif %}
+
+                    <form method="post" action="{% url 'growth:legacy_claim' %}">
+                        {% csrf_token %}
+
+                        <div class="mb-4">
+                            <label for="id_gift_code" class="form-label">Gift Code</label>
+                            {{ form.gift_code }}
+                            <div class="form-text">
+                                Enter the code you received (e.g., ABC123XY)
+                            </div>
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                Claim Gift
+                            </button>
+                        </div>
+                    </form>
+
+                    <hr class="my-4">
+
+                    <p class="text-center text-muted small mb-0">
+                        Have a gift link instead? 
+                        <a href="{% url 'growth:claim' token='help' %}">Click here</a> 
+                        to use the email link.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

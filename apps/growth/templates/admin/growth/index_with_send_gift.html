@@ -1,0 +1,26 @@
+{% extends "admin/index.html" %}
+{% load i18n %}
+
+{% block content %}
+{{ block.super }}
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Find the Growth module in the admin index
+    var growthModule = document.querySelector('.app-growth');
+    if (growthModule) {
+        // Add Send Gift button after the module table
+        var sendGiftDiv = document.createElement('div');
+        sendGiftDiv.style.cssText = 'margin-top: 15px; padding: 15px; background: #f8f8f8; border: 1px solid #ddd; border-radius: 4px;';
+        sendGiftDiv.innerHTML = `
+            <h3 style="margin-top: 0; font-size: 14px;">{% trans "Quick Actions" %}</h3>
+            <a href="{% url 'admin:growth_send_gift' %}" class="button" style="padding: 10px 20px; font-size: 13px; background: #417690; color: white; text-decoration: none; border-radius: 4px; display: inline-block;">
+                🎁 {% trans "Send Gift" %}
+            </a>
+            <p style="margin: 10px 0 0 0; font-size: 12px; color: #666;">{% trans "Send a subscription gift to someone" %}</p>
+        `;
+        growthModule.appendChild(sendGiftDiv);
+    }
+});
+</script>
+{% endblock %}

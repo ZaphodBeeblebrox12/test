@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>You've received a gift!</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; padding: 30px 0; }
+        .gift-icon { font-size: 64px; }
+        .content { background: #f9f9f9; padding: 30px; border-radius: 8px; }
+        .message { background: #fff; padding: 20px; border-left: 4px solid #007bff; margin: 20px 0; }
+        .button { display: inline-block; padding: 15px 30px; background: #007bff; color: #fff; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="gift-icon">🎁</div>
+            <h1>You've Received a Gift!</h1>
+        </div>
+
+        <div class="content">
+            <p>Hi there!</p>
+
+            <p><strong>{{ sender_name }}</strong> has gifted you a <strong>{{ plan_name }}</strong> subscription for <strong>{{ duration_days }} days</strong>.</p>
+
+            {% if message %}
+            <div class="message">
+                <p><em>"{{ message }}"</em></p>
+                <p style="text-align: right; margin-bottom: 0;">— {{ sender_name }}</p>
+            </div>
+            {% endif %}
+
+            <p style="text-align: center;">
+                <a href="{{ claim_url }}" class="button">Claim Your Gift</a>
+            </p>
+
+            <p style="font-size: 12px; color: #666;">
+                This gift link will expire on {{ expires_at|date:"F d, Y" }}. 
+                If you don't have an account yet, you'll be able to create one when you click the link.
+            </p>
+        </div>
+
+        <div class="footer">
+            <p>If the button doesn't work, copy and paste this link into your browser:<br>
+            {{ claim_url }}</p>
+        </div>
+    </div>
+</body>
+</html>
