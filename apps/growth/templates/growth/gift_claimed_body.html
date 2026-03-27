@@ -1,0 +1,40 @@
+{% load i18n %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{% trans "Gift Subscription Activated" %}</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #2196F3; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .content { background: #f9f9f9; padding: 30px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 5px 5px; }
+        .success { color: #4CAF50; font-weight: bold; font-size: 18px; }
+        .details { background: white; padding: 20px; margin: 20px 0; border-radius: 5px; }
+        .footer { text-align: center; color: #666; font-size: 12px; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>{% trans "✅ Gift Activated!" %}</h1>
+    </div>
+    <div class="content">
+        <p class="success">{% trans "Your gift subscription has been successfully activated!" %}</p>
+
+        <p>{% blocktrans with username=user.username %}Hi {{ username }},{% endblocktrans %}</p>
+
+        <div class="details">
+            <p><strong>{% trans "Plan:" %}</strong> {{ plan_name }}</p>
+            <p><strong>{% trans "Duration:" %}</strong> {{ duration_days }} {% trans "days" %}</p>
+            <p><strong>{% trans "Expires:" %}</strong> {{ subscription_expires|date:"F j, Y" }}</p>
+            <p><strong>{% trans "From:" %}</strong> {{ sender_name }}</p>
+        </div>
+
+        <p>{% trans "You now have full access to all features included in your subscription." %}</p>
+
+        <p>{% trans "Enjoy!" %}</p>
+    </div>
+    <div class="footer">
+        <p>{{ site_name }}</p>
+    </div>
+</body>
+</html>

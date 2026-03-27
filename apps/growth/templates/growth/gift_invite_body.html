@@ -1,0 +1,51 @@
+{% load i18n %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{% trans "Gift Subscription" %}</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .content { background: #f9f9f9; padding: 30px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 5px 5px; }
+        .message { background: white; padding: 15px; border-left: 4px solid #4CAF50; margin: 20px 0; font-style: italic; }
+        .button { display: inline-block; background: #4CAF50; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        .footer { text-align: center; color: #666; font-size: 12px; margin-top: 30px; }
+        .expiry { color: #ff9800; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>{% trans "🎁 You've Received a Gift!" %}</h1>
+    </div>
+    <div class="content">
+        <p>{% trans "Hi there!" %}</p>
+
+        <p>{% blocktrans with sender_name=sender_name plan_name=plan_name duration_days=duration_days %}
+            <strong>{{ sender_name }}</strong> has gifted you a <strong>{{ plan_name }}</strong> subscription for <strong>{{ duration_days }} days</strong>!
+        {% endblocktrans %}</p>
+
+        {% if message %}
+        <div class="message">
+            "{{ message }}"
+        </div>
+        {% endif %}
+
+        <p style="text-align: center;">
+            <a href="{{ claim_url }}" class="button">{% trans "Claim Your Gift" %}</a>
+        </p>
+
+        <p class="expiry">
+            {% blocktrans with expires_at=expires_at|date:"F j, Y" %}
+            ⏰ This gift link expires on {{ expires_at }}.
+            {% endblocktrans %}
+        </p>
+
+        <p>{% trans "If the button doesn't work, copy and paste this link:" %}<br>
+        <small>{{ claim_url }}</small></p>
+    </div>
+    <div class="footer">
+        <p>{{ site_name }}</p>
+    </div>
+</body>
+</html>

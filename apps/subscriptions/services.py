@@ -12,11 +12,6 @@ from ipware import get_client_ip
 from apps.accounts.models import User
 from .models import Plan, PlanPrice, Subscription, SubscriptionHistory, UpgradeHistory, GiftSubscription, GeoPlanPrice
 
-
-# =============================================================================
-# REGION MAPPING
-# =============================================================================
-
 COUNTRY_TO_REGION = {
     # APAC
     "IN": "APAC", "CN": "APAC", "JP": "APAC", "KR": "APAC", "SG": "APAC",
@@ -49,127 +44,52 @@ COUNTRY_TO_REGION = {
     "CD": "SSA", "CG": "SSA", "GA": "SSA", "GQ": "SSA",
 }
 
-
 def get_region_for_country(country_code: str) -> Optional[str]:
-    """Get region for a country code."""
     return COUNTRY_TO_REGION.get(country_code.upper()) if country_code else None
 
-
 def get_request_country(request) -> str:
-    """
-    Get the country code from request using priority order:
-    1. Cloudflare header (HTTP_CF_IPCOUNTRY) - PRIMARY
-    2. django-ipware for IP detection - FALLBACK (logs IP, no fake mapping)
-    3. settings.DEFAULT_COUNTRY or "US" - FINAL FALLBACK
-
-    Args:
-        request: Django HTTP request object
-
-    Returns:
-        str: Two-letter country code (uppercase)
-    """
     import logging
-
     logger = logging.getLogger(__name__)
-
-    # 1. Cloudflare header (PRIMARY)
     cf_country = request.META.get("HTTP_CF_IPCOUNTRY", "").upper()
     if cf_country and cf_country != "XX" and len(cf_country) == 2:
         return cf_country
-
-    # 2. IPWARE fallback (detects IP, logs, but no geo mapping)
     client_ip, is_routable = get_client_ip(request)
     if client_ip:
         if is_routable:
-            logger.debug(f"IP detected ({client_ip}) but no geo mapping available, using default country")
+            logger.debug(f"IP detected ({client_ip}) but no geo mapping available")
         else:
-            logger.debug(f"Private/non-routable IP detected ({client_ip}), using default country")
-        # Intentionally fall through to default — no fake country mapping
-
-    # 3. Default fallback (FINAL)
+            logger.debug(f"Private/non-routable IP detected ({client_ip})")
     default_country = getattr(settings, "DEFAULT_COUNTRY", "US")
     return default_country.upper()
 
-
 def get_pricing_country(request) -> Optional[str]:
-    """
-    Get the country code for pricing based on request.
-    Priority:
-    1. ?test_country=XX query param (only if DEBUG=True)
-    2. Cloudflare header (HTTP_CF_IPCOUNTRY)
-    3. IP-based geolocation (via django-ipware)
-    4. settings.DEFAULT_COUNTRY or "US"
-    """
-    # Debug override
     if getattr(settings, "DEBUG", False):
         test_country = request.GET.get("test_country")
         if test_country:
             return test_country.upper()
-
-    # Use the new get_request_country helper
     return get_request_country(request)
 
-
-def resolve_plan_price(plan: Plan, interval: str, request) -> GeoPlanPrice:
-    """
-    Resolve the correct price for a user based on geo location.
-
-    Resolution order:
-    1. GeoPlanPrice country match (with interval)
-    2. GeoPlanPrice region fallback (with interval)
-    3. Legacy PlanPrice global price (with interval)
-
-    Args:
-        plan: The Plan to get pricing for
-        interval: 'monthly' or 'yearly'
-        request: HTTP request object for geo detection
-
-    Returns:
-        GeoPlanPrice or PlanPrice: The resolved price (guaranteed exactly one)
-
-    Raises:
-        PlanPrice.DoesNotExist: If no price found for plan/interval
-    """
+def resolve_plan_price(plan: Plan, interval: str, request):
     country = get_pricing_country(request)
     region = get_region_for_country(country) if country else None
-
-    # 1. Try GeoPlanPrice country-specific (with interval)
     if country:
         try:
             return GeoPlanPrice.objects.get(
-                plan=plan,
-                interval=interval,
-                country=country.upper(),
-                is_active=True
+                plan=plan, interval=interval, country=country.upper(), is_active=True
             )
         except GeoPlanPrice.DoesNotExist:
             pass
-
-    # 2. Try GeoPlanPrice regional (with interval)
     if region:
         try:
             return GeoPlanPrice.objects.get(
-                plan=plan,
-                interval=interval,
-                region=region,
-                country__isnull=True,
-                is_active=True
+                plan=plan, interval=interval, region=region, country__isnull=True, is_active=True
             )
         except GeoPlanPrice.DoesNotExist:
             pass
-
-    # 3. Fallback to legacy global PlanPrice (with interval)
     try:
-        return PlanPrice.objects.get(
-            plan=plan,
-            interval=interval,
-            is_active=True
-        )
+        return PlanPrice.objects.get(plan=plan, interval=interval, is_active=True)
     except PlanPrice.DoesNotExist:
-        raise PlanPrice.DoesNotExist(
-            f"No active price found for plan '{plan.name}' with interval '{interval}'"
-        )
-
+        raise PlanPrice.DoesNotExist(f"No active price for plan '{plan.name}' interval '{interval}'")
 
 def create_gift_subscription(
     from_user: User,
@@ -187,45 +107,27 @@ def create_gift_subscription(
         duration_days=duration_days,
         expires_at=timezone.now() + timezone.timedelta(days=30),
     )
-
-    SubscriptionHistory.objects.create(
-        subscription=None,
-        user=from_user,
-        event_type=SubscriptionHistory.EventType.CREATED,
-        metadata={
-            "gift_id": str(gift.id),
-            "gift_code": gift.gift_code,
-            "plan_id": str(plan.id),
-            "action": "gift_created"
-        },
-        notes=f"Created gift subscription for {plan.name}"
-    )
-
+    # NOTE: SubscriptionHistory NOT created here - no Subscription exists yet.
+    # History is created when gift is claimed and real Subscription is created.
     return gift
-
 
 def claim_gift_subscription(
     gift_code: str,
     to_user: User,
     request = None
 ) -> Subscription:
-    """Claim a gift subscription."""
     gift = GiftSubscription.objects.get(
         gift_code=gift_code.upper(),
         status=GiftSubscription.Status.PENDING
     )
-
     if gift.expires_at < timezone.now():
         gift.status = GiftSubscription.Status.EXPIRED
         gift.save()
         raise ValueError("Gift code has expired")
-
     if gift.to_user:
         raise ValueError("Gift already claimed")
-
     with transaction.atomic():
         expires_at = timezone.now() + timezone.timedelta(days=gift.duration_days)
-
         subscription = Subscription.objects.create(
             user=to_user,
             plan=gift.plan,
@@ -238,13 +140,11 @@ def claim_gift_subscription(
             gift_from=gift.from_user,
             gift_message=gift.message,
         )
-
         gift.to_user = to_user
         gift.status = GiftSubscription.Status.CLAIMED
         gift.claimed_at = timezone.now()
         gift.resulting_subscription = subscription
         gift.save()
-
         SubscriptionHistory.objects.create(
             subscription=subscription,
             user=to_user,
@@ -258,16 +158,13 @@ def claim_gift_subscription(
             },
             notes=f"Claimed gift from {gift.from_user.username}"
         )
-
         emit_event(
             event_type="SUBSCRIPTION_CREATED",
             subscription=subscription,
             user=to_user,
             metadata={"source": "gift", "gift_id": str(gift.id)}
         )
-
-    return subscription
-
+        return subscription
 
 def grant_subscription_by_admin(
     user: User,
@@ -277,10 +174,8 @@ def grant_subscription_by_admin(
     reason: str = "",
     request = None
 ) -> Subscription:
-    """Grant a subscription to a user (admin function)."""
     with transaction.atomic():
         expires_at = timezone.now() + timezone.timedelta(days=duration_days)
-
         subscription = Subscription.objects.create(
             user=user,
             plan=plan,
@@ -292,7 +187,6 @@ def grant_subscription_by_admin(
             granted_by=granted_by,
             grant_reason=reason,
         )
-
         SubscriptionHistory.objects.create(
             subscription=subscription,
             user=user,
@@ -306,7 +200,6 @@ def grant_subscription_by_admin(
             },
             notes=f"Admin grant by {granted_by.username}: {plan.name}"
         )
-
         emit_event(
             event_type="ADMIN_GRANTED_PLAN",
             subscription=subscription,
@@ -317,9 +210,7 @@ def grant_subscription_by_admin(
                 "reason": reason
             }
         )
-
-    return subscription
-
+        return subscription
 
 def emit_event(
     event_type: str,
@@ -327,9 +218,7 @@ def emit_event(
     user: User,
     metadata: Dict[str, Any] = None
 ):
-    """Emit a subscription event."""
     import logging
-
     event_data = {
         "event_type": event_type,
         "subscription_id": str(subscription.id) if subscription else None,
@@ -337,16 +226,12 @@ def emit_event(
         "timestamp": timezone.now().isoformat(),
         "metadata": metadata or {}
     }
-
     logger = logging.getLogger(__name__)
     logger.info(f"SUBSCRIPTION_EVENT: {event_type} - {event_data}")
 
-
 def start_trial(user: User, plan: Plan, days: int = 14, request = None) -> Subscription:
-    """Start a trial subscription for a user."""
     with transaction.atomic():
         expires_at = timezone.now() + timezone.timedelta(days=days)
-
         subscription = Subscription.objects.create(
             user=user,
             plan=plan,
@@ -356,7 +241,6 @@ def start_trial(user: User, plan: Plan, days: int = 14, request = None) -> Subsc
             expires_at=expires_at,
             payment_provider="trial",
         )
-
         SubscriptionHistory.objects.create(
             subscription=subscription,
             user=user,
@@ -366,26 +250,20 @@ def start_trial(user: User, plan: Plan, days: int = 14, request = None) -> Subsc
             metadata={"trial_days": days},
             notes=f"Started {days}-day trial"
         )
-
         emit_event(
             event_type="TRIAL_STARTED",
             subscription=subscription,
             user=user,
             metadata={"trial_days": days}
         )
-
-    return subscription
-
+        return subscription
 
 def expire_trial(subscription: Subscription):
-    """Mark a trial subscription as expired."""
     if subscription.payment_provider != "trial":
         raise ValueError("Only trial subscriptions can be expired this way")
-
     subscription.status = Subscription.Status.EXPIRED
     subscription.is_active = False
     subscription.save()
-
     SubscriptionHistory.objects.create(
         subscription=subscription,
         user=subscription.user,
@@ -394,7 +272,6 @@ def expire_trial(subscription: Subscription):
         new_status=Subscription.Status.EXPIRED,
         notes="Trial expired"
     )
-
     emit_event(
         event_type="TRIAL_EXPIRED",
         subscription=subscription,

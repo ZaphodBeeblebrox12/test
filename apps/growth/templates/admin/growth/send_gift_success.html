@@ -7,7 +7,7 @@
 <div class="breadcrumbs">
     <a href="{% url 'admin:index' %}">Home</a>
     &rsaquo; <a href="{% url 'admin:app_list' app_label='growth' %}">Growth</a>
-    &rsaquo; <a href="{% url 'admin:growth_send_gift' %}">Send Gift</a>
+    &rsaquo; <a href="{% url 'growth_admin:growth_send_gift' %}">Send Gift</a>
     &rsaquo; Success
 </div>
 {% endblock %}
@@ -15,7 +15,7 @@
 {% block content %}
 <div id="content-main">
     <div class="success-message" style="background: #dfd; border: 1px solid #ada; padding: 20px; margin-bottom: 30px; border-radius: 4px;">
-        <h2 style="color: #363; margin: 0 0 15px 0;">✓ Gift Sent Successfully!</h2>
+        <h2 style="color: #363; margin: 0 0 15px 0;">✅ Gift Sent Successfully!</h2>
         <p style="margin: 0; font-size: 14px;">
             <strong>{{ recipient_email }}</strong> has been sent a <strong>{{ plan_name }}</strong> 
             subscription for <strong>{{ duration_days }} days</strong>.
@@ -29,7 +29,7 @@
         </p>
 
         <div style="background: #fff; border: 1px solid #ccc; padding: 15px; border-radius: 4px; word-break: break-all; font-family: monospace; font-size: 13px; margin-bottom: 15px;" id="claim-url">
-            {{ claim_url }}
+          {{ claim_url }}
         </div>
 
         <button type="button" class="button" onclick="copyClaimUrl()" style="padding: 8px 20px; cursor: pointer;">
@@ -39,7 +39,7 @@
     </fieldset>
 
     <div style="margin-top: 30px;">
-        <a href="{% url 'admin:growth_send_gift' %}" class="button" style="padding: 10px 25px; text-decoration: none; display: inline-block;">
+        <a href="{% url 'growth_admin:growth_send_gift' %}" class="button" style="padding: 10px 25px; text-decoration: none; display: inline-block;">
             Send Another Gift
         </a>
         <a href="{% url 'admin:index' %}" class="button" style="padding: 10px 25px; text-decoration: none; display: inline-block; margin-left: 10px;">

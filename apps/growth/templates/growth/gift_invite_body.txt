@@ -1,0 +1,18 @@
+{% load i18n %}{% blocktrans %}Hi there!{% endblocktrans %}
+
+{% blocktrans with sender_name=sender_name plan_name=plan_name duration_days=duration_days %}{{ sender_name }} has gifted you a {{ plan_name }} subscription for {{ duration_days }} days!{% endblocktrans %}
+
+{% if message %}
+"{{ message }}"
+
+{% endif %}
+{% blocktrans %}Claim your gift by clicking the link below:{% endblocktrans %}
+
+{{ claim_url }}
+
+{% blocktrans with expires_at=expires_at|date:"F j, Y" %}This gift link expires on {{ expires_at }}.{% endblocktrans %}
+
+{% blocktrans %}Enjoy!{% endblocktrans %}
+
+---
+{{ site_name }}

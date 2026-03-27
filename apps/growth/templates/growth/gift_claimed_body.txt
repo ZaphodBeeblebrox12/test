@@ -1,0 +1,19 @@
+{% load i18n %}
+{% blocktrans %}Hi {{ user.username }},{% endblocktrans %}
+
+{% blocktrans with plan_name=plan_name duration_days=duration_days %}
+Your gift subscription to {{ plan_name }} has been activated for {{ duration_days }} days!
+{% endblocktrans %}
+
+{% blocktrans with subscription_expires=subscription_expires|date:"F j, Y" %}
+Your subscription is now active and will expire on {{ subscription_expires }}.
+{% endblocktrans %}
+
+{% blocktrans with sender_name=sender_name %}
+This gift was from {{ sender_name }}.
+{% endblocktrans %}
+
+{% blocktrans %}Enjoy your subscription!{% endblocktrans %}
+
+---
+{{ site_name }}

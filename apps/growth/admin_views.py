@@ -26,11 +26,8 @@ class SendGiftAdminView(View):
 
     def get(self, request):
         """Show the send gift form."""
-        # Get active plans for the dropdown
         plans = Plan.objects.filter(is_active=True).order_by('name')
-
         form = AdminGiftSendForm()
-        # Set plan choices
         form.fields['plan'].queryset = plans
 
         return render(request, self.template_name, {
@@ -42,13 +39,11 @@ class SendGiftAdminView(View):
     def post(self, request):
         """Process the gift sending."""
         plans = Plan.objects.filter(is_active=True).order_by('name')
-
         form = AdminGiftSendForm(request.POST)
         form.fields['plan'].queryset = plans
 
         if form.is_valid():
             try:
-                # Create the gift
                 gift_sub, gift_invite = GiftService.create_gift(
                     from_user=request.user,
                     recipient_email=form.cleaned_data['recipient_email'],
@@ -58,12 +53,10 @@ class SendGiftAdminView(View):
                     request=request,
                 )
 
-                # Build claim URL
                 claim_url = request.build_absolute_uri(
                     reverse('growth:claim', kwargs={'token': gift_invite.claim_token})
                 )
 
-                # Send email
                 email_sent = GiftEmailService.send_gift_email(
                     gift_invite=gift_invite,
                     claim_url=claim_url,
@@ -71,7 +64,7 @@ class SendGiftAdminView(View):
 
                 if email_sent:
                     messages.success(
-                        request, 
+                        request,
                         f"Gift sent to {gift_invite.recipient_email} successfully!"
                     )
                 else:
@@ -80,9 +73,8 @@ class SendGiftAdminView(View):
                         f"Gift created but email failed to send. Claim URL: {claim_url}"
                     )
 
-                # Redirect to success page with claim URL
-                return redirect('admin:growth_send_gift_success', 
-                              gift_invite_id=gift_invite.id)
+                return redirect('growth_admin:growth_send_gift_success',
+                               gift_invite_id=gift_invite.id)
 
             except Exception as e:
                 messages.error(request, f"Error sending gift: {str(e)}")
@@ -98,8 +90,6 @@ class SendGiftAdminView(View):
 class SendGiftSuccessAdminView(View):
     """
     Success page after sending a gift.
-
-    Shows claim URL with copy button.
     """
     template_name = "admin/growth/send_gift_success.html"
 
@@ -113,9 +103,8 @@ class SendGiftSuccessAdminView(View):
             )
         except GiftInvite.DoesNotExist:
             messages.error(request, "Gift not found.")
-            return redirect('admin:growth_send_gift')
+            return redirect('growth_admin:growth_send_gift')
 
-        # Build claim URL
         claim_url = request.build_absolute_uri(
             reverse('growth:claim', kwargs={'token': gift_invite.claim_token})
         )

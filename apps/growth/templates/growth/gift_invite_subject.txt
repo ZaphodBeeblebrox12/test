@@ -1,0 +1,1 @@
+{% load i18n %}{% blocktrans with sender_name=sender_name %}You've received a gift subscription from {{ sender_name }}!{% endblocktrans %}

@@ -7,8 +7,10 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 urlpatterns = [
-    # Growth admin views - MUST be first to work properly
-    path("admin/", include("apps.growth.admin_urls")),
+    # Growth admin views - MUST be first to avoid catch_all_view interception
+    path("admin/", include("apps.growth.admin_urls", namespace="growth_admin")),
+
+    # Django admin (default) - comes after so growth URLs take precedence
     path("admin/", admin.site.urls),
 
     path("accounts/", include("allauth.urls")),
