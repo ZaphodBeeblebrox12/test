@@ -77,6 +77,15 @@ class User(AbstractBaseUser, PermissionsMixin):
     bio = models.TextField(blank=True, help_text=_("User biography"))
     avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
 
+    # NEW: Display name for gifts/emails
+    nickname = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name='Display Name',
+        help_text='Custom display name shown in gift emails. Falls back to first name if empty.',
+    )
+
     # Role and permissions
     role = models.CharField(
         max_length=10,
