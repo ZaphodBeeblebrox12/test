@@ -160,7 +160,7 @@ class LegacyGiftService:
         return GiftAttribution(
             source="gift",
             gift_id=str(gift.id),
-            claimed_from_email=gift.from_user.email or gift_from_user.username,
+            claimed_from_email=gift.from_user.email or gift.from_user.username,
         )
 
     @classmethod
@@ -485,7 +485,7 @@ class GiftEmailService:
 
     @classmethod
     def send_gift_email(cls, gift_invite: GiftInvite, claim_url: str, resend: bool = False) -> bool:
-        """Send gift invitation email."""
+        """Send gift invitation email with DEBUG LOGGING."""
         from apps.notifications.services import NotificationService
 
         if resend and not GiftService.can_resend_email(gift_invite):
@@ -496,8 +496,14 @@ class GiftEmailService:
         from_user = gift_sub.from_user
         plan = gift_sub.plan
 
+        # DEBUG: Log what we're getting
+        logger.info(f"DEBUG - User: {from_user.username}")
+        logger.info(f"DEBUG - First name: '{from_user.first_name}'")
+        logger.info(f"DEBUG - Nickname: '{getattr(from_user, 'nickname', 'FIELD_MISSING')}'")
+
         # Get display name: nickname > first_name > username
         sender_display_name = cls._get_user_display_name(from_user)
+        logger.info(f"DEBUG - Resolved display name: '{sender_display_name}'")
 
         context = {
             'recipient_email': gift_invite.recipient_email,
