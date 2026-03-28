@@ -9,19 +9,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.subscriptions.models import Plan, Subscription
-from apps.subscriptions.services import (
-    resolve_plan_price,
-    get_pricing_country,
-)
+from apps.subscriptions.services import resolve_plan_price, get_pricing_country
 
 from .models import PaymentIntent
 
 
 def get_provider_for_country(country_code: str) -> str:
-    """
-    Select payment provider based on country.
-    IN -> Razorpay, everything else -> Stripe
-    """
+    """Select payment provider based on country. IN -> Razorpay, else Stripe."""
     if country_code and country_code.upper() == "IN":
         return PaymentIntent.Provider.RAZORPAY
     return PaymentIntent.Provider.STRIPE
@@ -30,39 +24,18 @@ def get_provider_for_country(country_code: str) -> str:
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def payment_start(request):
-    """
-    Start a payment flow.
-
-    Request body:
-        plan_id: UUID of plan to purchase
-        interval: 'monthly' or 'yearly' (default: monthly)
-
-    Returns:
-        provider: 'stripe' or 'razorpay'
-        payment_intent_id: UUID of created payment intent
-        checkout_url: Dummy checkout URL for now
-        amount: Amount in cents
-        currency: Currency code
-    """
+    """Start a payment flow."""
     plan_id = request.data.get("plan_id")
     interval = request.data.get("interval", "monthly")
 
     if not plan_id:
-        return Response(
-            {"detail": "plan_id is required."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({"detail": "plan_id is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Get plan
     try:
         plan = Plan.objects.get(id=plan_id, is_active=True)
     except Plan.DoesNotExist:
-        return Response(
-            {"detail": "Plan not found."},
-            status=status.HTTP_404_NOT_FOUND
-        )
+        return Response({"detail": "Plan not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    # Resolve geo price
     try:
         resolved_price = resolve_plan_price(plan, interval, request)
     except Exception:
@@ -71,11 +44,9 @@ def payment_start(request):
             status=status.HTTP_404_NOT_FOUND
         )
 
-    # Detect country and select provider
     country = get_pricing_country(request)
     provider = get_provider_for_country(country)
 
-    # Create payment intent
     with transaction.atomic():
         payment_intent = PaymentIntent.objects.create(
             user=request.user,
@@ -88,7 +59,6 @@ def payment_start(request):
             country=country or ""
         )
 
-    # Generate dummy checkout URL
     checkout_url = f"/payments/checkout/{payment_intent.id}/"
 
     return Response({
@@ -97,55 +67,28 @@ def payment_start(request):
         "checkout_url": checkout_url,
         "amount": payment_intent.amount,
         "currency": payment_intent.currency,
-        "plan": {
-            "id": str(plan.id),
-            "name": plan.name,
-            "tier": plan.tier
-        }
+        "plan": {"id": str(plan.id), "name": plan.name, "tier": plan.tier}
     })
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def payment_confirm(request):
-    """
-    Confirm a payment (simulate success).
-
-    Request body:
-        payment_intent_id: UUID of payment intent to confirm
-
-    Returns:
-        status: 'success'
-        subscription: Active subscription details
-    """
+    """Confirm a payment and activate subscription with referral reward."""
     payment_intent_id = request.data.get("payment_intent_id")
 
     if not payment_intent_id:
-        return Response(
-            {"detail": "payment_intent_id is required."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({"detail": "payment_intent_id is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Get payment intent
     try:
-        payment_intent = PaymentIntent.objects.get(
-            id=payment_intent_id,
-            user=request.user
-        )
+        payment_intent = PaymentIntent.objects.get(id=payment_intent_id, user=request.user)
     except PaymentIntent.DoesNotExist:
-        return Response(
-            {"detail": "Payment intent not found."},
-            status=status.HTTP_404_NOT_FOUND
-        )
+        return Response({"detail": "Payment intent not found."}, status=status.HTTP_404_NOT_FOUND)
 
-    # Check if already processed
     if payment_intent.status == PaymentIntent.Status.SUCCESS:
-        # Return existing subscription
         try:
             subscription = Subscription.objects.get(
-                user=request.user,
-                plan=payment_intent.plan,
-                is_active=True
+                user=request.user, plan=payment_intent.plan, is_active=True
             )
             return Response({
                 "status": "success",
@@ -161,25 +104,18 @@ def payment_confirm(request):
             pass
 
     if payment_intent.status == PaymentIntent.Status.FAILED:
-        return Response(
-            {"detail": "Payment has already failed."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        return Response({"detail": "Payment has already failed."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Simulate payment success and activate subscription
     with transaction.atomic():
-        # Mark payment as success
         payment_intent.status = PaymentIntent.Status.SUCCESS
         payment_intent.save()
 
-        # Calculate expiration (1 month or 1 year based on interval)
         interval = getattr(payment_intent.plan_price, 'interval', 'monthly')
         if interval == 'yearly':
             expires_at = timezone.now() + timezone.timedelta(days=365)
         else:
             expires_at = timezone.now() + timezone.timedelta(days=30)
 
-        # Create subscription using existing system
         subscription = Subscription.objects.create(
             user=request.user,
             plan=payment_intent.plan,
@@ -192,29 +128,25 @@ def payment_confirm(request):
             pricing_country=payment_intent.country
         )
 
-        # ============================================================================
-        # REFERRAL COMPLETION ON PURCHASE (Phase 2)
-        # Complete referral ONLY after successful payment
-        # ============================================================================
+        # COMPLETE REFERRAL AND CREATE REWARD (Phase 2.2)
         try:
             from apps.growth.services import ReferralService
-            ReferralService.complete_referral_on_purchase(request.user)
+            ReferralService.complete_referral_on_purchase(
+                user=request.user,
+                purchase_amount_cents=payment_intent.amount,
+                currency=payment_intent.currency
+            )
         except Exception as e:
-            # Log but don't break payment flow
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Failed to complete referral on purchase: {e}")
+            logger.error(f"Failed to complete referral and create reward: {e}")
 
     return Response({
         "status": "success",
         "message": "Payment confirmed and subscription activated.",
         "subscription": {
             "id": str(subscription.id),
-            "plan": {
-                "id": str(subscription.plan.id),
-                "name": subscription.plan.name,
-                "tier": subscription.plan.tier
-            },
+            "plan": {"id": str(subscription.plan.id), "name": subscription.plan.name, "tier": subscription.plan.tier},
             "status": subscription.status,
             "is_active": subscription.is_active,
             "started_at": subscription.started_at,
@@ -226,19 +158,11 @@ def payment_confirm(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def payment_status(request, payment_intent_id):
-    """
-    Get status of a payment intent.
-    """
+    """Get status of a payment intent."""
     try:
-        payment_intent = PaymentIntent.objects.get(
-            id=payment_intent_id,
-            user=request.user
-        )
+        payment_intent = PaymentIntent.objects.get(id=payment_intent_id, user=request.user)
     except PaymentIntent.DoesNotExist:
-        return Response(
-            {"detail": "Payment intent not found."},
-            status=status.HTTP_404_NOT_FOUND
-        )
+        return Response({"detail": "Payment intent not found."}, status=status.HTTP_404_NOT_FOUND)
 
     return Response({
         "id": str(payment_intent.id),
@@ -246,10 +170,7 @@ def payment_status(request, payment_intent_id):
         "provider": payment_intent.provider,
         "amount": payment_intent.amount,
         "currency": payment_intent.currency,
-        "plan": {
-            "id": str(payment_intent.plan.id),
-            "name": payment_intent.plan.name
-        },
+        "plan": {"id": str(payment_intent.plan.id), "name": payment_intent.plan.name},
         "created_at": payment_intent.created_at,
         "updated_at": payment_intent.updated_at
     })

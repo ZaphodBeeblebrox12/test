@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Referral Rewards - {{ block.super }}{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row">
+        <div class="col-lg-8 mx-auto">
+
+            <div class="text-center mb-5">
+                <h1 class="display-5 fw-bold">Referral Rewards</h1>
+                <p class="lead text-muted">Invite friends and earn subscription credit</p>
+            </div>
+
+            <!-- Referral Code Card -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body p-4">
+                    <h5 class="card-title mb-3">Your Referral Code</h5>
+                    <div class="input-group input-group-lg mb-3">
+                        <input type="text" class="form-control form-control-lg text-center fw-bold" 
+                               value="{{ referral_code.code }}" readonly id="referralCode">
+                        <button class="btn btn-outline-primary" type="button" onclick="copyCode()">
+                            <i class="fas fa-copy"></i> Copy
+                        </button>
+                    </div>
+                    <p class="text-muted small mb-0">
+                        Share this link: <a href="{{ referral_link }}" class="text-decoration-none">{{ referral_link }}</a>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Reward Balance Card -->
+            <div class="card border-0 shadow-sm mb-4 bg-primary text-white">
+                <div class="card-body p-4">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <h6 class="text-white-50 mb-2">Your Reward Balance</h6>
+                            <h2 class="display-4 fw-bold mb-0">{{ reward_balance_display }}</h2>
+                            <small class="text-white-50">{{ reward_buckets }} reward bucket{{ reward_buckets|pluralize }}</small>
+                        </div>
+                        <div class="col-md-6 text-md-end mt-3 mt-md-0">
+                            {% if extension_estimate.can_extend %}
+                                <div class="bg-white bg-opacity-10 rounded p-3">
+                                    <small class="text-white-50">Estimated Extension</small>
+                                    <div class="fw-bold">+{{ extension_estimate.extra_days }} days</div>
+                                    <small class="text-white-50">on your next plan purchase</small>
+                                </div>
+                            {% else %}
+                                <div class="bg-white bg-opacity-10 rounded p-3">
+                                    <small class="text-white-50">Complete a referral to earn rewards</small>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats Row -->
+            <div class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body text-center">
+                            <h3 class="fw-bold text-primary mb-1">{{ referral_stats.completed }}</h3>
+                            <small class="text-muted">Completed Referrals</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body text-center">
+                            <h3 class="fw-bold text-warning mb-1">{{ referral_stats.pending }}</h3>
+                            <small class="text-muted">Pending Referrals</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card border-0 shadow-sm h-100">
+                        <div class="card-body text-center">
+                            <h3 class="fw-bold text-success mb-1">{{ referral_stats.total_referrals }}</h3>
+                            <small class="text-muted">Total Referrals</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- How It Works -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-transparent">
+                    <h5 class="mb-0">How It Works</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-4">
+                        <div class="col-md-4 text-center">
+                            <div class="bg-primary bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
+                                <i class="fas fa-share-alt text-primary fa-lg"></i>
+                            </div>
+                            <h6>1. Share</h6>
+                            <p class="small text-muted mb-0">Share your referral code with friends</p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <div class="bg-primary bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
+                                <i class="fas fa-shopping-cart text-primary fa-lg"></i>
+                            </div>
+                            <h6>2. They Purchase</h6>
+                            <p class="small text-muted mb-0">Friend signs up and buys a subscription</p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <div class="bg-primary bg-opacity-10 rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
+                                <i class="fas fa-gift text-primary fa-lg"></i>
+                            </div>
+                            <h6>3. You Earn</h6>
+                            <p class="small text-muted mb-0">Earn credit toward extra subscription time</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Rewards -->
+            {% if recent_rewards %}
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-transparent">
+                    <h5 class="mb-0">Recent Rewards</h5>
+                </div>
+                <div class="list-group list-group-flush">
+                    {% for reward in recent_rewards %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-bold">+${{ reward.amount_display }}</div>
+                            <small class="text-muted">
+                                From {{ reward.referral.referred_user.username }}'s purchase
+                            </small>
+                        </div>
+                        <div class="text-end">
+                            {% if reward.status == 'credited' %}
+                                <span class="badge bg-success">Available</span>
+                            {% elif reward.status == 'used' %}
+                                <span class="badge bg-secondary">Used</span>
+                            {% elif reward.status == 'pending' %}
+                                <span class="badge bg-warning">Pending</span>
+                            {% endif %}
+                            <div class="small text-muted mt-1">{{ reward.created_at|date:"M d, Y" }}</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+        </div>
+    </div>
+</div>
+
+<script>
+function copyCode() {
+    const codeInput = document.getElementById('referralCode');
+    codeInput.select();
+    codeInput.setSelectionRange(0, 99999);
+    navigator.clipboard.writeText(codeInput.value);
+
+    const btn = document.querySelector('button[onclick="copyCode()"]');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+    btn.classList.remove('btn-outline-primary');
+    btn.classList.add('btn-success');
+
+    setTimeout(() => {
+        btn.innerHTML = originalText;
+        btn.classList.remove('btn-success');
+        btn.classList.add('btn-outline-primary');
+    }, 2000);
+}
+</script>
+{% endblock %}

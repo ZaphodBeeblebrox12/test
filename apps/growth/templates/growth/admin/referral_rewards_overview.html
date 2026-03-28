@@ -1,0 +1,117 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}Referral Rewards Overview | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label='growth' %}">Growth</a>
+    &rsaquo; Referral Rewards Overview
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <h1>Referral Rewards Overview</h1>
+
+    <div class="module aligned">
+        <h2>Current Settings</h2>
+        <div class="form-row">
+            <div class="field-box">
+                <label>Reward Percentage:</label>
+                <div class="readonly">{{ settings.default_reward_percentage }}%</div>
+            </div>
+            <div class="field-box">
+                <label>Minimum Purchase:</label>
+                <div class="readonly">${{ settings.minimum_purchase_amount_cents|floatformat:2 }}</div>
+            </div>
+            <div class="field-box">
+                <label>Rewards Enabled:</label>
+                <div class="readonly">{% if settings.rewards_enabled %}Yes{% else %}No{% endif %}</div>
+            </div>
+        </div>
+        <div class="submit-row">
+            <a href="{% url 'admin:growth_referralsettings_change' settings.id %}" class="default">Edit Settings</a>
+        </div>
+    </div>
+
+    <div class="module">
+        <h2>Reward Statistics</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0;">
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;">
+                <div style="font-size: 32px; font-weight: bold; color: #417690;">{{ total_rewards }}</div>
+                <div style="color: #666;">Total Rewards Issued</div>
+            </div>
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;">
+                <div style="font-size: 32px; font-weight: bold; color: #28a745;">${{ total_issued|floatformat:2 }}</div>
+                <div style="color: #666;">Total Value Issued</div>
+            </div>
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;">
+                <div style="font-size: 32px; font-weight: bold; color: #dc3545;">${{ total_used|floatformat:2 }}</div>
+                <div style="color: #666;">Total Used</div>
+            </div>
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;">
+                <div style="font-size: 32px; font-weight: bold; color: #ffc107;">${{ total_outstanding|floatformat:2 }}</div>
+                <div style="color: #666;">Outstanding Balance</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="module">
+        <h2>Recent Rewards</h2>
+        <div class="results">
+            <table id="result_list">
+                <thead>
+                    <tr>
+                        <th>Referrer</th>
+                        <th>Referred User</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Available</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for reward in recent_rewards %}
+                    <tr class="{% cycle 'row1' 'row2' %}">
+                        <td><a href="{% url 'admin:accounts_user_change' reward.referrer.id %}">{{ reward.referrer.username }}</a></td>
+                        <td>{{ reward.referral.referred_user.username }}</td>
+                        <td>${{ reward.amount_cents|floatformat:2 }}</td>
+                        <td>
+                            {% if reward.status == 'credited' %}
+                                <span style="color: #28a745;">✓ Credited</span>
+                            {% elif reward.status == 'used' %}
+                                <span style="color: #6c757d;">Used</span>
+                            {% elif reward.status == 'pending' %}
+                                <span style="color: #ffc107;">Pending</span>
+                            {% else %}
+                                {{ reward.status }}
+                            {% endif %}
+                        </td>
+                        <td>${{ reward.available_amount_cents|floatformat:2 }}</td>
+                        <td>{{ reward.created_at|date:"Y-m-d H:i" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 20px; color: #666;">
+                            No rewards issued yet.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="module">
+        <h2>Quick Links</h2>
+        <ul>
+            <li><a href="{% url 'admin:growth_referralsettings_changelist' %}">Edit Referral Settings</a></li>
+            <li><a href="{% url 'admin:growth_referralreward_changelist' %}">View All Rewards</a></li>
+            <li><a href="{% url 'admin:growth_referralrewardledger_changelist' %}">View Reward Ledger</a></li>
+            <li><a href="{% url 'admin:growth_referral_changelist' %}">View Referrals</a></li>
+        </ul>
+    </div>
+</div>
+{% endblock %}
