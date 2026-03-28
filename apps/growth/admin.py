@@ -1,51 +1,136 @@
 """
-Growth admin configuration.
+Growth app admin configuration.
+Safety enforced: GiftInvite cannot be created directly in admin.
 """
 from django.contrib import admin
-from django.urls import reverse
-from django.utils.html import format_html
-from django.utils.translation import gettext_lazy as _
-from django.utils import timezone
+from django.conf import settings
+from django.contrib import messages
 
-from .models import GiftInvite, PendingGiftClaim
+from .models import GiftInvite, PendingGiftClaim, ReferralCode, Referral
+
+
+# ============================================================================
+# REFERRAL ADMIN
+# ============================================================================
+
+@admin.register(ReferralCode)
+class ReferralCodeAdmin(admin.ModelAdmin):
+    list_display = ["code", "user", "created_at"]
+    list_select_related = ["user"]
+    search_fields = ["code", "user__username", "user__email"]
+    readonly_fields = ["code", "created_at"]
+    ordering = ["-created_at"]
+
+
+@admin.register(Referral)
+class ReferralAdmin(admin.ModelAdmin):
+    list_display = ["referrer", "referred_user", "status", "created_at", "completed_at"]
+    list_select_related = ["referrer", "referred_user"]
+    list_filter = ["status", "created_at"]
+    search_fields = [
+        "referrer__username",
+        "referrer__email",
+        "referred_user__username",
+        "referred_user__email",
+    ]
+    readonly_fields = ["created_at", "completed_at"]
+    ordering = ["-created_at"]
+
+    actions = ["simulate_purchase"]
+
+    @admin.action(description="Simulate purchase (DEBUG only)")
+    def simulate_purchase(self, request, queryset):
+        """
+        Admin action to simulate a purchase for selected referrals.
+        Only works in DEBUG mode.
+        """
+        if not settings.DEBUG:
+            self.message_user(
+                request,
+                "Purchase simulation is only available in DEBUG mode.",
+                level=messages.ERROR
+            )
+            return
+
+        from .services import simulate_purchase, PurchaseSimulationError
+
+        success_count = 0
+        error_count = 0
+
+        for referral in queryset.select_related("referred_user"):
+            user = referral.referred_user
+
+            try:
+                result = simulate_purchase(user)
+
+                if result.get("referral_completed"):
+                    success_count += 1
+                    self.message_user(
+                        request,
+                        f"✓ {user.username}: Purchase simulated, referral completed.",
+                        level=messages.SUCCESS
+                    )
+                else:
+                    self.message_user(
+                        request,
+                        f"⚠ {user.username}: Purchase simulated, but no pending referral found.",
+                        level=messages.WARNING
+                    )
+
+            except PurchaseSimulationError as e:
+                error_count += 1
+                self.message_user(
+                    request,
+                    f"✗ {user.username}: {str(e)}",
+                    level=messages.ERROR
+                )
+
+        if success_count > 0 or error_count > 0:
+            summary = f"Processed {success_count + error_count} users."
+            if success_count > 0:
+                summary += f" {success_count} referrals completed."
+            if error_count > 0:
+                summary += f" {error_count} errors."
+
+            self.message_user(request, summary, level=messages.INFO)
+
+
+# ============================================================================
+# GIFT ADMIN (Safety Enforced)
+# ============================================================================
+
+class ReadOnlyAdminMixin:
+    """Mixin that makes admin read-only and disables add permission."""
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        # Allow deletion for cleanup
+        return True
 
 
 @admin.register(GiftInvite)
-class GiftInviteAdmin(admin.ModelAdmin):
+class GiftInviteAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
     """
-    Admin for GiftInvite.
+    GiftInvite admin - READ ONLY.
 
-    Creation is DISABLED - use the Send Gift page instead.
+    SAFETY: Direct creation is DISABLED.
+    GiftInvite must ONLY be created through GiftService.
     """
-
     list_display = [
-        "id",
-        "recipient_email_masked",
-        "status",
-        "gift_subscription_link",
-        "claimed_by",
-        "claimed_at",
-        "expires_at",
-        "is_expired_display",
-        "email_sent_at",
-        "created_at",
-    ]
-
-    list_filter = [
-        "status",
-        "created_at",
-        "expires_at",
-        "email_sent_at",
-    ]
-
-    search_fields = [
         "recipient_email",
-        "claim_token_hash",
-        "gift_subscription__gift_code",
+        "status",
+        "claimed_by",
+        "expires_at",
+        "created_at",
     ]
-
+    list_filter = ["status", "created_at", "expires_at"]
+    search_fields = ["recipient_email", "claimed_by__username", "claimed_by__email"]
     readonly_fields = [
-        "id",
         "gift_subscription",
         "recipient_email",
         "recipient_email_hash",
@@ -60,81 +145,35 @@ class GiftInviteAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
     ]
+    ordering = ["-created_at"]
 
-    # Use custom changelist template with Send Gift button
-    change_list_template = "admin/growth/giftinvite/change_list.html"
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return True
-
-    def has_change_permission(self, request, obj=None):
-        if request.user.is_superuser:
-            return True
-        return False
-
-    def recipient_email_masked(self, obj):
-        if obj.recipient_email:
-            parts = obj.recipient_email.split("@")
-            if len(parts) == 2:
-                local, domain = parts
-                masked_local = local[:2] + "***" if len(local) > 2 else "***"
-                return f"{masked_local}@{domain}"
-        return obj.recipient_email
-    recipient_email_masked.short_description = _("Recipient Email")
-
-    def gift_subscription_link(self, obj):
-        if obj.gift_subscription:
-            url = reverse(
-                "admin:subscriptions_giftsubscription_change",
-                args=[obj.gift_subscription.id]
-            )
-            return format_html(
-                '<a href="{}">{}</a>',
-                url,
-                obj.gift_subscription.gift_code[:8] + "..."
-            )
-        return "-"
-    gift_subscription_link.short_description = _("Gift Subscription")
-
-    def is_expired_display(self, obj):
-        if obj.status == GiftInvite.Status.CLAIMED:
-            return "Claimed"
-        if obj.is_expired:
-            return "Expired"
-        days_left = (obj.expires_at - timezone.now()).days
-        return f"Active ({days_left} days left)"
-    is_expired_display.short_description = _("Expiration Status")
+    fieldsets = (
+        ("Gift Information", {
+            "fields": ("gift_subscription", "recipient_email", "status")
+        }),
+        ("Claim Information", {
+            "fields": ("claimed_by", "claimed_at")
+        }),
+        ("Email Tracking", {
+            "fields": ("email_sent_at", "email_resend_count", "last_email_sent_at")
+        }),
+        ("Metadata", {
+            "fields": ("expires_at", "created_at", "updated_at"),
+            "classes": ("collapse",)
+        }),
+    )
 
 
 @admin.register(PendingGiftClaim)
-class PendingGiftClaimAdmin(admin.ModelAdmin):
-    list_display = [
-        "id",
-        "claim_token_short",
-        "status",
-        "session_key_short",
-        "processed_by",
-        "created_at",
-        "is_stale_display",
-    ]
-
-    list_filter = [
-        "status",
-        "created_at",
-        "processed_at",
-    ]
-
-    search_fields = [
-        "claim_token_hash",
-        "session_key",
-        "processed_by__username",
-    ]
-
+class PendingGiftClaimAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
+    """
+    PendingGiftClaim admin - READ ONLY.
+    These are system-generated records.
+    """
+    list_display = ["session_key", "status", "processed_by", "created_at"]
+    list_filter = ["status", "created_at"]
+    search_fields = ["session_key", "processed_by__username"]
     readonly_fields = [
-        "id",
         "claim_token_hash",
         "session_key",
         "status",
@@ -145,26 +184,4 @@ class PendingGiftClaimAdmin(admin.ModelAdmin):
         "user_agent",
         "created_at",
     ]
-
-    def has_add_permission(self, request):
-        return False
-
-    def claim_token_short(self, obj):
-        return obj.claim_token_hash[:16] + "..."
-    claim_token_short.short_description = _("Token Hash")
-
-    def session_key_short(self, obj):
-        return obj.session_key[:8] + "..." if obj.session_key else "-"
-    session_key_short.short_description = _("Session Key")
-
-    def is_stale_display(self, obj):
-        if obj.status == PendingGiftClaim.Status.PROCESSED:
-            return "Processed"
-        if obj.is_stale:
-            return "Stale (>7 days)"
-        return "Valid"
-    is_stale_display.short_description = _("Stale Status")
-
-
-# Set custom admin index template to show Send Gift button
-admin.site.index_template = "admin/custom_index.html"
+    ordering = ["-created_at"]

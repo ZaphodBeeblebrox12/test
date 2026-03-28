@@ -1,53 +1,35 @@
 """
-Growth signals for auto-processing pending claims.
-
-This module connects to auth signals to automatically process
-gift claims when users sign up or log in.
+Growth app signals.
 """
 import logging
 
+from django.db.models.signals import post_save
 from django.dispatch import receiver
-from django.contrib.auth import user_logged_in
-from allauth.account.signals import user_signed_up
+from django.conf import settings
 
-from .views import ProcessPendingClaimsView
+from .models import ReferralCode
 
 logger = logging.getLogger(__name__)
 
 
-@receiver(user_logged_in)
-def process_pending_claims_on_login(sender, request, user, **kwargs):
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
+def create_referral_code(sender, instance, created, **kwargs):
     """
-    Process any pending gift claims when a user logs in.
-
-    This handles the case where an anonymous user clicked a gift
-    link, was redirected to login, and is now authenticating.
+    Auto-create referral code when user signs up.
+    Non-blocking - logs error but doesn't fail signup if creation fails.
     """
-    try:
-        subscription = ProcessPendingClaimsView.process_for_request(request)
-        if subscription:
-            logger.info(
-                f"Auto-processed pending gift claim for user {user.id} "
-                f"on login, subscription {subscription.id}"
+    if created:
+        try:
+            ReferralCode.objects.get_or_create(
+                user=instance,
+                defaults={"code": ReferralCode.generate_unique_code()}
             )
-    except Exception as e:
-        logger.error(f"Error processing pending claims on login: {e}")
+            logger.info(f"Referral code created for user {instance.id}")
+        except Exception as e:
+            # Log but don't break signup flow
+            logger.error(f"Failed to create referral code for user {instance.id}: {e}")
 
 
-@receiver(user_signed_up)
-def process_pending_claims_on_signup(sender, request, user, **kwargs):
-    """
-    Process any pending gift claims when a user signs up.
-
-    This handles the case where an anonymous user clicked a gift
-    link, was redirected to signup, and has now created an account.
-    """
-    try:
-        subscription = ProcessPendingClaimsView.process_for_request(request)
-        if subscription:
-            logger.info(
-                f"Auto-processed pending gift claim for user {user.id} "
-                f"on signup, subscription {subscription.id}"
-            )
-    except Exception as e:
-        logger.error(f"Error processing pending claims on signup: {e}")
+# NOTE: Referral completion on email confirmation has been REMOVED.
+# Referrals are now completed ONLY after successful purchase.
+# See ReferralService.complete_referral_on_purchase() in services.py

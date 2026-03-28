@@ -192,6 +192,19 @@ def payment_confirm(request):
             pricing_country=payment_intent.country
         )
 
+        # ============================================================================
+        # REFERRAL COMPLETION ON PURCHASE (Phase 2)
+        # Complete referral ONLY after successful payment
+        # ============================================================================
+        try:
+            from apps.growth.services import ReferralService
+            ReferralService.complete_referral_on_purchase(request.user)
+        except Exception as e:
+            # Log but don't break payment flow
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to complete referral on purchase: {e}")
+
     return Response({
         "status": "success",
         "message": "Payment confirmed and subscription activated.",

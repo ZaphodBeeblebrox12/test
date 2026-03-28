@@ -1,19 +1,26 @@
 """
-Growth models for gift invites and pending claims.
+Growth models for gift invites, pending claims, and referral tracking.
 
 This module contains:
 - GiftInvite: Token-based gift invitation (service-created only)
 - PendingGiftClaim: Stores anonymous claim attempts for post-signup processing
+- ReferralCode: Unique referral code per user
+- Referral: Tracks referral relationships between users
 """
 import uuid
 import secrets
 import hashlib
+import string
 
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 
+
+# ============================================================================
+# GIFT MODELS (Existing)
+# ============================================================================
 
 class GiftInvite(models.Model):
     """
@@ -141,7 +148,7 @@ class GiftInvite(models.Model):
     def is_claimable(self) -> bool:
         """Check if the invite can still be claimed."""
         return (
-            self.status == self.Status.PENDING 
+            self.status == self.Status.PENDING
             and not self.is_expired
             and self.claimed_by is None
         )
@@ -251,3 +258,109 @@ class PendingGiftClaim(models.Model):
         return timezone.now() > (
             self.created_at + timezone.timedelta(days=7)
         )
+
+
+# ============================================================================
+# REFERRAL TRACKING MODELS (NEW)
+# ============================================================================
+
+class ReferralCode(models.Model):
+    """
+    Unique referral code for each user.
+    Auto-created on user signup via signal.
+    """
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="referral_code",
+        primary_key=True,
+    )
+    code = models.CharField(
+        max_length=16,
+        unique=True,
+        db_index=True,
+        help_text="Unique referral code"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "referral code"
+        verbose_name_plural = "referral codes"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.code} ({self.user.username})"
+
+    @classmethod
+    def generate_unique_code(cls) -> str:
+        """Generate a unique 8-character alphanumeric code: 4 letters + 4 numbers."""
+        while True:
+            letters = ''.join(secrets.choice(string.ascii_uppercase) for _ in range(4))
+            numbers = ''.join(secrets.choice(string.digits) for _ in range(4))
+            code = f"{letters}{numbers}"
+            if not cls.objects.filter(code=code).exists():
+                return code
+
+    @classmethod
+    def get_or_create_for_user(cls, user) -> "ReferralCode":
+        """Get existing code or create new one for user."""
+        obj, created = cls.objects.get_or_create(
+            user=user,
+            defaults={"code": cls.generate_unique_code()}
+        )
+        return obj
+
+
+class Referral(models.Model):
+    """
+    Tracks referral relationships between users.
+    Status transitions: pending -> completed (on purchase only)
+    """
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        COMPLETED = "completed", "Completed"
+
+    referrer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="referrals_made",
+        help_text="User who shared their referral code"
+    )
+    referred_user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="referred_by",
+        help_text="User who signed up with the code"
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.PENDING
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "referral"
+        verbose_name_plural = "referrals"
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                check=~models.Q(referrer=models.F("referred_user")),
+                name="prevent_self_referral"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.referrer.username} -> {self.referred_user.username} ({self.status})"
+
+    def mark_completed(self) -> None:
+        """Mark referral as completed."""
+        if self.status != self.Status.COMPLETED:
+            self.status = self.Status.COMPLETED
+            self.completed_at = timezone.now()
+            self.save(update_fields=["status", "completed_at"])
+
+    @property
+    def is_completed(self) -> bool:
+        return self.status == self.Status.COMPLETED

@@ -1,5 +1,5 @@
 """
-Growth services for gift invites and claiming.
+Growth services for gift invites and referral tracking.
 """
 import logging
 from typing import Optional, Tuple
@@ -22,10 +22,254 @@ from apps.subscriptions.api import (
     get_gift_by_id,
 )
 
-from .models import GiftInvite, PendingGiftClaim
+from .models import GiftInvite, PendingGiftClaim, Referral, ReferralCode
 
 logger = logging.getLogger(__name__)
 
+
+# ============================================================================
+# REFERRAL SERVICE (Purchase Completion)
+# ============================================================================
+
+class ReferralService:
+    """
+    Service for handling referral tracking operations.
+    Referrals are completed ONLY after purchase (not on signup).
+    """
+
+    @staticmethod
+    def get_code_by_string(code: str) -> Optional[ReferralCode]:
+        """Lookup referral code by string (case-insensitive)."""
+        if not code:
+            return None
+        try:
+            return ReferralCode.objects.select_related("user").get(
+                code=code.upper().strip()
+            )
+        except ReferralCode.DoesNotExist:
+            return None
+
+    @classmethod
+    @transaction.atomic
+    def record_referral_signup(cls, referred_user: User, code: str) -> Optional[Referral]:
+        """
+        Record that a user signed up with a referral code.
+        Called during signup flow. Referral stays PENDING.
+
+        Returns:
+            Referral object if successful, None if code invalid or self-referral
+        """
+        referral_code = cls.get_code_by_string(code)
+
+        if not referral_code:
+            logger.info(f"Invalid referral code used: {code}")
+            return None
+
+        referrer = referral_code.user
+
+        # Prevent self-referral
+        if referrer.id == referred_user.id:
+            logger.warning(f"Self-referral attempt by user {referred_user.id}")
+            return None
+
+        # Check if referred_user already has a referral record
+        if hasattr(referred_user, "referred_by"):
+            logger.info(f"User {referred_user.id} already has referral record")
+            return referred_user.referred_by
+
+        # Create referral record (starts as pending - will complete on purchase)
+        referral = Referral.objects.create(
+            referrer=referrer,
+            referred_user=referred_user,
+            status=Referral.Status.PENDING
+        )
+
+        logger.info(f"Referral recorded (pending): {referrer.id} -> {referred_user.id}")
+        return referral
+
+    @classmethod
+    @transaction.atomic
+    def complete_referral_on_purchase(cls, user: User) -> Optional[Referral]:
+        """
+        Mark a user's referral as completed after successful purchase.
+        This is the ONLY way referrals should be completed.
+
+        Args:
+            user: User who just made a purchase
+
+        Returns:
+            Referral object if completed, None if no pending referral or already completed
+        """
+        try:
+            referral = Referral.objects.select_for_update().get(
+                referred_user=user,
+                status=Referral.Status.PENDING
+            )
+
+            # Idempotent - only complete if pending
+            if referral.status == Referral.Status.PENDING:
+                referral.mark_completed()
+                logger.info(f"Referral completed on purchase: {referral.id}")
+                return referral
+
+        except Referral.DoesNotExist:
+            logger.debug(f"No pending referral found for user {user.id}")
+        except Exception as e:
+            logger.error(f"Error completing referral for user {user.id}: {e}")
+
+        return None
+
+    @classmethod
+    def get_referral_stats(cls, user: User) -> dict:
+        """
+        Get referral statistics for a user.
+        Tracking only - no reward calculations.
+        """
+        referrals = Referral.objects.filter(referrer=user)
+
+        return {
+            "total_referrals": referrals.count(),
+            "completed": referrals.filter(status=Referral.Status.COMPLETED).count(),
+            "pending": referrals.filter(status=Referral.Status.PENDING).count(),
+            "referral_code": getattr(user, "referral_code", None),
+        }
+
+
+# ============================================================================
+# PURCHASE SIMULATION (DEBUG ONLY)
+# ============================================================================
+
+class PurchaseSimulationError(Exception):
+    """Raised when purchase simulation fails."""
+    pass
+
+
+def simulate_purchase(user: User, plan=None, duration_days: int = 30) -> dict:
+    """
+    Simulate a successful purchase for testing referrals.
+
+    SAFETY:
+    - Only available in DEBUG mode
+    - Creates or extends subscription using existing API
+    - Calls ReferralService.complete_referral_on_purchase()
+    - Idempotent - safe to call multiple times
+
+    Args:
+        user: User to simulate purchase for
+        plan: Plan to subscribe to (uses lowest active plan if None)
+        duration_days: Duration of simulated subscription (default 30)
+
+    Returns:
+        dict with result info
+
+    Raises:
+        PurchaseSimulationError: If not in DEBUG mode or simulation fails
+    """
+    from apps.subscriptions.models import Plan, Subscription
+
+    # SAFETY: Only allow in DEBUG mode
+    if not settings.DEBUG:
+        raise PurchaseSimulationError(
+            "Purchase simulation is only available in DEBUG mode"
+        )
+
+    try:
+        with transaction.atomic():
+            # Get or use provided plan
+            if plan is None:
+                plan = Plan.objects.filter(is_active=True).first()
+                if not plan:
+                    raise PurchaseSimulationError("No active plans available for simulation")
+
+            # Check for existing subscription
+            existing_sub = get_active_subscription(user)
+
+            if existing_sub:
+                # Extend existing subscription
+                old_expires = existing_sub.expires_at
+                new_expires = old_expires + timedelta(days=duration_days)
+
+                existing_sub.expires_at = new_expires
+                existing_sub.save(update_fields=['expires_at'])
+
+                subscription = existing_sub
+                action = "extended"
+
+                # Create history record
+                from apps.subscriptions.models import SubscriptionHistory
+                SubscriptionHistory.objects.create(
+                    subscription=subscription,
+                    user=user,
+                    event_type=SubscriptionHistory.EventType.RENEWED,
+                    new_plan_id=plan.id,
+                    new_status=subscription.status,
+                    metadata={
+                        "simulated": True,
+                        "extension_days": duration_days,
+                        "previous_expiry": old_expires.isoformat() if old_expires else None,
+                        "new_expiry": new_expires.isoformat(),
+                    },
+                    notes="Simulated purchase (DEBUG)"
+                )
+            else:
+                # Create new subscription
+                expires_at = timezone.now() + timedelta(days=duration_days)
+
+                subscription = Subscription.objects.create(
+                    user=user,
+                    plan=plan,
+                    status=Subscription.Status.ACTIVE,
+                    is_active=True,
+                    started_at=timezone.now(),
+                    expires_at=expires_at,
+                    pricing_country="US",
+                    pricing_region="NA",
+                )
+
+                action = "created"
+
+                # Create history record
+                from apps.subscriptions.models import SubscriptionHistory
+                SubscriptionHistory.objects.create(
+                    subscription=subscription,
+                    user=user,
+                    event_type=SubscriptionHistory.EventType.CREATED,
+                    new_plan_id=plan.id,
+                    new_status=subscription.status,
+                    metadata={
+                        "simulated": True,
+                        "duration_days": duration_days,
+                    },
+                    notes="Simulated purchase (DEBUG)"
+                )
+
+            # Complete referral if pending
+            referral = ReferralService.complete_referral_on_purchase(user)
+
+            result = {
+                "success": True,
+                "action": action,
+                "subscription_id": str(subscription.id),
+                "plan_name": plan.name,
+                "expires_at": subscription.expires_at.isoformat(),
+                "referral_completed": referral is not None,
+            }
+
+            if referral:
+                result["referral_id"] = str(referral.id)
+                result["referrer_username"] = referral.referrer.username
+
+            logger.info(f"Purchase simulation successful for user {user.id}: {action}")
+            return result
+
+    except Exception as e:
+        logger.error(f"Purchase simulation failed for user {user.id}: {e}")
+        raise PurchaseSimulationError(f"Simulation failed: {str(e)}")
+
+
+# ============================================================================
+# GIFT SERVICES (Existing - preserved)
+# ============================================================================
 
 class GiftServiceError(Exception):
     """Base exception for gift service errors."""
