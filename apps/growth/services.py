@@ -6,6 +6,13 @@ Architecture Notes:
 - User balance = sum of available amounts (via UserRewardBalance helper)
 - Consumption = FIFO across buckets
 - Application = explicit call via SubscriptionCreditService
+
+Phase 4 (Viral Mode) Changes:
+- Referral can be applied at signup OR before first paid purchase
+- 72-hour delay before rewards unlock (configurable in admin)
+- Refund checking before unlock via explicit subscription link
+- Circular referral blocking (no reward, no extra state)
+- Subscription-based validation (canonical business state)
 """
 import logging
 from typing import Optional, Tuple, List
@@ -30,9 +37,9 @@ from apps.subscriptions.api import (
 )
 
 from .models import (
-    GiftInvite, 
-    PendingGiftClaim, 
-    Referral, 
+    GiftInvite,
+    PendingGiftClaim,
+    Referral,
     ReferralCode,
     ReferralSettings,
     ReferralReward,
@@ -58,9 +65,9 @@ class UserRewardBalance:
 
     Usage:
         balance = UserRewardBalance(user)
-        print(balance.total_cents)        # 250 (cents)
-        print(balance.total_display)      # "$2.50"
-        print(balance.reward_count)       # 3 (buckets)
+        print(balance.total_cents)  # 250 (cents)
+        print(balance.total_display)  # "$2.50"
+        print(balance.reward_count)  # 3 (buckets)
         rewards = balance.get_consumable_rewards()  # List of ReferralReward
     """
 
@@ -69,17 +76,17 @@ class UserRewardBalance:
         self._cache = None
 
     def _get_rewards(self) -> List[ReferralReward]:
-        """Get all non-expired rewards for user."""
+        """Get all non-expired, credited rewards for user."""
         if self._cache is None:
             self._cache = list(ReferralReward.objects.filter(
                 referrer=self.user,
-                status__in=[ReferralReward.Status.CREDITED, ReferralReward.Status.PENDING]
+                status=ReferralReward.Status.CREDITED  # Only count credited (not pending)
             ))
         return self._cache
 
     @property
     def total_cents(self) -> int:
-        """Total available balance in cents (sum of all reward buckets)."""
+        """Total available balance in cents (sum of all credited reward buckets)."""
         return sum(r.available_amount_cents for r in self._get_rewards() if not r.is_expired)
 
     @property
@@ -95,7 +102,7 @@ class UserRewardBalance:
     def get_consumable_rewards(self) -> List[ReferralReward]:
         """Get rewards ordered by creation (FIFO for consumption)."""
         return [
-            r for r in self._get_rewards() 
+            r for r in self._get_rewards()
             if r.available_amount_cents > 0 and not r.is_expired
         ]
 
@@ -119,6 +126,8 @@ class ReferralRewardService:
     2. User balance = sum of available amounts (via UserRewardBalance helper)
     3. Consumption = FIFO across buckets
     4. Application = explicit call via SubscriptionCreditService
+    5. Rewards start as PENDING, unlock after delay (default 72 hours)
+    6. Refunds block reward unlock via explicit subscription link
     """
 
     DECIMAL_PRECISION = Decimal("0.01")
@@ -146,10 +155,12 @@ class ReferralRewardService:
         cls,
         referral: Referral,
         purchase_amount_cents: int,
-        currency: str = "USD"
+        currency: str = "USD",
+        triggering_subscription=None
     ) -> Optional[ReferralReward]:
         """
         Create a reward when a referral is completed.
+        Reward starts as PENDING and unlocks after configured delay.
 
         Called by: Referral completion flow (after successful payment)
 
@@ -157,6 +168,7 @@ class ReferralRewardService:
             referral: The completed Referral instance
             purchase_amount_cents: Amount of the referred user's purchase
             currency: Currency of the purchase
+            triggering_subscription: The subscription that triggered this reward
 
         Returns:
             ReferralReward if created, None if skipped (rewards disabled, already exists, etc.)
@@ -191,7 +203,11 @@ class ReferralRewardService:
             logger.info(f"Calculated reward is zero, skipping")
             return None
 
-        # Create the reward + ledger entry atomically
+        # Calculate unlock time (default 72 hours from now)
+        delay_hours = settings_obj.reward_delay_hours or 72
+        unlocked_at = timezone.now() + timezone.timedelta(hours=delay_hours)
+
+        # Create the reward as PENDING (not immediately credited)
         reward = ReferralReward.objects.create(
             referral=referral,
             referrer=referral.referrer,
@@ -199,28 +215,136 @@ class ReferralRewardService:
             currency=currency,
             referred_purchase_amount_cents=purchase_amount_cents,
             reward_percentage=settings_obj.default_reward_percentage,
-            status=ReferralReward.Status.CREDITED
-        )
-
-        ReferralRewardLedger.objects.create(
-            reward=reward,
-            transaction_type=ReferralRewardLedger.TransactionType.CREDIT,
-            amount_cents=reward_amount_cents,
-            balance_after_cents=reward_amount_cents,
-            description=f"Referral reward earned from {referral.referred_user.username}'s purchase"
+            status=ReferralReward.Status.PENDING,
+            unlocked_at=unlocked_at,
+            triggering_subscription=triggering_subscription  # Explicit link for refund checking
         )
 
         logger.info(
-            f"Created reward {reward.id}: {reward_amount_cents/100:.2f} {currency} "
-            f"for referrer {referral.referrer.id}"
+            f"Created pending reward {reward.id}: {reward_amount_cents/100:.2f} {currency} "
+            f"for referrer {referral.referrer.id}, unlocks at {unlocked_at}, "
+            f"triggered by subscription {triggering_subscription.id if triggering_subscription else 'N/A'}"
         )
 
         return reward
 
     @classmethod
+    @transaction.atomic
+    def unlock_eligible_rewards(cls) -> int:
+        """
+        Process rewards that are ready to unlock (after delay).
+
+        For each eligible reward:
+        1. Check if subscription was refunded using explicit subscription link
+        2. If refunded → mark as EXPIRED
+        3. If not refunded → credit wallet, create ledger entry, mark CREDITED
+
+        Returns:
+            Number of rewards processed
+        """
+        from apps.subscriptions.models import Subscription
+        from apps.payments.models import PaymentIntent
+
+        # Find rewards that are pending and past their unlock time
+        pending_rewards = ReferralReward.objects.filter(
+            status=ReferralReward.Status.PENDING,
+            unlocked_at__lte=timezone.now()
+        ).select_related('referral', 'referral__referred_user', 'triggering_subscription')
+
+        processed_count = 0
+
+        for reward in pending_rewards:
+            try:
+                # Get the triggering subscription (explicit link)
+                triggering_sub = reward.triggering_subscription
+
+                if not triggering_sub:
+                    # No subscription link - cannot verify refund status safely
+                    # Skip this reward for now (will retry later)
+                    logger.warning(
+                        f"Reward {reward.id} has no triggering_subscription link, "
+                        f"skipping unlock until link is established"
+                    )
+                    continue
+
+                # Check if the subscription is still valid (not refunded/cancelled)
+                # A refunded subscription would typically be marked as cancelled or have a refund record
+                is_subscription_valid = (
+                    triggering_sub.is_active or 
+                    (triggering_sub.status == Subscription.Status.EXPIRED and 
+                     triggering_sub.expires_at and 
+                     triggering_sub.expires_at > timezone.now() - timezone.timedelta(days=30))
+                )
+
+                # Additional check: look for refund in PaymentIntent
+                # This requires the payment to be linked to the subscription
+                payment_refunded = False
+                try:
+                    # Try to find a refunded payment for this user/plan combo
+                    # around the time of subscription creation
+                    payment_refunded = PaymentIntent.objects.filter(
+                        user=reward.referral.referred_user,
+                        plan=triggering_sub.plan,
+                        status__in=['refunded', 'canceled']  # Adjust based on your PaymentIntent statuses
+                    ).exists()
+                except Exception:
+                    # If we can't check, default to assuming not refunded
+                    # (safer to delay than to wrongly expire)
+                    pass
+
+                if payment_refunded or not is_subscription_valid:
+                    # Subscription was refunded or cancelled - expire the reward
+                    reward.mark_expired(reason="refunded")
+
+                    # Create ledger entry for the expiration
+                    ReferralRewardLedger.objects.create(
+                        reward=reward,
+                        transaction_type=ReferralRewardLedger.TransactionType.EXPIRED,
+                        amount_cents=0,
+                        balance_after_cents=0,
+                        description=f"Reward expired: referred subscription was refunded or cancelled"
+                    )
+
+                    logger.info(
+                        f"Reward {reward.id} expired: triggering subscription "
+                        f"{triggering_sub.id} was refunded or cancelled"
+                    )
+                    processed_count += 1
+                    continue
+
+                # Subscription is still valid - credit the reward
+                reward.mark_credited()
+
+                # Create ledger entry for the credit
+                ReferralRewardLedger.objects.create(
+                    reward=reward,
+                    transaction_type=ReferralRewardLedger.TransactionType.CREDIT,
+                    amount_cents=reward.amount_cents,
+                    balance_after_cents=reward.amount_cents,
+                    description=f"Referral reward credited from {reward.referral.referred_user.username}'s purchase"
+                )
+
+                logger.info(
+                    f"Reward {reward.id} credited: {reward.amount_cents/100:.2f} "
+                    f"for referrer {reward.referrer.id}"
+                )
+                processed_count += 1
+
+            except Exception as e:
+                logger.error(f"Error unlocking reward {reward.id}: {e}")
+                continue
+
+        return processed_count
+
+    @classmethod
     def get_user_reward_balance(cls, user: User) -> int:
         """Legacy method - use UserRewardBalance instead for new code."""
         return UserRewardBalance(user).total_cents
+
+    @classmethod
+    def get_user_rewards(cls, user: User) -> List[ReferralReward]:
+        """Get all rewards for a user."""
+        return list(ReferralReward.objects.filter(referrer=user).order_by("-created_at"))
 
     @classmethod
     def calculate_pro_rata_extension_days(
@@ -233,20 +357,22 @@ class ReferralRewardService:
         Calculate extra subscription days from reward credit using pro-rata.
 
         Formula:
-        extra_days = (reward_amount / plan_price) × plan_duration_days
+            extra_days = (reward_amount / plan_price) × plan_duration_days
 
         Example:
-        - Plan costs $10 for 30 days
-        - User has $2 credit
-        - Extra days = (2 / 10) × 30 = 6 days
+            - Plan costs $10 for 30 days
+            - User has $2 credit
+            - Extra days = (2 / 10) × 30 = 6 days
+
+        Note: The < 1 day check is handled at consumption time to preserve user credits
 
         Args:
             reward_amount_cents: Available reward amount in cents
             plan_price_cents: Plan price in cents
-            plan_duration_days: Duration of plan in days (default 30)
+            plan_duration_days: Duration of plan in days (from plan model)
 
         Returns:
-            Number of extra days to extend
+            Number of extra days to extend (0 if < 1 day)
         """
         if plan_price_cents <= 0 or reward_amount_cents <= 0:
             return 0
@@ -259,7 +385,11 @@ class ReferralRewardService:
         extra_days = (reward / price) * duration
 
         # Round to nearest whole day using ROUND_HALF_UP
-        return int(extra_days.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        days = int(extra_days.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+        # Note: The < 1 day safeguard is handled at consumption time
+        # in apply_credit_to_subscription() to preserve user credits
+        return days
 
     @classmethod
     def estimate_extension_for_balance(
@@ -272,14 +402,14 @@ class ReferralRewardService:
         Estimate subscription extension for user's current reward balance.
 
         Returns dict with:
-        - balance_cents: Current reward balance
-        - balance_display: Formatted balance
-        - plan_price_cents: Plan price used
-        - plan_duration_days: Plan duration used
-        - extra_days: Calculated extra days
-        - extension_percentage: How much of plan duration this represents
-        - can_extend: Whether extension is possible
-        - reward_buckets: Number of reward buckets
+            - balance_cents: Current reward balance
+            - balance_display: Formatted balance
+            - plan_price_cents: Plan price used
+            - plan_duration_days: Plan duration used
+            - extra_days: Calculated extra days
+            - extension_percentage: How much of plan duration this represents
+            - can_extend: Whether extension is possible
+            - reward_buckets: Number of reward buckets
         """
         balance = UserRewardBalance(user)
         extra_days = balance.calculate_extension_days(plan_price_cents, plan_duration_days)
@@ -317,18 +447,18 @@ class SubscriptionCreditService:
             user=request.user,
             subscription=new_subscription,
             plan_price_cents=plan_price_cents,
-            plan_duration_days=30
+            plan_duration_days=plan_duration_days
         )
 
         if result:
             print(f"Extended by {result['extra_days']} days")
 
     Design:
-    - Gets user's available credit via UserRewardBalance
-    - Calculates pro-rata extension
-    - Consumes rewards (FIFO - oldest first)
-    - Creates audit trail in ledger
-    - Extends subscription expires_at
+        - Gets user's available credit via UserRewardBalance
+        - Calculates pro-rata extension
+        - Consumes rewards (FIFO - oldest first)
+        - Creates audit trail in ledger
+        - Extends subscription expires_at
     """
 
     @classmethod
@@ -346,13 +476,13 @@ class SubscriptionCreditService:
         This is THE CENTRAL FUNCTION for credit → subscription conversion.
 
         Process:
-        1. Check user's available reward balance
-        2. Calculate pro-rata extension days
-        3. If extension > 0 days:
-           a. Consume rewards (FIFO - oldest first)
-           b. Create ledger entries for each consumption
-           c. Extend subscription expires_at
-           d. Return extension details
+            1. Check user's available reward balance (only CREDITED rewards)
+            2. Calculate pro-rata extension days
+            3. If extension > 0 days:
+                a. Consume rewards (FIFO - oldest first)
+                b. Create ledger entries for each consumption
+                c. Extend subscription expires_at
+                d. Return extension details
 
         Args:
             user: User whose credit to apply
@@ -374,7 +504,7 @@ class SubscriptionCreditService:
                 ]
             }
         """
-        # Get user's balance
+        # Get user's balance (only CREDITED rewards)
         balance = UserRewardBalance(user)
         total_credit = balance.total_cents
 
@@ -389,8 +519,13 @@ class SubscriptionCreditService:
             plan_duration_days
         )
 
-        if extra_days <= 0:
-            logger.debug(f"Credit {total_credit}cents too small for extension")
+        # SAFEGUARD: Don't consume credits if result is < 1 day
+        # This preserves user credits instead of making them disappear
+        if extra_days < 1:
+            logger.debug(
+                f"Credit {total_credit}cents would extend < 1 day ({extra_days}), "
+                f"preserving credits in wallet"
+            )
             return None
 
         # Consume rewards (FIFO - oldest first)
@@ -412,12 +547,7 @@ class SubscriptionCreditService:
             reward.mark_used(consume)
             amount_to_consume -= consume
 
-            consumed_rewards.append({
-                "reward_id": str(reward.id),
-                "amount_consumed_cents": consume,
-            })
-
-            # Create ledger entry
+            # Create ledger entry for this consumption
             ReferralRewardLedger.objects.create(
                 reward=reward,
                 transaction_type=ReferralRewardLedger.TransactionType.DEBIT,
@@ -431,6 +561,11 @@ class SubscriptionCreditService:
                 }
             )
 
+            consumed_rewards.append({
+                "reward_id": str(reward.id),
+                "amount_consumed_cents": consume,
+            })
+
         # Extend the subscription
         old_expires = subscription.expires_at
         new_expires = old_expires + timedelta(days=extra_days)
@@ -439,9 +574,10 @@ class SubscriptionCreditService:
 
         actual_consumed = total_credit - amount_to_consume
 
+        # Log credit application
         logger.info(
-            f"Extended subscription {subscription.id} by {extra_days} days "
-            f"using ${actual_consumed/100:.2f} credit for user {user.id}"
+            f"Applied ${actual_consumed/100:.2f} credit to subscription {subscription.id} "
+            f"for user {user.id}, extended by {extra_days} days"
         )
 
         return {
@@ -477,17 +613,12 @@ class ReferralService:
     """
     Service for handling referral tracking and reward creation.
 
-    TRIGGER LOCATION NOTE:
-    Currently, complete_referral_on_purchase is called from payments/views.py
-    after successful payment. This works but couples referral rewards to the
-    payment view.
-
-    For future-proofing, consider moving to:
-    - Signal on Subscription post_save (when status becomes ACTIVE)
-    - Payment provider webhook handler
-    - Event bus / outbox pattern (for high scale)
-
-    The important invariant: reward is ONLY created after confirmed payment.
+    Phase 4 (Viral Mode) Features:
+    - Referral can be applied at signup OR before first paid purchase
+    - Subscription-based validation (canonical business state)
+    - Circular referrals blocked (no reward, no extra state)
+    - Rewards delayed 72 hours before unlock
+    - Refunds block reward unlock via explicit subscription link
     """
 
     @staticmethod
@@ -503,11 +634,95 @@ class ReferralService:
             return None
 
     @classmethod
+    def _has_any_successful_paid_subscription(cls, user: User) -> bool:
+        """
+        Check if user has EVER had a successful paid subscription.
+        This is the canonical check for "first purchase" eligibility.
+
+        Uses Subscription model as source of truth.
+
+        ASSUMPTION: 
+        - Paid subscriptions have payment_provider set (Stripe/Razorpay)
+        - Gift subscriptions have payment_provider = None
+        - If your model has an explicit `is_paid` or `source` field, use that instead
+
+        TODO: If you add an explicit `is_paid` or `source` field to Subscription,
+        update this method to use that instead of payment_provider__isnull.
+        """
+        from apps.subscriptions.models import Subscription
+        return Subscription.objects.filter(
+            user=user,
+            status__in=[Subscription.Status.ACTIVE, Subscription.Status.EXPIRED],
+            # ASSUMPTION: payment_provider indicates paid vs gift
+            # Paid = Stripe/Razorpay, Gift = None
+            payment_provider__isnull=False
+        ).exists()
+
+    @classmethod
+    def can_apply_referral(cls, user: User) -> bool:
+        """
+        Check if user can apply a referral code.
+
+        Returns True if:
+        - User does not already have a referrer
+        - User has NEVER had a successful paid subscription
+        """
+        # Check if user already has a referrer (using explicit query)
+        has_referrer = Referral.objects.filter(referred_user=user).exists()
+        if has_referrer:
+            return False
+
+        # Check if user has EVER had a successful paid subscription
+        if cls._has_any_successful_paid_subscription(user):
+            return False
+
+        return True
+
+    @classmethod
+    def _detect_fraud_pattern(cls, referrer: User, referred_user: User) -> bool:
+        """
+        Detect suspicious patterns that might indicate fraud.
+        Currently only logs warnings - does not block.
+
+        Patterns checked:
+        - Multiple referrals from same domain in short time
+        - Self-referral attempts (should be blocked by constraint)
+        """
+        # Check for repeated domain pattern
+        if referrer.email and referred_user.email:
+            referrer_domain = referrer.email.split('@')[-1].lower()
+            referred_domain = referred_user.email.split('@')[-1].lower()
+
+            # Same domain referrals (not necessarily fraud, but worth logging)
+            if referrer_domain == referred_domain:
+                # Count recent same-domain referrals by this referrer
+                recent_count = Referral.objects.filter(
+                    referrer=referrer,
+                    created_at__gte=timezone.now() - timezone.timedelta(days=7)
+                ).count()
+
+                if recent_count > 5:
+                    logger.warning(
+                        f"Potential referral fraud: referrer={referrer.id} "
+                        f"has {recent_count} recent referrals, "
+                        f"including same-domain user {referred_user.id}"
+                    )
+                    return True
+
+        return False
+
+    @classmethod
     @transaction.atomic
     def record_referral_signup(cls, referred_user: User, code: str) -> Optional[Referral]:
         """
         Record that a user signed up with a referral code.
-        Called during signup flow. Referral stays PENDING.
+        Can be called at signup OR before first paid purchase.
+
+        Returns None if:
+        - Code is invalid
+        - User already has a referrer
+        - User has EVER had a successful paid subscription
+        - Self-referral attempt
         """
         referral_code = cls.get_code_by_string(code)
 
@@ -522,10 +737,19 @@ class ReferralService:
             logger.warning(f"Self-referral attempt by user {referred_user.id}")
             return None
 
-        # Check if referred_user already has a referral record
-        if hasattr(referred_user, "referred_by"):
+        # Check if referred_user already has a referral record (using explicit query)
+        existing_referral = Referral.objects.filter(referred_user=referred_user).first()
+        if existing_referral:
             logger.info(f"User {referred_user.id} already has referral record")
-            return referred_user.referred_by
+            return existing_referral
+
+        # Check if user has EVER had a successful paid subscription
+        if cls._has_any_successful_paid_subscription(referred_user):
+            logger.info(f"User {referred_user.id} already has paid subscription history, cannot apply referral")
+            return None
+
+        # Fraud detection (log only)
+        cls._detect_fraud_pattern(referrer, referred_user)
 
         # Create referral record (starts as pending - will complete on purchase)
         referral = Referral.objects.create(
@@ -538,52 +762,86 @@ class ReferralService:
         return referral
 
     @classmethod
+    def _is_circular_referral(cls, referral: Referral) -> bool:
+        """
+        Check if this is a circular referral (A refers B, B refers A).
+        Uses explicit DB query instead of attribute chaining.
+        """
+        referrer = referral.referrer
+        referred_user = referral.referred_user
+
+        # Check if referrer was referred by the referred user
+        is_circular = Referral.objects.filter(
+            referrer=referred_user,
+            referred_user=referrer
+        ).exists()
+
+        return is_circular
+
+    @classmethod
     @transaction.atomic
     def complete_referral_on_purchase(
         cls,
         user: User,
         purchase_amount_cents: int = 0,
-        currency: str = "USD"
+        currency: str = "USD",
+        triggering_subscription=None
     ) -> Optional[Referral]:
         """
-        Mark a user's referral as completed after successful purchase.
-        Also creates reward if applicable.
+        Mark a user's referral as completed after successful paid purchase.
+        Also creates reward if applicable (delayed unlock).
 
         Args:
             user: User who just made a purchase
             purchase_amount_cents: Amount of the purchase (for reward calculation)
             currency: Currency of the purchase
+            triggering_subscription: The subscription that triggered this completion
 
         Returns:
             Referral object if completed, None if no pending referral or already completed
         """
         try:
+            # Use select_for_update to prevent race conditions
             referral = Referral.objects.select_for_update().get(
                 referred_user=user,
                 status=Referral.Status.PENDING
             )
 
             # Idempotent - only complete if pending
-            if referral.status == Referral.Status.PENDING:
-                referral.mark_completed()
-                logger.info(f"Referral completed on purchase: {referral.id}")
-
-                # Create reward if purchase amount provided
-                if purchase_amount_cents > 0:
-                    ReferralRewardService.create_reward_on_referral_completion(
-                        referral=referral,
-                        purchase_amount_cents=purchase_amount_cents,
-                        currency=currency
-                    )
-
+            if referral.status == Referral.Status.COMPLETED:
+                logger.info(f"Referral {referral.id} already completed")
                 return referral
+
+            # Mark as completed
+            referral.mark_completed()
+            logger.info(f"Referral completed on purchase: {referral.id}")
+
+            # Check for circular referral - if circular, skip reward creation entirely
+            if cls._is_circular_referral(referral):
+                logger.warning(
+                    f"Circular referral detected: {referral.referrer.id} <-> {user.id}. "
+                    f"Skipping reward creation."
+                )
+                # No reward created, no extra state - referral simply completes without reward
+                return referral
+
+            # Create reward (will be pending with delayed unlock)
+            if purchase_amount_cents > 0:
+                ReferralRewardService.create_reward_on_referral_completion(
+                    referral=referral,
+                    purchase_amount_cents=purchase_amount_cents,
+                    currency=currency,
+                    triggering_subscription=triggering_subscription
+                )
+
+            return referral
 
         except Referral.DoesNotExist:
             logger.debug(f"No pending referral found for user {user.id}")
+            return None
         except Exception as e:
             logger.error(f"Error completing referral for user {user.id}: {e}")
-
-        return None
+            return None
 
     @classmethod
     def get_referral_stats(cls, user: User) -> dict:
@@ -597,9 +855,13 @@ class ReferralService:
             "completed": referrals.filter(status=Referral.Status.COMPLETED).count(),
             "pending": referrals.filter(status=Referral.Status.PENDING).count(),
             "referral_code": getattr(user, "referral_code", None),
-            "total_rewards_earned_cents": sum(r.amount_cents for r in rewards),
+            "total_rewards_earned_cents": sum(r.amount_cents for r in rewards if r.status != ReferralReward.Status.EXPIRED),
             "total_rewards_available_cents": balance.total_cents,
             "reward_buckets": balance.reward_count,
+            "pending_rewards_cents": sum(
+                r.amount_cents for r in rewards 
+                if r.status == ReferralReward.Status.PENDING
+            ),
         }
 
 

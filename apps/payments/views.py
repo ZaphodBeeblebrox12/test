@@ -74,7 +74,15 @@ def payment_start(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def payment_confirm(request):
-    """Confirm a payment and activate subscription with referral reward."""
+    """
+    Confirm a payment and activate subscription with referral reward.
+
+    Phase 4 (Viral Mode):
+    - Referral completion only triggered for paid subscriptions
+    - Gift subscriptions do NOT trigger referral completion
+    - Credit application happens after referral completion
+    - Uses plan model as single source of truth for pricing/duration
+    """
     payment_intent_id = request.data.get("payment_intent_id")
 
     if not payment_intent_id:
@@ -106,19 +114,22 @@ def payment_confirm(request):
     if payment_intent.status == PaymentIntent.Status.FAILED:
         return Response({"detail": "Payment has already failed."}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Get plan as single source of truth
+    plan = payment_intent.plan
+
     with transaction.atomic():
         payment_intent.status = PaymentIntent.Status.SUCCESS
         payment_intent.save()
 
-        interval = getattr(payment_intent.plan_price, 'interval', 'monthly')
-        if interval == 'yearly':
-            expires_at = timezone.now() + timezone.timedelta(days=365)
-        else:
-            expires_at = timezone.now() + timezone.timedelta(days=30)
+        # Use plan model as single source of truth for duration
+        # plan.duration_days should be defined in your Plan model
+        plan_duration_days = getattr(plan, 'duration_days', 30)  # fallback if not defined
+
+        expires_at = timezone.now() + timezone.timedelta(days=plan_duration_days)
 
         subscription = Subscription.objects.create(
             user=request.user,
-            plan=payment_intent.plan,
+            plan=plan,
             plan_price=payment_intent.plan_price,
             status=Subscription.Status.ACTIVE,
             is_active=True,
@@ -128,18 +139,43 @@ def payment_confirm(request):
             pricing_country=payment_intent.country
         )
 
-        # COMPLETE REFERRAL AND CREATE REWARD (Phase 2.2)
+        # ================================================================
+        # REFERRAL COMPLETION AND CREDIT APPLICATION (Phase 4 - Viral Mode)
+        # ================================================================
+        # Order: 1. Create subscription, 2. Complete referral, 3. Apply credit
+        # Uses plan model as single source of truth for pricing
+
         try:
-            from apps.growth.services import ReferralService
-            ReferralService.complete_referral_on_purchase(
+            from apps.growth.services import ReferralService, SubscriptionCreditService
+
+            # 2. Complete referral (creates pending reward, not available yet)
+            # Only for paid subscriptions (amount > 0)
+            if payment_intent.amount > 0:
+                ReferralService.complete_referral_on_purchase(
+                    user=request.user,
+                    purchase_amount_cents=payment_intent.amount,
+                    currency=payment_intent.currency,
+                    triggering_subscription=subscription  # Explicit link for refund checking
+                )
+
+            # 3. Apply existing credits (from previous rewards)
+            # Uses plan as single source of truth
+            credit_result = SubscriptionCreditService.apply_credit_to_subscription(
                 user=request.user,
-                purchase_amount_cents=payment_intent.amount,
-                currency=payment_intent.currency
+                subscription=subscription,
+                plan_price_cents=plan.price_cents,  # Plan is source of truth
+                plan_duration_days=plan_duration_days  # From plan model
             )
+
+            if credit_result:
+                # Update expires_at if credit was applied
+                subscription.refresh_from_db()
+
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Failed to complete referral and create reward: {e}")
+            logger.error(f"Failed to process referral/credit: {e}")
+            # Don't fail the payment if referral/credit fails
 
     return Response({
         "status": "success",

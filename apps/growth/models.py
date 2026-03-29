@@ -13,9 +13,8 @@ from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from django.core.validators import MinValueValidator, MaxValueValidator
 
-
 # ============================================================================
-# GIFT MODELS (Existing)
+# GIFT MODELS (Existing - preserved)
 # ============================================================================
 
 class GiftInvite(models.Model):
@@ -224,7 +223,7 @@ class Referral(models.Model):
 
 
 # ============================================================================
-# REFERRAL REWARD MODELS (Phase 2.2)
+# REFERRAL REWARD MODELS (Phase 4 - Viral Mode)
 # ============================================================================
 
 class ReferralSettings(models.Model):
@@ -240,6 +239,10 @@ class ReferralSettings(models.Model):
     )
     rewards_enabled = models.BooleanField(
         default=True, help_text="Enable or disable referral rewards system-wide"
+    )
+    # NEW: Configurable reward delay (default 72 hours = 3 days)
+    reward_delay_hours = models.PositiveIntegerField(
+        default=72, help_text="Hours to delay before unlocking referral rewards (default: 72 = 3 days)"
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -259,6 +262,7 @@ class ReferralSettings(models.Model):
                 "default_reward_percentage": Decimal("20.00"),
                 "minimum_purchase_amount_cents": 0,
                 "rewards_enabled": True,
+                "reward_delay_hours": 72,
             }
         )
         return obj
@@ -268,10 +272,10 @@ class ReferralReward(models.Model):
     """Ledger entry for referral rewards earned by a referrer."""
 
     class Status(models.TextChoices):
-        PENDING = "pending", "Pending"
-        CREDITED = "credited", "Credited"
-        USED = "used", "Used"
-        EXPIRED = "expired", "Expired"
+        PENDING = "pending", "Pending"           # Waiting for unlock delay
+        CREDITED = "credited", "Credited"        # Available in wallet
+        USED = "used", "Used"                    # Fully consumed
+        EXPIRED = "expired", "Expired"           # Refunded or blocked
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     referral = models.OneToOneField(
@@ -295,7 +299,22 @@ class ReferralReward(models.Model):
         default=0, help_text="Amount already used/consumed (in cents)"
     )
     used_at = models.DateTimeField(null=True, blank=True)
-    expires_at = models.DateTimeField(null=True, blank=True)
+    # NEW: Delayed unlock fields
+    unlocked_at = models.DateTimeField(
+        null=True, blank=True, help_text="When this reward becomes available (after delay)"
+    )
+    # NEW: Track if reward was blocked (circular, refunded, etc.)
+    block_reason = models.CharField(
+        max_length=50, blank=True, help_text="Reason if reward was blocked (circular, refunded, etc.)"
+    )
+    # NEW: Explicit link to triggering subscription for refund checking
+    triggering_subscription = models.ForeignKey(
+        "subscriptions.Subscription",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="referral_rewards",
+        help_text="The subscription that triggered this reward (for refund checking)"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -305,7 +324,7 @@ class ReferralReward(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["referrer", "status"]),
-            models.Index(fields=["status", "expires_at"]),
+            models.Index(fields=["status", "unlocked_at"]),  # For unlock task
         ]
 
     def __str__(self) -> str:
@@ -327,14 +346,29 @@ class ReferralReward(models.Model):
 
     @property
     def is_expired(self) -> bool:
-        if self.expires_at:
-            return timezone.now() > self.expires_at
-        return False
+        return self.status == self.Status.EXPIRED
+
+    @property
+    def is_unlocked(self) -> bool:
+        """Check if reward delay has passed and can be credited."""
+        if self.status != self.Status.PENDING:
+            return self.status == self.Status.CREDITED
+        if not self.unlocked_at:
+            return False
+        return timezone.now() >= self.unlocked_at
 
     def mark_credited(self) -> None:
+        """Mark reward as credited (available in wallet)."""
         if self.status == self.Status.PENDING:
             self.status = self.Status.CREDITED
             self.save(update_fields=["status", "updated_at"])
+
+    def mark_expired(self, reason: str = "") -> None:
+        """Mark reward as expired (refunded, circular, etc.)."""
+        self.status = self.Status.EXPIRED
+        if reason:
+            self.block_reason = reason
+        self.save(update_fields=["status", "block_reason", "updated_at"])
 
     def mark_used(self, amount_cents: int) -> None:
         self.used_amount_cents += amount_cents

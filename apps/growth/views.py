@@ -58,10 +58,9 @@ class ReferralSignupMixin:
 def complete_referral_on_verification(request, user):
     """Mark referral as completed after email verification."""
     if request.session.pop("pending_referral", None):
-        referral = ReferralService.complete_referral_on_purchase(user)
-        if referral:
-            logger.info(f"Referral marked complete for user {user.id}")
-        return referral
+        # Note: Referral is now only completed on purchase, not on verification
+        # This function is kept for backward compatibility but does not complete referral
+        logger.info(f"Pending referral flag cleared for user {user.id} (completion on purchase)")
     return None
 
 
@@ -130,6 +129,7 @@ class ReferralRewardsAPIView(LoginRequiredMixin, View):
             "total_referrals": stats["total_referrals"],
             "completed_referrals": stats["completed"],
             "pending_referrals": stats["pending"],
+            "pending_rewards_cents": stats.get("pending_rewards_cents", 0),
             "recent_rewards": rewards_data,
         })
 
