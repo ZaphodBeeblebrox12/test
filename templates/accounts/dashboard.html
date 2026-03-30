@@ -65,9 +65,7 @@
                         <i class="bi bi-x-circle-fill"></i> Not Connected
                     </span>
                     <p class="text-muted small">Connect your Telegram account for notifications</p>
-                    <a href="{% url 'profile' %}#telegram" class="btn btn-sm btn-outline-primary">
-                        Connect Now
-                    </a>
+                    <a href="{% url 'profile' %}#telegram" class="btn btn-sm btn-outline-primary">Connect Now</a>
                 </div>
                 {% endif %}
             </div>
@@ -83,22 +81,16 @@
             <div class="card-body">
                 {% if user.discord_id and user.discord_verified %}
                 <div class="text-center">
-                    <span class="badge bg-success mb-2">
-                        <i class="bi bi-check-circle-fill"></i> Connected
-                    </span>
+                    <span class="badge bg-success mb-2"><i class="bi bi-check-circle-fill"></i> Connected</span>
                     {% if user.discord_username %}
                     <p class="text-muted">{{ user.discord_username }}</p>
                     {% endif %}
                 </div>
                 {% else %}
                 <div class="text-center">
-                    <span class="badge bg-secondary mb-2">
-                        <i class="bi bi-x-circle-fill"></i> Not Connected
-                    </span>
+                    <span class="badge bg-secondary mb-2"><i class="bi bi-x-circle-fill"></i> Not Connected</span>
                     <p class="text-muted small">Connect your Discord account for community access</p>
-                    <a href="{% url 'discord_connect' %}" class="btn btn-sm btn-primary" style="background: #5865F2; border: none;">
-                        Connect Now
-                    </a>
+                    <a href="{% url 'discord_connect' %}" class="btn btn-sm btn-primary" style="background: #5865F2; border: none;">Connect Now</a>
                 </div>
                 {% endif %}
             </div>
@@ -110,67 +102,66 @@
         <div class="card h-100 border-primary">
             <div class="card-header bg-primary text-white">
                 <i class="bi bi-star-fill"></i> 
-                {% if current_plan %}
-                    {{ current_plan.name }}
-                {% else %}
-                    Subscription
-                {% endif %}
+                {% if current_plan %}{{ current_plan.name }}{% else %}Subscription{% endif %}
             </div>
             <div class="card-body">
                 {% if subscription %}
-                    <div class="text-center mb-3">
-                        <span class="badge bg-success">Active</span>
-                    </div>
-                    {% if subscription.plan_price %}
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span>Price:</span>
-                        <span class="fw-bold">${{ subscription.plan_price.price_cents|floatformat:0|floatformat:-2 }} / {{ subscription.plan_price.get_interval_display }}</span>
-                    </div>
-                    {% endif %}
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span>Started:</span>
-                        <span>{{ subscription.started_at|date:"M d, Y" }}</span>
-                    </div>
-                    {% if subscription.expires_at %}
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span>Expires:</span>
-                        <span>{{ subscription.expires_at|date:"M d, Y" }}</span>
-                    </div>
-                    {% endif %}
+                <div class="text-center mb-3">
+                    <span class="badge bg-success">Active</span>
+                </div>
+                {% if subscription.plan_price %}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Price:</span>
+                    <span class="fw-bold">${{ subscription.plan_price.price_cents }} / {{ subscription.plan_price.get_interval_display }}</span>
+                </div>
+                {% endif %}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Started:</span>
+                    <span>{{ subscription.started_at|date:"M d, Y" }}</span>
+                </div>
+                {% if subscription.expires_at %}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Expires:</span>
+                    <span>{{ subscription.expires_at|date:"M d, Y" }}</span>
+                </div>
+                {% endif %}
 
-                    {% if current_plan %}
-                    <hr>
-                    <h6 class="small fw-bold">Plan Features:</h6>
-                    <ul class="list-unstyled small mb-0">
-                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> {{ current_plan.max_projects }} Projects</li>
-                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> {{ current_plan.max_storage_mb }} MB Storage</li>
-                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> {{ current_plan.api_calls_per_day }} API Calls/Day</li>
-                    </ul>
-                    {% endif %}
+                {% if current_plan %}
+                <hr>
+                <h6 class="small fw-bold">Plan Features:</h6>
+                <ul class="list-unstyled small mb-0">
+                    <li><i class="bi bi-check-circle-fill text-success me-1"></i> {{ current_plan.max_projects }} Projects</li>
+                    <li><i class="bi bi-check-circle-fill text-success me-1"></i> {{ current_plan.max_storage_mb }} MB Storage</li>
+                    <li><i class="bi bi-check-circle-fill text-success me-1"></i> {{ current_plan.api_calls_per_day }} API Calls/Day</li>
+                </ul>
+                {% endif %}
                 {% else %}
-                    <div class="text-center mb-3">
-                        <span class="badge bg-secondary">Free Plan</span>
-                    </div>
-                    <p class="text-muted small text-center">You are on the free plan with limited features.</p>
+                <div class="text-center mb-3">
+                    <span class="badge bg-secondary">Free Plan</span>
+                </div>
+                <p class="text-muted small text-center">You are on the free plan with limited features.</p>
 
-                    {% if available_plans %}
-                    <hr>
-                    <h6 class="small fw-bold">Available Plans:</h6>
-                    {% for plan in available_plans %}
-                        <div class="d-flex justify-content-between align-items-center mb-1 small">
-                            <span>{{ plan.name }}</span>
-                            {% with plan.prices.first as price %}
-                                {% if price %}
-                                    <span class="badge bg-primary">${{ price.price_cents|floatformat:0|floatformat:-2 }}</span>
-                                {% endif %}
-                            {% endwith %}
-                        </div>
-                    {% endfor %}
+                {% if available_plans %}
+                <hr>
+                <h6 class="small fw-bold">Available Plans:</h6>
+                {% for plan in available_plans %}
+                <div class="d-flex justify-content-between align-items-center mb-1 small">
+                    <span>{{ plan.name }}</span>
+                    {% with plan.prices.first as price %}
+                    {% if price %}
+                    <span class="badge bg-primary">${{ price.price_cents }}</span>
                     {% endif %}
+                    {% endwith %}
+                </div>
+                {% endfor %}
+                {% endif %}
                 {% endif %}
             </div>
         </div>
     </div>
+
+    <!-- REFERRAL CREDITS CARD - ALREADY INTEGRATED -->
+    {% include "growth/partials/referral_card.html" %}
 
     <!-- Recent Activity -->
     <div class="col-md-6 mb-4">
@@ -216,7 +207,7 @@
                         <div class="d-flex justify-content-between align-items-start">
                             <div>
                                 <strong>{{ notification.title }}</strong>
-                                <p class="text-muted small mb-0">{{ notification.message|truncatechars:50 }}</p>
+                                <p class="text-muted small mb-0">{{ notification.message|truncatechars:30 }}</p>
                             </div>
                             {% if not notification.is_read %}
                             <span class="badge bg-primary">New</span>
