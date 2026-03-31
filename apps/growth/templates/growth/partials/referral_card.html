@@ -1,16 +1,7 @@
 {% load humanize %}
 <!--
-  Referral Credits Card - Dashboard Integration (BEHAVIORAL TRIGGERS EDITION)
-
-  IMPLEMENTED:
-  ✅ Viral trigger: "Refer 1 more → +X days"
-  ✅ Loss aversion: "Use credits before billing" 
-  ✅ Pending urgency: "Unlocking in 2 days"
-  ✅ Optimized share message (high conversion)
-  ✅ WhatsApp/Telegram share buttons
-  ✅ Empty state with loop visual
-  ✅ Auto-apply microcopy
-  ✅ Celebration toast container
+  Referral Credits Card - Dashboard Integration
+  DROP-IN REPLACEMENT - Overwrite your existing file
 -->
 <div class="col-md-4 mb-4">
     <div class="card h-100 {% if referral_stats.total_rewards_available_cents > 0 %}border-success{% else %}border-secondary{% endif %}">
@@ -25,11 +16,9 @@
         <div class="card-body d-flex flex-column">
 
             {% if referral_stats.total_rewards_available_cents > 0 or referral_stats.pending_rewards_cents > 0 %}
-                <!-- HAS CREDITS STATE -->
-
-                <!-- Balance Display -->
+                <!-- HAS CREDITS -->
                 <div class="text-center mb-3">
-                    <div class="display-6 text-success fw-bold referral-balance" id="referralBalance">
+                    <div class="display-6 text-success fw-bold" id="availableBalance">
                         {{ referral_stats.total_rewards_available_display }}
                     </div>
                     <div class="text-muted small mt-1">
@@ -39,74 +28,67 @@
                             Credits available
                         {% endif %}
                     </div>
-                    <!-- Microcopy: Auto-apply reassurance -->
                     <small class="text-success d-block mt-1">
                         <i class="bi bi-check-circle-fill"></i> Credits auto-apply at checkout
                     </small>
                 </div>
 
-                <!-- 🎯 VIRAL TRIGGER: "Refer 1 more → +X days" -->
+                <!-- LOSS AVERSION: Billing Urgency -->
+                {% if next_billing_date and billing_urgency == 'urgent' and referral_stats.total_rewards_available_cents > 0 %}
+                <div class="alert alert-warning alert-dismissible fade show mb-3 py-2" role="alert">
+                    <div class="d-flex align-items-start">
+                        <i class="bi bi-exclamation-triangle-fill text-warning me-2 mt-1"></i>
+                        <div class="small">
+                            <strong>Use your credits soon!</strong><br>
+                            Next billing: {{ next_billing_date|timeuntil }}. 
+                            <strong class="text-danger">Don't miss {{ extension_estimate.extra_days }} extra days.</strong>
+                            <br>
+                            <a href="{% url 'subscriptions:plans' %}" class="btn btn-sm btn-warning mt-2">
+                                <i class="bi bi-arrow-up-circle me-1"></i>Upgrade Now
+                            </a>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endif %}
+
+                <!-- VIRAL TRIGGER: Next Reward -->
                 {% if next_reward_estimate %}
                 <div class="mb-3 p-2 bg-primary bg-opacity-10 rounded border-start border-3 border-primary">
                     <div class="d-flex align-items-center justify-content-between">
                         <div>
-                            <small class="text-muted d-block">Next reward</small>
-                            <strong class="text-primary">
+                            <small class="text-primary fw-bold">Next reward</small>
+                            <div class="text-primary">
                                 <i class="bi bi-arrow-right-circle"></i>
                                 Refer 1 more → +{{ next_reward_estimate.days }} days
-                            </strong>
+                            </div>
                         </div>
                         <span class="badge bg-primary">+${{ next_reward_estimate.amount }}</span>
                     </div>
                 </div>
                 {% endif %}
 
-                <!-- ⚠️ LOSS AVERSION: "Use before billing" -->
-                {% if next_billing_date and billing_urgency == 'urgent' %}
-                <div class="mb-3 p-2 bg-danger bg-opacity-10 rounded border-start border-3 border-danger">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-exclamation-triangle-fill text-danger me-2 fs-5"></i>
-                        <div>
-                            <strong class="text-danger">Use your credits soon!</strong>
-                            <small class="d-block text-muted">
-                                Next billing: {{ next_billing_date|timeuntil }}. 
-                                <strong>Don't miss {{ extension_estimate.extra_days }} extra days.</strong>
-                            </small>
-                        </div>
-                    </div>
-                    <a href="{% url 'subscriptions:plans' %}" class="btn btn-sm btn-danger w-100 mt-2">
-                        <i class="bi bi-arrow-up-circle"></i> Upgrade Now
-                    </a>
-                </div>
-                {% endif %}
-
-                <!-- ⏳ PENDING URGENCY: Countdown with loss aversion -->
+                <!-- PENDING URGENCY -->
                 {% if referral_stats.pending_rewards_cents > 0 %}
                 <div class="mb-3 p-2 bg-warning bg-opacity-10 rounded border-start border-3 border-warning">
                     <div class="d-flex align-items-center justify-content-between mb-1">
-                        <span class="small">
-                            <i class="bi bi-clock text-warning"></i>
-                            <strong>${{ referral_stats.pending_rewards_display }}</strong> unlocking
+                        <span class="small fw-bold text-warning">
+                            <i class="bi bi-clock"></i> ${{ referral_stats.pending_rewards_display }} unlocking
                         </span>
-                        {% if pending_unlock_soonest %}
                         <span class="badge bg-warning text-dark">
-                            {% if pending_unlock_soonest.days_left == 0 %}
-                                Today!
-                            {% else %}
-                                {{ pending_unlock_soonest.days_left }}d
-                            {% endif %}
+                            {% if pending_unlock_soonest.days_left == 0 %}Today!{% else %}{{ pending_unlock_soonest.days_left }}d{% endif %}
                         </span>
-                        {% endif %}
                     </div>
-                    <!-- Loss aversion microcopy -->
-                    <small class="text-muted d-block">
-                        <i class="bi bi-shield-check"></i> 
-                        <strong>Secure these credits</strong> by keeping referrals active
+                    {% if pending_unlock_soonest.days_left <= 2 %}
+                    <small class="text-danger d-block">
+                        <i class="bi bi-exclamation-circle"></i> 
+                        <strong>Don't miss out!</strong> Secure these credits by keeping referrals active.
                     </small>
+                    {% endif %}
                 </div>
                 {% endif %}
 
-                <!-- Share Section with Optimized Message -->
+                <!-- Share Section with WhatsApp/Telegram -->
                 <div class="mt-auto">
                     <label class="small text-muted mb-1">Share your link</label>
                     <div class="input-group input-group-sm mb-2">
@@ -118,24 +100,21 @@
                                onclick="this.select()">
                         <button class="btn btn-outline-success" 
                                 type="button"
-                                onclick="copyReferralLink('dashboardReferralLink', this)"
-                                title="Copy link">
+                                onclick="copyReferralLink('dashboardReferralLink', this)">
                             <i class="bi bi-clipboard"></i>
                         </button>
                     </div>
 
-                    <!-- 🚀 SHARE BUTTONS: WhatsApp + Telegram (80% of referrals) -->
+                    <!-- WHATSAPP + TELEGRAM BUTTONS -->
                     <div class="d-flex gap-2">
                         <a href="https://wa.me/?text={{ optimized_share_message|urlencode }}" 
-                           target="_blank"
-                           onclick="trackShare('whatsapp')"
+                           target="_blank" rel="noopener"
                            class="btn btn-sm btn-success flex-fill d-flex align-items-center justify-content-center"
                            style="background-color: #25D366; border-color: #25D366;">
                             <i class="bi bi-whatsapp me-1"></i> WhatsApp
                         </a>
                         <a href="https://t.me/share/url?url={{ referral_link|urlencode }}&text={{ optimized_share_message|urlencode }}" 
-                           target="_blank"
-                           onclick="trackShare('telegram')"
+                           target="_blank" rel="noopener"
                            class="btn btn-sm btn-primary flex-fill d-flex align-items-center justify-content-center"
                            style="background-color: #0088cc; border-color: #0088cc;">
                             <i class="bi bi-telegram me-1"></i> Telegram
@@ -143,39 +122,36 @@
                     </div>
                 </div>
 
-                <!-- Stats Footer -->
                 <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
                     <span class="text-muted small">
                         {{ referral_stats.completed }} friend{{ referral_stats.completed|pluralize }} joined
                     </span>
                     <a href="{% url 'growth:referral_dashboard' %}" class="small text-decoration-none">
-                        Details →
+                        View details →
                     </a>
                 </div>
 
             {% else %}
-                <!-- 🎯 EMPTY STATE: Clear CTA with loop visual -->
+                <!-- EMPTY STATE -->
                 <div class="text-center py-3 flex-grow-1 d-flex flex-column justify-content-center">
                     <div class="position-relative d-inline-block mx-auto mb-3">
                         <i class="bi bi-gift text-muted" style="font-size: 3rem;"></i>
-                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-success">
-                            FREE
-                        </span>
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-success">FREE</span>
                     </div>
 
-                    <h6 class="fw-bold mb-2">Get free premium access</h6>
+                    <h6 class="fw-bold mb-2">🚀 Get free premium access</h6>
                     <p class="text-muted small mb-3">
                         Invite friends and earn credits that automatically extend your subscription
                     </p>
 
-                    <!-- 🔄 Retention Loop Visual -->
-                    <div class="d-flex justify-content-center align-items-center gap-1 mb-3 small">
+                    <!-- Retention Loop -->
+                    <div class="d-flex justify-content-center align-items-center gap-1 mb-3 small text-muted flex-wrap">
                         <span class="badge bg-light text-dark border">Refer</span>
-                        <i class="bi bi-arrow-right text-muted"></i>
+                        <i class="bi bi-arrow-right"></i>
                         <span class="badge bg-light text-dark border">Earn</span>
-                        <i class="bi bi-arrow-right text-muted"></i>
+                        <i class="bi bi-arrow-right"></i>
                         <span class="badge bg-light text-dark border">Extend</span>
-                        <i class="bi bi-arrow-right text-muted"></i>
+                        <i class="bi bi-arrow-right"></i>
                         <span class="badge bg-success">Repeat</span>
                     </div>
 
@@ -187,8 +163,7 @@
                                readonly>
                         <button class="btn btn-primary" 
                                 type="button"
-                                onclick="copyReferralLink('dashboardReferralLinkEmpty', this)"
-                                title="Copy link">
+                                onclick="copyReferralLink('dashboardReferralLinkEmpty', this)">
                             <i class="bi bi-clipboard"></i> Copy
                         </button>
                     </div>
@@ -196,18 +171,16 @@
                     <!-- Share buttons for empty state -->
                     <div class="d-flex gap-2 justify-content-center">
                         <a href="https://wa.me/?text={{ optimized_share_message|urlencode }}" 
-                           target="_blank"
-                           onclick="trackShare('whatsapp')"
-                           class="btn btn-sm btn-success" 
+                           target="_blank" rel="noopener"
+                           class="btn btn-sm btn-success"
                            style="background-color: #25D366; border-color: #25D366;">
-                            <i class="bi bi-whatsapp"></i> WhatsApp
+                            <i class="bi bi-whatsapp"></i>
                         </a>
                         <a href="https://t.me/share/url?url={{ referral_link|urlencode }}&text={{ optimized_share_message|urlencode }}" 
-                           target="_blank"
-                           onclick="trackShare('telegram')"
+                           target="_blank" rel="noopener"
                            class="btn btn-sm btn-primary"
                            style="background-color: #0088cc; border-color: #0088cc;">
-                            <i class="bi bi-telegram"></i> Telegram
+                            <i class="bi bi-telegram"></i>
                         </a>
                     </div>
                 </div>
@@ -216,125 +189,24 @@
     </div>
 </div>
 
-<!-- 🎉 Celebration Toast Container -->
-<div id="referralToastContainer" class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1055;"></div>
-
 <script>
-/**
- * Copy referral link with visual feedback
- */
 function copyReferralLink(inputId, button) {
     const input = document.getElementById(inputId);
     if (!input || !button) return;
-
     input.select();
     input.setSelectionRange(0, 99999);
-
     navigator.clipboard.writeText(input.value).then(function() {
         const originalHtml = button.innerHTML;
         button.innerHTML = '<i class="bi bi-check-lg"></i>';
-        button.classList.remove('btn-outline-success', 'btn-outline-primary', 'btn-primary');
-        button.classList.add('btn-success');
+        button.className = 'btn btn-success';
         button.disabled = true;
-
-        showReferralToast('Link copied! Ready to share.', 'success');
-
         setTimeout(function() {
             button.innerHTML = originalHtml;
+            button.className = inputId.includes('Empty') ? 'btn btn-primary' : 'btn btn-outline-success';
             button.disabled = false;
-            if (inputId.includes('Empty')) {
-                button.classList.remove('btn-success');
-                button.classList.add('btn-primary');
-            } else {
-                button.classList.remove('btn-success');
-                button.classList.add('btn-outline-success');
-            }
         }, 2000);
     }).catch(function(err) {
         input.select();
-        input.focus();
-        showReferralToast('Press Ctrl+C to copy', 'info');
     });
 }
-
-/**
- * 🎉 Show toast notification
- */
-function showReferralToast(message, type = 'success') {
-    const container = document.getElementById('referralToastContainer');
-    if (!container) return;
-
-    const toastId = 'referralToast' + Date.now();
-    const icons = {
-        success: 'bi-check-circle-fill',
-        info: 'bi-info-circle',
-        celebration: 'bi-gift-fill'
-    };
-    const bgClass = type === 'success' ? 'bg-success' : 'bg-primary';
-
-    container.insertAdjacentHTML('beforeend', `
-        <div id="${toastId}" class="toast align-items-center text-white ${bgClass} border-0" role="alert">
-            <div class="d-flex">
-                <div class="toast-body">
-                    <i class="bi ${icons[type]} me-2"></i>${message}
-                </div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-            </div>
-        </div>
-    `);
-
-    const toast = new bootstrap.Toast(document.getElementById(toastId), { delay: 4000 });
-    toast.show();
-    document.getElementById(toastId).addEventListener('hidden.bs.toast', () => {
-        document.getElementById(toastId).remove();
-    });
-}
-
-/**
- * Track share button clicks
- */
-function trackShare(platform) {
-    // Analytics tracking
-    if (typeof gtag !== 'undefined') {
-        gtag('event', 'share', {
-            method: platform,
-            content_type: 'referral_link'
-        });
-    }
-    showReferralToast(`Opening ${platform}...`, 'info');
-}
-
-/**
- * 🎊 Celebrate reward unlock
- */
-function celebrateReward(amount, days) {
-    showReferralToast(
-        `🎉 +$${amount} unlocked! +${days} days added to your subscription!`,
-        'celebration'
-    );
-
-    // Animate balance
-    const balanceEl = document.getElementById('referralBalance');
-    if (balanceEl) {
-        balanceEl.style.animation = 'balancePop 0.5s ease-in-out';
-        setTimeout(() => balanceEl.style.animation = '', 500);
-    }
-}
-
-// Auto-celebrate if newly unlocked reward exists
-{% if newly_unlocked_reward %}
-document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(() => {
-        celebrateReward('{{ newly_unlocked_reward.amount_display }}', {{ newly_unlocked_reward.extra_days }});
-    }, 500);
-});
-{% endif %}
 </script>
-
-<style>
-@keyframes balancePop {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.1); }
-    100% { transform: scale(1); }
-}
-</style>

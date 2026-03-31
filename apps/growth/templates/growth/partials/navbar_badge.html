@@ -1,0 +1,41 @@
+{% comment %}
+  Navbar Referral Badge - Works in both sidebar and top navbar
+  
+  Usage:
+  - Top navbar: {% include "growth/partials/navbar_badge.html" %}
+  - Sidebar: {% include "growth/partials/navbar_badge.html" with nav_type="sidebar" %}
+{% endcomment %}
+
+{% if nav_type == "sidebar" %}
+    {# SIDEBAR VERSION - Full link with text #}
+    <a href="{% url 'growth:referral_dashboard' %}" 
+       class="{% if request.path == '/growth/referrals/' %}active{% endif %}"
+       title="Referral Credits">
+        <i class="bi bi-gift-fill text-success"></i>
+        <span>Referral Credits</span>
+        {% if referral_stats.total_rewards_available_cents > 0 %}
+        <span class="badge bg-success ms-auto">{{ referral_stats.total_rewards_available_display }}</span>
+        {% endif %}
+    </a>
+{% else %}
+    {# TOP NAVBAR VERSION - Compact with pulse #}
+    {% if referral_stats.total_rewards_available_cents > 0 %}
+        <a href="{% url 'growth:referral_dashboard' %}" 
+           class="nav-link position-relative d-flex align-items-center" 
+           title="You have {{ referral_stats.total_rewards_available_display }} in referral credits">
+            <i class="bi bi-gift-fill text-success fs-5"></i>
+            <span class="badge bg-success ms-1 d-none d-sm-inline">
+                {{ referral_stats.total_rewards_available_display }}
+            </span>
+            {% if newly_unlocked_reward %}
+                <span class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle animate-pulse">
+                    <span class="visually-hidden">New credits available!</span>
+                </span>
+            {% endif %}
+        </a>
+    {% else %}
+        <a href="{% url 'growth:referral_dashboard' %}" class="nav-link" title="Earn free credits">
+            <i class="bi bi-gift fs-5"></i>
+        </a>
+    {% endif %}
+{% endif %}

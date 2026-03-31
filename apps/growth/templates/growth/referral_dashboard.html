@@ -5,7 +5,7 @@
 {% block page_title %}Referral Credits{% endblock %}
 
 {% block content %}
-<!-- 🎉 CELEBRATION BANNER: Newly unlocked reward -->
+<!-- 🎉 CELEBRATION BANNER: Shows when reward just unlocked -->
 {% if newly_unlocked_reward %}
 <div class="alert alert-success alert-dismissible fade show mb-4 border-success shadow-lg" id="rewardUnlockedBanner">
     <div class="d-flex align-items-center">
@@ -13,42 +13,98 @@
             <i class="bi bi-gift-fill text-success fs-1"></i>
         </div>
         <div class="flex-grow-1">
-            <h4 class="alert-heading mb-1">🎉 Reward Unlocked!</h4>
-            <p class="mb-0 fs-5">
+            <h4 class="alert-heading mb-2">🎉 Reward Unlocked!</h4>
+            <p class="mb-1 fs-5">
                 Your <strong class="text-success">${{ newly_unlocked_reward.amount_display }}</strong> credit is now available!
-                {% if newly_unlocked_reward.extra_days > 0 %}
-                    <br><span class="text-success">+{{ newly_unlocked_reward.extra_days }} extra days</span> added to your subscription.
-                {% endif %}
             </p>
+            {% if newly_unlocked_reward.extra_days > 0 %}
+                <p class="mb-0 text-success">
+                    <i class="bi bi-calendar-plus me-2"></i>
+                    This extends your subscription by <strong>{{ newly_unlocked_reward.extra_days }} extra days</strong>
+                </p>
+            {% endif %}
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
     </div>
-    <hr class="border-light">
+    <hr class="my-3">
     <div class="d-flex justify-content-between align-items-center">
-        <span class="text-white"><i class="bi bi-check-circle-fill me-1"></i> Credit auto-applies at checkout</span>
-        <a href="{% url 'subscriptions:plans' %}" class="btn btn-light btn-lg">
+        <span class="text-success">
+            <i class="bi bi-check-circle-fill me-1"></i> Credit auto-applies at your next checkout
+        </span>
+        <a href="{% url 'subscriptions:plans' %}" class="btn btn-success btn-lg">
             <i class="bi bi-arrow-up-circle me-2"></i>Upgrade Now
         </a>
     </div>
 </div>
+
+<!-- Confetti Script -->
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var duration = 3 * 1000;
+    var animationEnd = Date.now() + duration;
+    var defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+    var random = function(min, max) { return Math.random() * (max - min) + min; };
+
+    var interval = setInterval(function() {
+        var timeLeft = animationEnd - Date.now();
+        if (timeLeft <= 0) return clearInterval(interval);
+        var particleCount = 50 * (timeLeft / duration);
+        confetti(Object.assign({}, defaults, { particleCount, origin: { x: random(0.1, 0.3), y: Math.random() - 0.2 } }));
+        confetti(Object.assign({}, defaults, { particleCount, origin: { x: random(0.7, 0.9), y: Math.random() - 0.2 } }));
+    }, 250);
+});
+</script>
 {% endif %}
 
-<!-- 🎯 VIRAL TRIGGER: Progress to next reward -->
+<!-- LOSS AVERSION: Billing Urgency -->
+{% if next_billing_date and billing_urgency == 'urgent' and referral_stats.total_rewards_available_cents > 0 %}
+<div class="alert alert-warning alert-dismissible fade show mb-4 border-warning" role="alert">
+    <div class="d-flex align-items-start">
+        <div class="bg-warning rounded-circle p-2 me-3 d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+            <i class="bi bi-exclamation-triangle-fill text-dark fs-4"></i>
+        </div>
+        <div class="flex-grow-1">
+            <h5 class="alert-heading text-dark mb-2">
+                <i class="bi bi-clock-history me-2"></i>
+                Use your credits before your next billing cycle!
+            </h5>
+            <p class="mb-2">
+                Your subscription renews in <strong>{{ days_until_billing }} days</strong>. 
+                You have <strong class="text-success">{{ referral_stats.total_rewards_available_display }}</strong> in credits.
+            </p>
+            <p class="mb-0 text-danger">
+                <strong>Don't miss out!</strong> Apply these credits now to extend your subscription.
+            </p>
+            <div class="mt-3">
+                <a href="{% url 'subscriptions:plans' %}" class="btn btn-warning btn-lg">
+                    <i class="bi bi-arrow-up-circle me-2"></i>Apply Credits Now
+                </a>
+            </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+</div>
+{% endif %}
+
+<!-- VIRAL TRIGGER: Progress Bar -->
 {% if next_reward_estimate %}
 <div class="card mb-4 border-primary shadow-sm">
     <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-            <h5 class="card-title mb-0"><i class="bi bi-trophy-fill text-primary me-2"></i>You're close to your next reward!</h5>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="card-title mb-0">
+                <i class="bi bi-trophy-fill text-primary me-2"></i>
+                You're close to your next reward!
+            </h5>
             <span class="badge bg-primary fs-6">+{{ next_reward_estimate.days }} days</span>
         </div>
         <p class="text-muted mb-3">
-            Refer <strong>1 more friend</strong> to earn <strong>${{ next_reward_estimate.amount }}</strong> in credits
+            Refer <strong class="text-primary">1 more friend</strong> 
+            to earn <strong>${{ next_reward_estimate.amount }}</strong> in credits
         </p>
         <div class="progress" style="height: 12px;">
             <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
-                 role="progressbar" 
-                 style="width: 50%"
-                 aria-valuenow="50" aria-valuemin="0" aria-valuemax="100">
+                 role="progressbar" style="width: 50%" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100">
             </div>
         </div>
         <div class="d-flex justify-content-between mt-2 small text-muted">
@@ -60,9 +116,8 @@
 {% endif %}
 
 <div class="row">
-    <!-- Main Content -->
     <div class="col-lg-8 mb-4">
-        <div class="card shadow-sm">
+        <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center bg-white">
                 <span class="fw-bold"><i class="bi bi-gift-fill text-success me-2"></i>Your Referral Credits</span>
                 {% if referral_stats.completed > 0 %}
@@ -85,12 +140,14 @@
                                         ≈ {{ extension_estimate.extra_days }} extra day{{ extension_estimate.extra_days|pluralize }}
                                     </div>
                                 {% endif %}
-                                <small class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Auto-applies at checkout</small>
+                                <small class="text-success">
+                                    <i class="bi bi-check-circle-fill me-1"></i>Auto-applies at checkout
+                                </small>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Pending Credits with Urgency -->
+                    <!-- Pending Credits -->
                     <div class="col-md-6">
                         <div class="card h-100 border-warning border-2 {% if referral_stats.pending_rewards_cents == 0 %}opacity-75{% endif %} shadow-sm">
                             <div class="card-body text-center d-flex flex-column justify-content-center">
@@ -103,17 +160,14 @@
                                         <i class="bi bi-clock me-1"></i>Unlocking soon
                                     </div>
                                     {% if pending_unlock_soonest %}
-                                    <small class="text-muted">
                                         {% if pending_unlock_soonest.days_left == 0 %}
-                                            <span class="text-warning fw-bold">Unlocks today!</span>
+                                            <span class="badge bg-danger">Unlocks today!</span>
+                                        {% elif pending_unlock_soonest.days_left == 1 %}
+                                            <span class="badge bg-warning text-dark">Unlocks tomorrow!</span>
                                         {% else %}
-                                            {{ pending_unlock_soonest.days_left }} day{{ pending_unlock_soonest.days_left|pluralize }} remaining
+                                            <small class="text-muted">{{ pending_unlock_soonest.days_left }} days remaining</small>
                                         {% endif %}
-                                    </small>
                                     {% endif %}
-                                    <small class="text-muted mt-1 d-block">
-                                        <i class="bi bi-shield-check"></i> Secure these by keeping referrals active
-                                    </small>
                                 {% else %}
                                     <div class="badge bg-secondary bg-opacity-10 text-secondary px-3 py-2">No pending credits</div>
                                 {% endif %}
@@ -122,11 +176,12 @@
                     </div>
                 </div>
 
-                <!-- Share Section with Optimized Message -->
+                <!-- Share Section -->
                 <div class="mt-4 pt-4 border-top">
-                    <label class="fw-bold mb-2 d-block">Share Your Link</label>
+                    <label class="fw-bold mb-2 d-block">🚀 Share Your Link</label>
                     <p class="text-muted small mb-3">
-                        {{ optimized_share_message|linebreaksbr }}
+                        Share this link with friends. When they subscribe to any paid plan, 
+                        you'll earn credits that extend your subscription time.
                     </p>
 
                     <div class="input-group input-group-lg mb-3">
@@ -136,13 +191,12 @@
                         </button>
                     </div>
 
-                    <!-- 🚀 SHARE BUTTONS -->
+                    <!-- SHARE BUTTONS -->
                     <div class="row g-2">
                         <div class="col-6 col-md-3">
                             <a href="https://wa.me/?text={{ optimized_share_message|urlencode }}" 
                                target="_blank" rel="noopener"
-                               onclick="trackShare('whatsapp')"
-                               class="btn btn-success w-100 d-flex align-items-center justify-content-center"
+                               class="btn btn-success w-100 d-flex align-items-center justify-content-center py-2"
                                style="background-color: #25D366; border-color: #25D366;">
                                 <i class="bi bi-whatsapp me-2"></i> WhatsApp
                             </a>
@@ -150,20 +204,19 @@
                         <div class="col-6 col-md-3">
                             <a href="https://t.me/share/url?url={{ referral_link|urlencode }}&text={{ optimized_share_message|urlencode }}" 
                                target="_blank" rel="noopener"
-                               onclick="trackShare('telegram')"
-                               class="btn btn-primary w-100 d-flex align-items-center justify-content-center"
+                               class="btn btn-primary w-100 d-flex align-items-center justify-content-center py-2"
                                style="background-color: #0088cc; border-color: #0088cc;">
                                 <i class="bi bi-telegram me-2"></i> Telegram
                             </a>
                         </div>
                         <div class="col-6 col-md-3">
                             <a href="mailto:?subject=Get free premium access on {{ site_name }}&body={{ optimized_share_message|urlencode }}" 
-                               class="btn btn-outline-secondary w-100 d-flex align-items-center justify-content-center">
+                               class="btn btn-outline-secondary w-100 d-flex align-items-center justify-content-center py-2">
                                 <i class="bi bi-envelope me-2"></i> Email
                             </a>
                         </div>
                         <div class="col-6 col-md-3">
-                            <button class="btn btn-outline-primary w-100" onclick="shareNative()">
+                            <button class="btn btn-outline-primary w-100 py-2" onclick="shareNative()">
                                 <i class="bi bi-share-fill me-2"></i> More
                             </button>
                         </div>
@@ -173,7 +226,6 @@
         </div>
     </div>
 
-    <!-- Sidebar -->
     <div class="col-lg-4 mb-4">
         <div class="card h-100 shadow-sm">
             <div class="card-header bg-light"><i class="bi bi-graph-up me-2"></i>Your Impact</div>
@@ -200,9 +252,25 @@
                     <a href="{% url 'subscriptions:plans' %}" class="btn btn-outline-success w-100">
                         <i class="bi bi-arrow-up-circle me-2"></i>Upgrade with Credits
                     </a>
-                    <small class="text-muted d-block text-center mt-2">Credits auto-apply at checkout</small>
+                    <small class="text-muted d-block text-center mt-2">
+                        <i class="bi bi-check-circle-fill text-success me-1"></i>Credits auto-apply at checkout
+                    </small>
                 </div>
                 {% endif %}
+
+                <!-- Retention Loop -->
+                <div class="mt-4 pt-3 border-top">
+                    <small class="text-muted d-block mb-2 text-center fw-bold">How it works</small>
+                    <div class="d-flex justify-content-center align-items-center gap-1 flex-wrap">
+                        <span class="badge bg-primary">Refer</span>
+                        <i class="bi bi-arrow-right text-muted small"></i>
+                        <span class="badge bg-success">Earn</span>
+                        <i class="bi bi-arrow-right text-muted small"></i>
+                        <span class="badge bg-info">Extend</span>
+                        <i class="bi bi-arrow-right text-muted small"></i>
+                        <span class="badge bg-dark">Repeat</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -214,13 +282,16 @@
         <div class="card shadow-sm">
             <div class="card-header d-flex justify-content-between align-items-center bg-white">
                 <span class="fw-bold"><i class="bi bi-people me-2"></i>Recent Referrals</span>
+                {% if recent_referrals|length > 0 %}
+                    <span class="text-muted small">Showing {{ recent_referrals|length }} most recent</span>
+                {% endif %}
             </div>
             <div class="card-body p-0">
                 {% if recent_referrals %}
                     <div class="table-responsive">
                         <table class="table table-hover align-middle mb-0">
                             <thead class="table-light">
-                                <tr><th class="ps-4">User</th><th>Status</th><th>Your Credit</th><th>Date</th></tr>
+                                <tr><th class="ps-4">User</th><th>Status</th><th>Your Credit</th><th>Unlocked</th></tr>
                             </thead>
                             <tbody>
                                 {% for referral in recent_referrals %}
@@ -246,10 +317,16 @@
                                                 <span class="text-success fw-bold"><i class="bi bi-gift me-1"></i>{{ referral.reward.amount_display }}</span>
                                             {% elif referral.reward.status == 'pending' %}
                                                 <span class="text-warning"><i class="bi bi-clock me-1"></i>{{ referral.reward.amount_display }}</span>
+                                            {% elif referral.reward.status == 'used' %}
+                                                <span class="text-muted">{{ referral.reward.amount_display }} (applied)</span>
                                             {% else %}<span class="text-muted">—</span>{% endif %}
                                         {% else %}<span class="text-muted">—</span>{% endif %}
                                     </td>
-                                    <td class="text-muted small">{{ referral.created_at|date:"M d, Y" }}</td>
+                                    <td class="text-muted small">
+                                        {% if referral.reward and referral.reward.unlocked_at %}
+                                            {{ referral.reward.unlocked_at|date:"M d, Y" }}
+                                        {% else %}—{% endif %}
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -257,10 +334,13 @@
                     </div>
                 {% else %}
                     <div class="text-center py-5">
-                        <i class="bi bi-people text-muted" style="font-size: 3rem;"></i>
-                        <p class="text-muted mt-3">No referrals yet. Share your link to get started!</p>
-                        <a href="https://wa.me/?text={{ optimized_share_message|urlencode }}" target="_blank" class="btn btn-success" style="background-color: #25D366;">
-                            <i class="bi bi-whatsapp"></i> Share on WhatsApp
+                        <div class="bg-light rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
+                            <i class="bi bi-people text-muted" style="font-size: 2.5rem;"></i>
+                        </div>
+                        <p class="text-muted mb-0">No referrals yet.</p>
+                        <p class="text-muted small mb-3">Share your link above to get started!</p>
+                        <a href="https://wa.me/?text={{ optimized_share_message|urlencode }}" target="_blank" class="btn btn-success" style="background-color: #25D366; border-color: #25D366;">
+                            <i class="bi bi-whatsapp me-2"></i> Share on WhatsApp
                         </a>
                     </div>
                 {% endif %}
@@ -269,20 +349,24 @@
     </div>
 </div>
 
-<!-- Toast Container -->
-<div id="referralToastContainer" class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1055;"></div>
-
 <script>
 function copyMainReferralLink() {
     const input = document.getElementById('referralLink');
     const button = input.nextElementSibling;
     input.select();
-    navigator.clipboard.writeText(input.value).then(() => {
+    input.setSelectionRange(0, 99999);
+    navigator.clipboard.writeText(input.value).then(function() {
+        const originalHtml = button.innerHTML;
         button.innerHTML = '<i class="bi bi-check-lg me-2"></i>Copied!';
-        showReferralToast('Link copied! Ready to share.', 'success');
-        setTimeout(() => {
-            button.innerHTML = '<i class="bi bi-clipboard me-2"></i> Copy Link';
+        button.classList.remove('btn-success');
+        button.classList.add('btn-outline-success');
+        setTimeout(function() {
+            button.innerHTML = originalHtml;
+            button.classList.remove('btn-outline-success');
+            button.classList.add('btn-success');
         }, 2500);
+    }).catch(function(err) {
+        input.select();
     });
 }
 
@@ -292,19 +376,9 @@ function shareNative() {
             title: 'Get free premium access!',
             text: '{{ optimized_share_message|escapejs }}',
             url: '{{ referral_link }}'
-        });
+        }).catch(err => console.log('Share cancelled'));
     } else {
         copyMainReferralLink();
-    }
-}
-
-function showReferralToast(message, type) {
-    // Implementation same as referral_card
-}
-
-function trackShare(platform) {
-    if (typeof gtag !== 'undefined') {
-        gtag('event', 'share', { method: platform, content_type: 'referral_link' });
     }
 }
 </script>
