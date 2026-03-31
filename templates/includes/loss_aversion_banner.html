@@ -1,0 +1,41 @@
+{% comment %}
+  Loss Aversion Banner - Add to dashboard or subscription page
+  Usage: {% include "includes/loss_aversion_banner.html" %}
+{% endcomment %}
+
+{% if referral_stats.total_rewards_available_cents > 0 and next_billing_date %}
+<div class="alert alert-warning alert-dismissible fade show mb-3 loss-aversion-banner" role="alert">
+    <div class="d-flex align-items-start">
+        <div class="bg-warning bg-opacity-25 rounded-circle p-2 me-3 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 48px; height: 48px;">
+            <i class="bi bi-clock-fill text-warning fs-4"></i>
+        </div>
+        <div class="flex-grow-1">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <strong class="fs-5">⚠️ Use your credits soon!</strong>
+                    <p class="mb-0 mt-1">
+                        You have <strong class="text-success">{{ referral_stats.total_rewards_available_display }}</strong> in referral credits.
+                        {% if billing_urgency == 'urgent' %}
+                            <span class="text-danger fw-bold">Your plan expires in {{ next_billing_date|timeuntil }}!</span>
+                        {% else %}
+                            Your next billing cycle starts {{ next_billing_date|date:"M d" }}.
+                        {% endif %}
+                    </p>
+                    <p class="small text-muted mt-1 mb-0">
+                        Don't miss out on extending your plan. Upgrade now to apply your credits.
+                    </p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            <div class="mt-2">
+                <a href="{% url 'subscriptions:plans' %}" class="btn btn-warning">
+                    <i class="bi bi-arrow-up-circle me-2"></i>Apply Credits Now
+                </a>
+                <a href="{% url 'growth:referral_dashboard' %}" class="btn btn-link text-decoration-none">
+                    View details →
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}

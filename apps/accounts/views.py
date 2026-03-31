@@ -87,6 +87,84 @@ class DashboardView(View):
             "current_plan": current_plan,
             "available_plans": available_plans,
         }
+        
+        # ===== REFERRAL SYSTEM INTEGRATION =====
+        from apps.growth.services import ReferralService, ReferralRewardService, UserRewardBalance
+        from apps.growth.models import ReferralCode, ReferralReward, ReferralSettings
+        from django.utils import timezone
+        
+        # Basic referral data
+        referral_code = ReferralCode.get_or_create_for_user(user)
+        context['referral_link'] = self.request.build_absolute_uri(
+            f"/growth/r/{referral_code.code}/"
+        )
+        
+        # OPTIMIZED SHARE MESSAGE (High Conversion) - FIXED: triple-quoted string
+        site_name = getattr(settings, 'SITE_NAME', 'TradeAdmin')
+        context['referral_share_text'] = f"""Get free premium access on {site_name}!
+
+Use my link:
+{context['referral_link']}
+
+You'll get discounts and exclusive access, and I'll get extra subscription days 🚀"""
+        
+        # Balance & stats
+        balance = UserRewardBalance(user)
+        stats = ReferralService.get_referral_stats(user)
+        stats['total_rewards_available_cents'] = balance.total_cents
+        stats['total_rewards_available_display'] = balance.total_display
+        stats['pending_rewards_display'] = f"${stats.get('pending_rewards_cents', 0) / 100:.2f}"
+        context['referral_stats'] = stats
+        
+        # Extension estimate
+        plan_price_cents, plan_duration_days = 1000, 30
+        if subscription and subscription.plan_price:
+            plan_price_cents = subscription.plan_price.price_cents
+        
+        context['extension_estimate'] = ReferralRewardService.estimate_extension_for_balance(
+            user, plan_price_cents=plan_price_cents, plan_duration_days=plan_duration_days
+        )
+        
+        # LOSS AVERSION: Next billing date
+        if subscription and subscription.expires_at:
+            context['next_billing_date'] = subscription.expires_at
+            days_until = (subscription.expires_at.date() - timezone.now().date()).days
+            context['billing_urgency'] = 'urgent' if days_until <= 3 else 'normal'
+        
+        # VIRAL TRIGGER: Next reward estimate (hardcoded for simplicity)
+        context['next_reward_estimate'] = {
+            "amount": "10",
+            "days": "6"
+        }
+        
+        # PENDING URGENCY: Soonest unlock
+        pending = ReferralReward.objects.filter(
+            referral__referrer=user,
+            status='pending',
+            unlocked_at__gt=timezone.now()
+        ).order_by('unlocked_at').first()
+        
+        if pending:
+            context['pending_unlock_soonest'] = {
+                "unlocks_at": pending.unlocked_at,
+                "days_left": max(0, (pending.unlocked_at.date() - timezone.now().date()).days)
+            }
+        
+        # CELEBRATION: Newly unlocked reward (FIXED: credited_at -> created_at)
+        newly_unlocked = ReferralReward.objects.filter(
+            referral__referrer=user,
+            status='credited',
+            created_at__gte=timezone.now() - timezone.timedelta(hours=24)
+        ).first()
+        
+        if newly_unlocked:
+            extra_days = max(1, int((newly_unlocked.amount_cents / 100) / (plan_price_cents / 100 / plan_duration_days)))
+            context['newly_unlocked_reward'] = {
+                "amount_display": newly_unlocked.amount_display,
+                "extra_days": extra_days
+            }
+        # ===== END REFERRAL INTEGRATION =====
+        
         return render(request, "accounts/dashboard.html", context)
 
 

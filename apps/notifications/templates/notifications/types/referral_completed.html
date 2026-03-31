@@ -1,0 +1,22 @@
+<div class="d-flex align-items-start">
+    <div class="bg-primary bg-opacity-10 rounded-circle p-2 me-3 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 44px; height: 44px;">
+        <i class="bi bi-person-plus-fill text-primary fs-5"></i>
+    </div>
+    <div class="flex-grow-1">
+        <div class="d-flex justify-content-between align-items-start">
+            <strong>New referral joined</strong>
+            {% if not notification.is_read %}<span class="badge bg-primary ms-2">New</span>{% endif %}
+        </div>
+        <p class="text-muted small mb-1">
+            <strong>@{{ referral.referred_user.username }}</strong> joined using your referral link.
+        </p>
+        <p class="small mb-1">
+            {% if estimated_reward_display %}
+                You'll receive <strong class="text-success">${{ estimated_reward_display }}</strong> in credits once their subscription is confirmed.
+            {% else %}
+                You'll receive credits once they subscribe to a paid plan.
+            {% endif %}
+        </p>
+        <small class="text-muted">{{ notification.created_at|timesince }} ago</small>
+    </div>
+</div>

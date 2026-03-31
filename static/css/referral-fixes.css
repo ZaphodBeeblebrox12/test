@@ -1,0 +1,75 @@
+/* Referral System - Critical Fixes CSS */
+
+/* Loss Aversion Banner */
+.loss-aversion-banner {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    border: 2px solid #ffc107;
+    border-radius: 8px;
+    animation: subtle-pulse 2s infinite;
+}
+
+@keyframes subtle-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4); }
+    50% { box-shadow: 0 0 0 10px rgba(255, 193, 7, 0); }
+}
+
+/* Viral Trigger Highlight */
+.viral-trigger-box {
+    background: linear-gradient(135deg, #e7f3ff 0%, #d1e7ff 100%);
+    border-left: 4px solid #0d6efd;
+    border-radius: 0 8px 8px 0;
+}
+
+/* Pending Urgency */
+.urgency-pending {
+    background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
+    border-left: 4px solid #ff9800;
+}
+
+/* Navbar pulse animation */
+@keyframes nav-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+    70% { box-shadow: 0 0 0 8px rgba(220, 53, 69, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+}
+
+.animate-pulse {
+    animation: nav-pulse 2s infinite;
+}
+
+/* Share buttons */
+.btn-whatsapp {
+    background-color: #25D366 !important;
+    border-color: #25D366 !important;
+}
+
+.btn-whatsapp:hover {
+    background-color: #128C7E !important;
+}
+
+.btn-telegram {
+    background-color: #0088cc !important;
+    border-color: #0088cc !important;
+}
+
+.btn-telegram:hover {
+    background-color: #006699 !important;
+}
+
+/* Toast enhancements */
+.toast-container .toast {
+    min-width: 350px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* Empty state CTA */
+.empty-state-cta {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border: 2px dashed #dee2e6;
+    transition: all 0.3s ease;
+}
+
+.empty-state-cta:hover {
+    border-color: #0d6efd;
+    background: #f1f8ff;
+}

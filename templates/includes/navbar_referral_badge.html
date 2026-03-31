@@ -1,0 +1,20 @@
+{% comment %}
+  Navbar Referral Badge - Add to your main navbar
+  Usage: {% include "includes/navbar_referral_badge.html" %}
+{% endcomment %}
+
+{% if referral_stats.total_rewards_available_cents > 0 %}
+    <a href="{% url 'growth:referral_dashboard' %}" class="nav-link position-relative d-flex align-items-center" title="Referral Credits: {{ referral_stats.total_rewards_available_display }}">
+        <i class="bi bi-gift-fill text-success"></i>
+        <span class="badge bg-success ms-1 d-none d-sm-inline">{{ referral_stats.total_rewards_available_display }}</span>
+        {% if newly_unlocked_reward %}
+            <span class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle animate-pulse">
+                <span class="visually-hidden">New credits!</span>
+            </span>
+        {% endif %}
+    </a>
+{% else %}
+    <a href="{% url 'growth:referral_dashboard' %}" class="nav-link" title="Earn Free Credits">
+        <i class="bi bi-gift"></i>
+    </a>
+{% endif %}
