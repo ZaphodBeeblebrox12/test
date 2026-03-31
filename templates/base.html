@@ -7,6 +7,10 @@
     <title>{% block title %}Community Platform{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+    <!-- Referral UI CSS - MUST be inside <head>, not outside </html> -->
+    <link rel="stylesheet" href="{% static 'css/referral-enhanced.css' %}">
+
     <style>
         :root {
             --sidebar-width: 250px;
@@ -133,8 +137,6 @@
             }
         }
     </style>
-    <!-- ADDED: referral fixes CSS -->
-    <link rel="stylesheet" href="{% static 'css/referral-fixes.css' %}">
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -166,6 +168,15 @@
             <li>
                 <a href="{% url 'activity' %}" class="{% if request.path == '/activity/' %}active{% endif %}">
                     <i class="bi bi-clock-history"></i> Activity
+                </a>
+            </li>
+            <!-- REFERRAL LINK IN SIDEBAR with credit badge -->
+            <li>
+                <a href="{% url 'growth:referral_dashboard' %}" class="{% if request.path == '/growth/referrals/' %}active{% endif %}">
+                    <i class="bi bi-gift"></i> Referral Credits
+                    {% if referral_stats.total_rewards_available_cents > 0 %}
+                    <span class="badge bg-success ms-auto">{{ referral_stats.total_rewards_available_display }}</span>
+                    {% endif %}
                 </a>
             </li>
             <li class="mt-auto">
@@ -203,6 +214,14 @@
                 {% if user.telegram_verified %}
                 <span class="badge bg-success"><i class="bi bi-telegram"></i> Connected</span>
                 {% endif %}
+                <!-- REFERRAL BADGE IN TOP NAVBAR -->
+                {% if referral_stats.total_rewards_available_cents > 0 %}
+                <a href="{% url 'growth:referral_dashboard' %}" class="text-decoration-none" title="You have referral credits!">
+                    <span class="badge bg-success fs-6">
+                        <i class="bi bi-gift-fill me-1"></i>{{ referral_stats.total_rewards_available_display }}
+                    </span>
+                </a>
+                {% endif %}
                 <div class="dropdown">
                     <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle" data-bs-toggle="dropdown">
                         {% if user.avatar %}
@@ -216,6 +235,15 @@
                     </a>
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li><a class="dropdown-item" href="{% url 'profile' %}"><i class="bi bi-person"></i> Profile</a></li>
+                        <!-- REFERRAL IN DROPDOWN -->
+                        <li>
+                            <a class="dropdown-item" href="{% url 'growth:referral_dashboard' %}">
+                                <i class="bi bi-gift text-success"></i> Referral Credits
+                                {% if referral_stats.total_rewards_available_cents > 0 %}
+                                <span class="badge bg-success ms-2">{{ referral_stats.total_rewards_available_display }}</span>
+                                {% endif %}
+                            </a>
+                        </li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="{% url 'account_logout' %}"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
                     </ul>
@@ -239,9 +267,10 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- ADDED: referral celebrations and confetti library -->
-    <script src="{% static 'js/referral-celebrations.js' %}"></script>
+    <!-- Confetti library (MUST be before referral-celebrations.js) -->
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- Referral celebrations script -->
+    <script src="{% static 'js/referral-celebrations.js' %}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

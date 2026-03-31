@@ -1,147 +1,214 @@
 {% load humanize %}
+<!--
+  Referral Credits Card - Dashboard Integration (BEHAVIORAL TRIGGERS EDITION)
+
+  IMPLEMENTED:
+  ✅ Viral trigger: "Refer 1 more → +X days"
+  ✅ Loss aversion: "Use credits before billing" 
+  ✅ Pending urgency: "Unlocking in 2 days"
+  ✅ Optimized share message (high conversion)
+  ✅ WhatsApp/Telegram share buttons
+  ✅ Empty state with loop visual
+  ✅ Auto-apply microcopy
+  ✅ Celebration toast container
+-->
 <div class="col-md-4 mb-4">
     <div class="card h-100 {% if referral_stats.total_rewards_available_cents > 0 %}border-success{% else %}border-secondary{% endif %}">
         <div class="card-header {% if referral_stats.total_rewards_available_cents > 0 %}bg-success text-white{% else %}bg-light{% endif %} d-flex justify-content-between align-items-center">
             <span><i class="bi bi-gift-fill"></i> Referral Credits</span>
             {% if referral_stats.completed > 0 %}
-                <span class="badge {% if referral_stats.total_rewards_available_cents > 0 %}bg-white text-success{% else %}bg-secondary{% endif %}">{{ referral_stats.completed }} joined</span>
+                <span class="badge {% if referral_stats.total_rewards_available_cents > 0 %}bg-white text-success{% else %}bg-secondary{% endif %}">
+                    {{ referral_stats.completed }} joined
+                </span>
             {% endif %}
         </div>
         <div class="card-body d-flex flex-column">
+
             {% if referral_stats.total_rewards_available_cents > 0 or referral_stats.pending_rewards_cents > 0 %}
+                <!-- HAS CREDITS STATE -->
+
+                <!-- Balance Display -->
                 <div class="text-center mb-3">
-                    <div class="display-6 text-success fw-bold">{{ referral_stats.total_rewards_available_display }}</div>
-                    <div class="text-muted small mt-1">
-                        {% if extension_estimate.extra_days > 0 %}≈ {{ extension_estimate.extra_days }} extra day{{ extension_estimate.extra_days|pluralize }}{% else %}Credits available{% endif %}
+                    <div class="display-6 text-success fw-bold referral-balance" id="referralBalance">
+                        {{ referral_stats.total_rewards_available_display }}
                     </div>
-                    <small class="text-success d-block mt-1"><i class="bi bi-check-circle-fill"></i> Auto-apply at checkout</small>
+                    <div class="text-muted small mt-1">
+                        {% if extension_estimate.extra_days > 0 %}
+                            ≈ {{ extension_estimate.extra_days }} extra day{{ extension_estimate.extra_days|pluralize }} on your plan
+                        {% else %}
+                            Credits available
+                        {% endif %}
+                    </div>
+                    <!-- Microcopy: Auto-apply reassurance -->
+                    <small class="text-success d-block mt-1">
+                        <i class="bi bi-check-circle-fill"></i> Credits auto-apply at checkout
+                    </small>
                 </div>
 
-                {% if next_billing_date and referral_stats.total_rewards_available_cents > 0 %}
-                <div class="mb-3 p-2 bg-danger bg-opacity-10 rounded border-start border-3 border-danger">
-                    <i class="bi bi-exclamation-triangle-fill text-danger me-2"></i>
-                    <strong class="text-danger">Use your credits soon!</strong>
-                    <small class="d-block text-muted mt-1">Next billing: {{ next_billing_date|timeuntil }}. <strong>Don't miss {{ extension_estimate.extra_days }} extra days.</strong></small>
-                    <a href="{% url 'subscriptions:plans' %}" class="btn btn-sm btn-danger w-100 mt-2"><i class="bi bi-arrow-up-circle me-1"></i>Upgrade Now</a>
-                </div>
-                {% endif %}
-
+                <!-- 🎯 VIRAL TRIGGER: "Refer 1 more → +X days" -->
                 {% if next_reward_estimate %}
-                <div class="mb-3 p-2 bg-light rounded border-start border-3 border-primary">
-                    <small class="text-muted d-block">Next reward</small>
-                    <strong class="text-primary"><i class="bi bi-arrow-right-circle"></i> Refer 1 more → +{{ next_reward_estimate.days }} days</strong>
+                <div class="mb-3 p-2 bg-primary bg-opacity-10 rounded border-start border-3 border-primary">
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <small class="text-muted d-block">Next reward</small>
+                            <strong class="text-primary">
+                                <i class="bi bi-arrow-right-circle"></i>
+                                Refer 1 more → +{{ next_reward_estimate.days }} days
+                            </strong>
+                        </div>
+                        <span class="badge bg-primary">+${{ next_reward_estimate.amount }}</span>
+                    </div>
                 </div>
                 {% endif %}
 
+                <!-- ⚠️ LOSS AVERSION: "Use before billing" -->
+                {% if next_billing_date and billing_urgency == 'urgent' %}
+                <div class="mb-3 p-2 bg-danger bg-opacity-10 rounded border-start border-3 border-danger">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-exclamation-triangle-fill text-danger me-2 fs-5"></i>
+                        <div>
+                            <strong class="text-danger">Use your credits soon!</strong>
+                            <small class="d-block text-muted">
+                                Next billing: {{ next_billing_date|timeuntil }}. 
+                                <strong>Don't miss {{ extension_estimate.extra_days }} extra days.</strong>
+                            </small>
+                        </div>
+                    </div>
+                    <a href="{% url 'subscriptions:plans' %}" class="btn btn-sm btn-danger w-100 mt-2">
+                        <i class="bi bi-arrow-up-circle"></i> Upgrade Now
+                    </a>
+                </div>
+                {% endif %}
+
+                <!-- ⏳ PENDING URGENCY: Countdown with loss aversion -->
                 {% if referral_stats.pending_rewards_cents > 0 %}
                 <div class="mb-3 p-2 bg-warning bg-opacity-10 rounded border-start border-3 border-warning">
-                    <span class="small"><i class="bi bi-clock text-warning"></i> <strong>${{ referral_stats.pending_rewards_display }}</strong> unlocking {% if pending_unlock_soonest %}{% if pending_unlock_soonest.days_left == 0 %}today!{% else %}in {{ pending_unlock_soonest.days_left }}d{% endif %}{% endif %}</span>
-                    <small class="text-muted d-block mt-1"><strong>Secure these credits</strong> by keeping referrals active</small>
+                    <div class="d-flex align-items-center justify-content-between mb-1">
+                        <span class="small">
+                            <i class="bi bi-clock text-warning"></i>
+                            <strong>${{ referral_stats.pending_rewards_display }}</strong> unlocking
+                        </span>
+                        {% if pending_unlock_soonest %}
+                        <span class="badge bg-warning text-dark">
+                            {% if pending_unlock_soonest.days_left == 0 %}
+                                Today!
+                            {% else %}
+                                {{ pending_unlock_soonest.days_left }}d
+                            {% endif %}
+                        </span>
+                        {% endif %}
+                    </div>
+                    <!-- Loss aversion microcopy -->
+                    <small class="text-muted d-block">
+                        <i class="bi bi-shield-check"></i> 
+                        <strong>Secure these credits</strong> by keeping referrals active
+                    </small>
                 </div>
                 {% endif %}
 
-                <!-- SHARE SECTION -->
+                <!-- Share Section with Optimized Message -->
                 <div class="mt-auto">
-                    <label class="small text-muted mb-2">Share & Earn More</label>
-
-                    <!-- WhatsApp -->
-                    <a href="https://wa.me/?text={{ optimized_share_message|urlencode }}" 
-                       target="_blank" 
-                       rel="noopener" 
-                       class="btn w-100 mb-2 d-flex align-items-center justify-content-center"
-                       style="background-color: #25D366; border-color: #25D366; color: white;">
-                        <i class="bi bi-whatsapp me-2"></i> 
-                        Share on WhatsApp 
-                        <span class="badge bg-white text-success ms-2">Best</span>
-                    </a>
-
-                    <!-- Telegram - App Protocol (Mobile) -->
-                    <a href="tg://msg_url?url={{ referral_link|urlencode }}&text={{ optimized_share_message|urlencode }}" 
-                       class="btn w-100 mb-2 d-flex align-items-center justify-content-center"
-                       style="background-color: #0088cc; border-color: #0088cc; color: white;">
-                        <i class="bi bi-telegram me-2"></i> 
-                        Open in Telegram App
-                        <small class="ms-2 opacity-75">(Mobile)</small>
-                    </a>
-
-                    <!-- Telegram - Web Version (Desktop) -->
-                    <a href="https://web.telegram.org/#/im?tgaddr=tg%3A%2F%2Fmsg_url%3Furl%3D{{ referral_link|urlencode }}%26text%3D{{ optimized_share_message|urlencode }}" 
-                       target="_blank" 
-                       rel="noopener" 
-                       class="btn btn-outline-primary w-100 mb-2 d-flex align-items-center justify-content-center">
-                        <i class="bi bi-telegram me-2"></i> 
-                        Open in Telegram Web
-                        <small class="ms-2 opacity-75">(Desktop)</small>
-                    </a>
-
-                    <!-- Email -->
-                    <a href="mailto:?subject={{ email_subject|urlencode }}&body={{ optimized_share_message|urlencode }}" 
-                       class="btn btn-outline-secondary w-100 mb-2 d-flex align-items-center justify-content-center">
-                        <i class="bi bi-envelope me-2"></i> 
-                        Share via Email
-                    </a>
-
-                    <!-- Copy Link -->
-                    <div class="input-group input-group-sm">
-                        <input type="text" class="form-control" value="{{ referral_link }}" id="dashboardReferralLink" readonly onclick="this.select()">
-                        <button class="btn btn-outline-secondary" type="button" onclick="copyReferralLink('dashboardReferralLink', this)">
+                    <label class="small text-muted mb-1">Share your link</label>
+                    <div class="input-group input-group-sm mb-2">
+                        <input type="text" 
+                               class="form-control form-control-sm" 
+                               value="{{ referral_link }}" 
+                               id="dashboardReferralLink"
+                               readonly
+                               onclick="this.select()">
+                        <button class="btn btn-outline-success" 
+                                type="button"
+                                onclick="copyReferralLink('dashboardReferralLink', this)"
+                                title="Copy link">
                             <i class="bi bi-clipboard"></i>
                         </button>
                     </div>
 
-                    <!-- Native Share API (Mobile) -->
-                    <button onclick="nativeShare()" 
-                            class="btn btn-outline-dark w-100 mt-2 d-flex align-items-center justify-content-center d-md-none">
-                        <i class="bi bi-share-fill me-2"></i> 
-                        More sharing options...
-                    </button>
+                    <!-- 🚀 SHARE BUTTONS: WhatsApp + Telegram (80% of referrals) -->
+                    <div class="d-flex gap-2">
+                        <a href="https://wa.me/?text={{ optimized_share_message|urlencode }}" 
+                           target="_blank"
+                           onclick="trackShare('whatsapp')"
+                           class="btn btn-sm btn-success flex-fill d-flex align-items-center justify-content-center"
+                           style="background-color: #25D366; border-color: #25D366;">
+                            <i class="bi bi-whatsapp me-1"></i> WhatsApp
+                        </a>
+                        <a href="https://t.me/share/url?url={{ referral_link|urlencode }}&text={{ optimized_share_message|urlencode }}" 
+                           target="_blank"
+                           onclick="trackShare('telegram')"
+                           class="btn btn-sm btn-primary flex-fill d-flex align-items-center justify-content-center"
+                           style="background-color: #0088cc; border-color: #0088cc;">
+                            <i class="bi bi-telegram me-1"></i> Telegram
+                        </a>
+                    </div>
                 </div>
 
+                <!-- Stats Footer -->
                 <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
-                    <span class="text-muted small">{{ referral_stats.completed }} friend{{ referral_stats.completed|pluralize }} joined</span>
-                    <a href="{% url 'growth:referral_dashboard' %}" class="small text-decoration-none">Details →</a>
+                    <span class="text-muted small">
+                        {{ referral_stats.completed }} friend{{ referral_stats.completed|pluralize }} joined
+                    </span>
+                    <a href="{% url 'growth:referral_dashboard' %}" class="small text-decoration-none">
+                        Details →
+                    </a>
                 </div>
+
             {% else %}
-                <!-- EMPTY STATE -->
+                <!-- 🎯 EMPTY STATE: Clear CTA with loop visual -->
                 <div class="text-center py-3 flex-grow-1 d-flex flex-column justify-content-center">
-                    <i class="bi bi-gift text-muted" style="font-size: 3rem;"></i>
-                    <h6 class="fw-bold mb-2 mt-3">Get free premium access</h6>
-                    <p class="text-muted small mb-3">Invite friends, earn credits, extend subscription</p>
+                    <div class="position-relative d-inline-block mx-auto mb-3">
+                        <i class="bi bi-gift text-muted" style="font-size: 3rem;"></i>
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-success">
+                            FREE
+                        </span>
+                    </div>
 
-                    <!-- WhatsApp -->
-                    <a href="https://wa.me/?text={{ optimized_share_message|urlencode }}" 
-                       target="_blank" 
-                       class="btn w-100 mb-2 d-flex align-items-center justify-content-center"
-                       style="background-color: #25D366; border-color: #25D366; color: white;">
-                        <i class="bi bi-whatsapp me-2"></i> Share on WhatsApp
-                    </a>
+                    <h6 class="fw-bold mb-2">Get free premium access</h6>
+                    <p class="text-muted small mb-3">
+                        Invite friends and earn credits that automatically extend your subscription
+                    </p>
 
-                    <!-- Telegram App -->
-                    <a href="tg://msg_url?url={{ referral_link|urlencode }}&text={{ optimized_share_message|urlencode }}" 
-                       class="btn w-100 mb-2 d-flex align-items-center justify-content-center"
-                       style="background-color: #0088cc; border-color: #0088cc; color: white;">
-                        <i class="bi bi-telegram me-2"></i> Open in Telegram App
-                    </a>
+                    <!-- 🔄 Retention Loop Visual -->
+                    <div class="d-flex justify-content-center align-items-center gap-1 mb-3 small">
+                        <span class="badge bg-light text-dark border">Refer</span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                        <span class="badge bg-light text-dark border">Earn</span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                        <span class="badge bg-light text-dark border">Extend</span>
+                        <i class="bi bi-arrow-right text-muted"></i>
+                        <span class="badge bg-success">Repeat</span>
+                    </div>
 
-                    <!-- Telegram Web -->
-                    <a href="https://web.telegram.org/#/im?tgaddr=tg%3A%2F%2Fmsg_url%3Furl%3D{{ referral_link|urlencode }}%26text%3D{{ optimized_share_message|urlencode }}" 
-                       target="_blank" 
-                       class="btn btn-outline-primary w-100 mb-2 d-flex align-items-center justify-content-center">
-                        <i class="bi bi-telegram me-2"></i> Open in Telegram Web
-                    </a>
-
-                    <!-- Email -->
-                    <a href="mailto:?subject={{ email_subject|urlencode }}&body={{ optimized_share_message|urlencode }}" 
-                       class="btn btn-outline-secondary w-100 mb-2 d-flex align-items-center justify-content-center">
-                        <i class="bi bi-envelope me-2"></i> Share via Email
-                    </a>
-
-                    <!-- Copy Link -->
-                    <div class="input-group input-group-sm">
-                        <input type="text" class="form-control" value="{{ referral_link }}" id="dashboardReferralLinkEmpty" readonly>
-                        <button class="btn btn-outline-secondary" type="button" onclick="copyReferralLink('dashboardReferralLinkEmpty', this)">
-                            <i class="bi bi-clipboard"></i>
+                    <div class="input-group input-group-sm mb-2">
+                        <input type="text" 
+                               class="form-control" 
+                               value="{{ referral_link }}" 
+                               id="dashboardReferralLinkEmpty"
+                               readonly>
+                        <button class="btn btn-primary" 
+                                type="button"
+                                onclick="copyReferralLink('dashboardReferralLinkEmpty', this)"
+                                title="Copy link">
+                            <i class="bi bi-clipboard"></i> Copy
                         </button>
+                    </div>
+
+                    <!-- Share buttons for empty state -->
+                    <div class="d-flex gap-2 justify-content-center">
+                        <a href="https://wa.me/?text={{ optimized_share_message|urlencode }}" 
+                           target="_blank"
+                           onclick="trackShare('whatsapp')"
+                           class="btn btn-sm btn-success" 
+                           style="background-color: #25D366; border-color: #25D366;">
+                            <i class="bi bi-whatsapp"></i> WhatsApp
+                        </a>
+                        <a href="https://t.me/share/url?url={{ referral_link|urlencode }}&text={{ optimized_share_message|urlencode }}" 
+                           target="_blank"
+                           onclick="trackShare('telegram')"
+                           class="btn btn-sm btn-primary"
+                           style="background-color: #0088cc; border-color: #0088cc;">
+                            <i class="bi bi-telegram"></i> Telegram
+                        </a>
                     </div>
                 </div>
             {% endif %}
@@ -149,36 +216,125 @@
     </div>
 </div>
 
+<!-- 🎉 Celebration Toast Container -->
+<div id="referralToastContainer" class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1055;"></div>
+
 <script>
-// Copy link function
+/**
+ * Copy referral link with visual feedback
+ */
 function copyReferralLink(inputId, button) {
     const input = document.getElementById(inputId);
     if (!input || !button) return;
+
     input.select();
+    input.setSelectionRange(0, 99999);
+
     navigator.clipboard.writeText(input.value).then(function() {
+        const originalHtml = button.innerHTML;
         button.innerHTML = '<i class="bi bi-check-lg"></i>';
-        button.classList.remove('btn-outline-secondary');
+        button.classList.remove('btn-outline-success', 'btn-outline-primary', 'btn-primary');
         button.classList.add('btn-success');
+        button.disabled = true;
+
+        showReferralToast('Link copied! Ready to share.', 'success');
+
         setTimeout(function() {
-            button.innerHTML = '<i class="bi bi-clipboard"></i>';
-            button.classList.remove('btn-success');
-            button.classList.add('btn-outline-secondary');
+            button.innerHTML = originalHtml;
+            button.disabled = false;
+            if (inputId.includes('Empty')) {
+                button.classList.remove('btn-success');
+                button.classList.add('btn-primary');
+            } else {
+                button.classList.remove('btn-success');
+                button.classList.add('btn-outline-success');
+            }
         }, 2000);
+    }).catch(function(err) {
+        input.select();
+        input.focus();
+        showReferralToast('Press Ctrl+C to copy', 'info');
     });
 }
 
-// Native Share API (for mobile devices)
-function nativeShare() {
-    if (navigator.share) {
-        navigator.share({
-            title: '{{ site_name|escapejs }}',
-            text: '{{ optimized_share_message|escapejs }}',
-            url: '{{ referral_link|escapejs }}'
-        }).catch((error) => console.log('Share canceled', error));
-    } else {
-        // Fallback to copy
-        copyReferralLink('dashboardReferralLink', document.getElementById('copyBtn'));
-        alert('Link copied to clipboard!');
+/**
+ * 🎉 Show toast notification
+ */
+function showReferralToast(message, type = 'success') {
+    const container = document.getElementById('referralToastContainer');
+    if (!container) return;
+
+    const toastId = 'referralToast' + Date.now();
+    const icons = {
+        success: 'bi-check-circle-fill',
+        info: 'bi-info-circle',
+        celebration: 'bi-gift-fill'
+    };
+    const bgClass = type === 'success' ? 'bg-success' : 'bg-primary';
+
+    container.insertAdjacentHTML('beforeend', `
+        <div id="${toastId}" class="toast align-items-center text-white ${bgClass} border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="bi ${icons[type]} me-2"></i>${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    `);
+
+    const toast = new bootstrap.Toast(document.getElementById(toastId), { delay: 4000 });
+    toast.show();
+    document.getElementById(toastId).addEventListener('hidden.bs.toast', () => {
+        document.getElementById(toastId).remove();
+    });
+}
+
+/**
+ * Track share button clicks
+ */
+function trackShare(platform) {
+    // Analytics tracking
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'share', {
+            method: platform,
+            content_type: 'referral_link'
+        });
+    }
+    showReferralToast(`Opening ${platform}...`, 'info');
+}
+
+/**
+ * 🎊 Celebrate reward unlock
+ */
+function celebrateReward(amount, days) {
+    showReferralToast(
+        `🎉 +$${amount} unlocked! +${days} days added to your subscription!`,
+        'celebration'
+    );
+
+    // Animate balance
+    const balanceEl = document.getElementById('referralBalance');
+    if (balanceEl) {
+        balanceEl.style.animation = 'balancePop 0.5s ease-in-out';
+        setTimeout(() => balanceEl.style.animation = '', 500);
     }
 }
+
+// Auto-celebrate if newly unlocked reward exists
+{% if newly_unlocked_reward %}
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(() => {
+        celebrateReward('{{ newly_unlocked_reward.amount_display }}', {{ newly_unlocked_reward.extra_days }});
+    }, 500);
+});
+{% endif %}
 </script>
+
+<style>
+@keyframes balancePop {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+</style>
