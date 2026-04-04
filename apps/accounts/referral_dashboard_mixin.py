@@ -1,40 +1,42 @@
 """
-Referral Dashboard Context Mixin - Drop this into your accounts/views.py
+Referral Dashboard Context Mixin - Drop-in replacement for enhanced UX
 
 USAGE:
-1. Copy this file content
-2. In your accounts/views.py, add the import
-3. Add ReferralDashboardMixin to your DashboardView class
+1. Copy this file to apps/accounts/referral_dashboard_mixin.py
+2. Import in your views: from apps.accounts.referral_dashboard_mixin import ReferralDashboardContextMixin
+3. Add to your DashboardView class inheritance
 4. Call super().get_context_data() to get all referral context
 
 Example:
-    class DashboardView(LoginRequiredMixin, ReferralDashboardMixin, TemplateView):
+    class DashboardView(LoginRequiredMixin, ReferralDashboardContextMixin, TemplateView):
         template_name = "accounts/dashboard.html"
 
         def get_context_data(self, **kwargs):
-            context = super().get_context_data(**kwargs)  # This gets referral data
+            context = super().get_context_data(**kwargs)  # Gets referral data
             # ... add your other context ...
             return context
 """
+from decimal import Decimal
 from django.utils import timezone
 from django.conf import settings
 from apps.growth.models import ReferralCode, ReferralSettings, ReferralReward, Referral
 from apps.growth.services import UserRewardBalance, ReferralService, ReferralRewardService
 
 
-class ReferralDashboardMixin:
+class ReferralDashboardContextMixin:
     """
-    Mixin to add referral context to any dashboard view.
+    Enhanced mixin to add referral context with psychology-driven UX.
 
     Provides:
-    - referral_link
-    - optimized_share_message (HIGH CONVERSION)
-    - referral_stats (with available/pending display)
-    - extension_estimate
-    - next_reward_estimate (viral trigger)
-    - next_billing_date (loss aversion)
-    - pending_unlock_soonest (urgency)
-    - newly_unlocked_reward (celebration)
+    - reward_percentage (20% default, currency-aware)
+    - available_credits (currency-aware display)
+    - estimated_days (only if active plan)
+    - estimated_days_per_referral (tangible value)
+    - tangible_example (~X days per referral)
+    - progress_message ("1 referral away" trigger)
+    - reward_timing_note (trust messaging)
+    - social_framing (win-win messaging)
+    - share_message (safe, conditional)
     """
 
     def get_context_data(self, **kwargs):
@@ -49,31 +51,32 @@ class ReferralDashboardMixin:
                 f"/growth/r/{referral_code.code}/"
             )
 
-            # ===== 2. OPTIMIZED SHARE MESSAGE (HIGH CONVERSION) =====
-            site_name = getattr(settings, 'SITE_NAME', 'TradeAdmin')
-            referral_link = context["referral_link"]
+            # ===== 2. REWARD SETTINGS =====
+            ref_settings = ReferralSettings.get_settings()
+            reward_percentage = ref_settings.default_reward_percentage if ref_settings else Decimal("20.00")
+            context["reward_percentage"] = reward_percentage
 
-            # Primary message - mutual benefits, recipient first
-            context["optimized_share_message"] = (
-                f"Get free premium access on {site_name}!\n\n"
-                f"Use my link:\n"
-                f"{referral_link}\n\n"
-                f"You'll get discounts and exclusive access, and I'll get extra subscription days 🚀"
-            )
-
-            context["site_name"] = site_name
-
-            # ===== 3. BALANCE & STATS =====
-            balance = UserRewardBalance(user)
-            stats = ReferralService.get_referral_stats(user)
-            stats['total_rewards_available_cents'] = balance.total_cents
-            stats['total_rewards_available_display'] = balance.total_display
-            stats['pending_rewards_display'] = f"${stats.get('pending_rewards_cents', 0) / 100:.2f}"
-            context["referral_stats"] = stats
-
-            # ===== 4. EXTENSION ESTIMATE =====
+            # ===== 3. CURRENCY HANDLING =====
             from apps.subscriptions.api import get_active_subscription
             active_sub = get_active_subscription(user)
+
+            currency = "USD"
+            if active_sub and hasattr(active_sub, 'plan_price') and active_sub.plan_price:
+                currency = active_sub.plan_price.currency
+            context["currency"] = currency
+            context["currency_symbol"] = self._get_currency_symbol(currency)
+
+            # ===== 4. BALANCE & STATS =====
+            balance = UserRewardBalance(user)
+            stats = ReferralService.get_referral_stats(user)
+
+            stats['total_rewards_available_cents'] = balance.total_cents
+            stats['total_rewards_available_display'] = balance.total_display
+            stats['pending_rewards_display'] = f"{context['currency_symbol']}{stats.get('pending_rewards_cents', 0) / 100:.2f}"
+
+            context["referral_stats"] = stats
+
+            # ===== 5. EXTENSION ESTIMATE =====
             plan_price_cents = 1000
             plan_duration_days = 30
 
@@ -86,25 +89,68 @@ class ReferralDashboardMixin:
                 user, plan_price_cents=plan_price_cents, plan_duration_days=plan_duration_days
             )
 
-            # ===== 5. LOSS AVERSION TRIGGERS =====
+            # ===== 6. TANGIBLE VALUE PER REFERRAL =====
+            if plan_price_cents > 0:
+                typical_reward_cents = int(plan_price_cents * float(reward_percentage) / 100)
+                days_per_referral = max(1, int(typical_reward_cents / (plan_price_cents / plan_duration_days)))
+                context["estimated_days_per_referral"] = days_per_referral
+                context["tangible_example"] = f"~{days_per_referral} days"
+            else:
+                context["estimated_days_per_referral"] = 6
+                context["tangible_example"] = "~6 days"
+
+            # ===== 7. PSYCHOLOGY: PROGRESS MESSAGE =====
+            completed = stats.get('completed', 0)
+            pending = stats.get('pending', 0)
+
+            if completed == 0 and pending == 0:
+                context["progress_message"] = "Refer 1 friend to start earning credits"
+            elif pending > 0:
+                context["progress_message"] = f"{pending} referral(s) pending confirmation"
+            else:
+                context["progress_message"] = f"You're doing great! {completed} friend(s) joined"
+
+            # ===== 8. PSYCHOLOGY: REWARD TIMING NOTE =====
+            context["reward_timing_note"] = "Rewards unlock after subscription is confirmed (up to 3 days)"
+
+            # ===== 9. PSYCHOLOGY: SOCIAL FRAMING =====
+            context["social_framing"] = "You earn rewards. Your friend gets a better deal."
+
+            # ===== 10. SAFE SHARE MESSAGE =====
+            site_name = getattr(settings, 'SITE_NAME', 'TradeAdmin')
+            referral_link = context["referral_link"]
+
+            if active_sub:
+                share_message = (
+                    f"Get premium access on {site_name}!\n\n"
+                    f"Use my link:\n"
+                    f"{referral_link}\n\n"
+                    f"You'll get exclusive access, and I'll earn credits toward my subscription 🎁"
+                )
+            else:
+                share_message = (
+                    f"Join me on {site_name}!\n\n"
+                    f"Use my link:\n"
+                    f"{referral_link}\n\n"
+                    f"Get started with premium features 🚀"
+                )
+            context["optimized_share_message"] = share_message
+            context["site_name"] = site_name
+
+            # ===== 11. REWARD SCALING MESSAGE =====
+            context["reward_scaling_message"] = "Rewards scale with the plan your friend chooses"
+
+            # ===== 12. LOSS AVERSION: Billing Urgency =====
             if active_sub and active_sub.expires_at:
                 context["next_billing_date"] = active_sub.expires_at
                 days_until = (active_sub.expires_at.date() - timezone.now().date()).days
+                context["days_until_billing"] = days_until
                 context["billing_urgency"] = 'urgent' if days_until <= 3 else 'normal'
 
-            # ===== 6. VIRAL TRIGGERS =====
-            ref_settings = ReferralSettings.get_settings()
-            if ref_settings:
-                reward_amount = ref_settings.reward_amount_cents / 100
-                reward_days = max(1, int(reward_amount / (plan_price_cents / 100 / plan_duration_days)))
-                context["next_reward_estimate"] = {
-                    "amount": f"{reward_amount:.0f}",
-                    "days": reward_days
-                }
-            else:
-                context["next_reward_estimate"] = {"amount": "10", "days": 6}
+            # ===== 13. VIRAL TRIGGERS: Next Reward Estimate =====
+            context["next_reward_estimate"] = None
 
-            # ===== 7. PENDING URGENCY =====
+            # ===== 14. PENDING URGENCY =====
             pending_reward = ReferralReward.objects.filter(
                 referral__referrer=user,
                 status='pending',
@@ -118,7 +164,7 @@ class ReferralDashboardMixin:
                     "days_left": max(0, days_left)
                 }
 
-            # ===== 8. NEWLY UNLOCKED (CELEBRATION) =====
+            # ===== 15. NEWLY UNLOCKED (CELEBRATION) =====
             newly_unlocked = ReferralReward.objects.filter(
                 referral__referrer=user,
                 status='credited',
@@ -132,11 +178,29 @@ class ReferralDashboardMixin:
                     "extra_days": extra_days
                 }
 
+            # ===== 16. RECENT REFERRALS =====
+            recent_referrals = Referral.objects.filter(
+                referrer=user
+            ).select_related('referred_user', 'reward').order_by('-created_at')[:10]
+            context["recent_referrals"] = recent_referrals
+
+            # ===== 17. REWARD BUCKETS =====
+            context["reward_buckets"] = stats.get('completed', 0)
+
         except Exception as e:
-            # Fail silently - don't break dashboard if referral system errors
             import logging
             logger = logging.getLogger(__name__)
             logger.error(f"Error loading referral context: {e}")
+            print(f"REFERRAL MIXIN ERROR: {e}")  # TEMP DEBUG
             context["referral_error"] = True
 
         return context
+
+    def _get_currency_symbol(self, currency_code: str) -> str:
+        symbols = {
+            'USD': '$',
+            'INR': '₹',
+            'EUR': '€',
+            'GBP': '£',
+        }
+        return symbols.get(currency_code, '$')

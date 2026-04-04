@@ -1,0 +1,453 @@
+36 objects imported automatically (use -v 2 for details).
+
+Python 3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]
+Type 'copyright', 'credits' or 'license' for more information
+IPython 8.12.3 -- An enhanced Interactive Python. Type '?' for help.
+
+In [1]: 
+In [2]:    ...:    ...:    ...:    ...:    ...:    ...:    ...:    ...:    ...:    ...:    ...: Out[2]: '\nDROP-IN VALIDATION TEST (NO MANUAL SERVICE CALLS)\n\nRun:\npython manage.py shell < test_referral_dropin_validation.py\n\nGoal:\nVerify FULL automatic flow works:\nUser A → refer → User B → signup → payment → reward → dashboard\n\nNO manual calls to ReferralService allowed.\n'
+
+In [3]: 
+In [3]: 
+In [4]: 
+In [5]: 
+In [6]: 
+In [7]: 
+In [7]: Out[7]: 'config.settings.development'
+
+In [8]: 
+In [9]: 
+In [9]: 
+In [10]: 
+In [11]: 
+In [12]: 
+In [12]: 
+In [13]: 
+In [13]: 
+In [14]: 
+In [14]: 
+In [15]: 
+In [15]: 
+In [16]: 
+In [16]: 
+In [17]: 
+In [18]: 
+In [19]: 
+In [19]: 
+In [20]: 
+In [20]: 
+In [21]: 
+In [21]: 
+In [22]: 
+In [22]:     ...:   Cell In[22], line 2
+    status = "PASS" if condition else "FAIL"
+    ^
+IndentationError: expected an indented block after function definition on line 1
+
+
+In [23]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[23], line 1
+----> 1 symbol = "✓" if condition else "✗"
+
+NameError: name 'condition' is not defined
+
+In [24]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[24], line 1
+----> 1 print(f"{symbol} {name}: {status}")
+
+NameError: name 'symbol' is not defined
+
+In [25]:   Cell In[25], line 1
+    return condition
+    ^
+SyntaxError: 'return' outside function
+
+
+In [26]: 
+In [26]:     ...:   Cell In[26], line 2
+    print("\n" + "="*50)
+    ^
+IndentationError: expected an indented block after function definition on line 1
+
+
+In [27]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[27], line 1
+----> 1 print(title)
+
+NameError: name 'title' is not defined
+
+In [28]: ==================================================
+
+In [29]: 
+In [29]: 
+In [30]: 
+In [30]: 
+In [31]: 
+In [31]: 
+In [32]: 
+In [32]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[32], line 1
+----> 1 section("CLEANUP")
+
+NameError: name 'section' is not defined
+
+In [33]: 
+In [33]: Out[33]: (0, {})
+
+In [34]: Out[34]: 
+(4,
+ {'growth.ReferralRewardLedger': 2,
+  'growth.ReferralReward': 1,
+  'growth.Referral': 1})
+
+In [35]: Out[35]: (0, {})
+
+In [36]: Out[36]: (1, {'payments.PaymentIntent': 1})
+
+In [37]: Out[37]: (2, {'subscriptions.Subscription': 2})
+
+In [38]: 
+In [38]: 
+In [39]: 
+In [39]: 
+In [40]: 
+In [40]: 
+In [41]: 
+In [41]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[41], line 1
+----> 1 section("SETUP PLAN")
+
+NameError: name 'section' is not defined
+
+In [42]: 
+In [42]:     ...:     ...:     ...: 
+In [43]: 
+In [43]:     ...:     ...:     ...:     ...:     ...: 
+In [44]: 
+In [44]: Plan created: $10.0
+
+In [45]: 
+In [45]: 
+In [46]: 
+In [46]: 
+In [47]: 
+In [47]: 
+In [48]: 
+In [48]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[48], line 1
+----> 1 section("USER A (REFERRER)")
+
+NameError: name 'section' is not defined
+
+In [49]: 
+In [49]:     ...:     ...:     ...: 
+In [50]: 
+In [50]: 
+In [51]: 
+In [51]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[51], line 1
+----> 1 assert_check("User A created", user_a is not None)
+
+NameError: name 'assert_check' is not defined
+
+In [52]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[52], line 1
+----> 1 assert_check("Referral code exists", ref_code is not None)
+
+NameError: name 'assert_check' is not defined
+
+In [53]: 
+In [53]: Referral Code: ACZI1178
+
+In [54]: 
+In [54]: 
+In [55]: 
+In [55]: 
+In [56]: 
+In [56]: 
+In [57]: 
+In [57]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[57], line 1
+----> 1 section("USER B (REFERRED)")
+
+NameError: name 'section' is not defined
+
+In [58]: 
+In [58]: 
+In [59]: 
+In [59]:     ...:     ...:     ...: 
+In [60]: 
+In [60]: 
+In [61]: 
+In [61]: 
+In [62]: 
+In [63]: 
+In [63]: 
+In [64]: 
+In [64]: 
+In [65]: 
+In [65]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[65], line 1
+----> 1 assert_check("Referral auto-created", referral is not None)
+
+NameError: name 'assert_check' is not defined
+
+In [66]: 
+In [66]:     ...:   Cell In[66], line 2
+    assert_check("Referral status PENDING", referral.status == Referral.Status.PENDING)
+    ^
+IndentationError: expected an indented block after 'if' statement on line 1
+
+
+In [67]: 
+In [67]: 
+In [68]: 
+In [68]: 
+In [69]: 
+In [69]: 
+In [70]: 
+In [70]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[70], line 1
+----> 1 section("PAYMENT")
+
+NameError: name 'section' is not defined
+
+In [71]: 
+In [71]:     ...:     ...:     ...:     ...:     ...:     ...:     ...: 
+In [72]: 
+In [72]: 
+In [73]: 
+In [73]: 
+In [74]: 
+In [75]: 
+In [75]: 
+In [76]: 
+In [76]:     ...:     ...:     ...:     ...:     ...:     ...:     ...:     ...: 
+In [77]: 
+In [77]: 
+In [78]: 
+In [78]: ---------------------------------------------------------------------------
+AttributeError                            Traceback (most recent call last)
+Cell In[78], line 1
+----> 1 referral.refresh_from_db()
+
+AttributeError: 'NoneType' object has no attribute 'refresh_from_db'
+
+In [79]: 
+In [79]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[79], line 1
+----> 1 assert_check("Referral auto-completed", referral.status == Referral.Status.COMPLETED)
+
+NameError: name 'assert_check' is not defined
+
+In [80]: 
+In [80]: 
+In [81]: 
+In [81]: 
+In [82]: 
+In [82]: 
+In [83]: 
+In [83]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[83], line 1
+----> 1 section("REWARD")
+
+NameError: name 'section' is not defined
+
+In [84]: 
+In [84]: 
+In [85]: 
+In [85]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[85], line 1
+----> 1 assert_check("Reward created automatically", reward is not None)
+
+NameError: name 'assert_check' is not defined
+
+In [86]: 
+In [86]:     ...:   Cell In[86], line 2
+    print("Reward cents:", reward.amount_cents)
+    ^
+IndentationError: expected an indented block after 'if' statement on line 1
+
+
+In [87]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[87], line 1
+----> 1 assert_check("Reward > 0", reward.amount_cents > 0)
+
+NameError: name 'assert_check' is not defined
+
+In [88]: 
+In [88]: 
+In [89]: 
+In [89]: 
+In [90]: 
+In [90]: 
+In [91]: 
+In [91]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[91], line 1
+----> 1 section("UNLOCK")
+
+NameError: name 'section' is not defined
+
+In [92]: 
+In [92]:     ...:   Cell In[92], line 2
+    reward.unlocked_at = timezone.now()
+    ^
+IndentationError: expected an indented block after 'if' statement on line 1
+
+
+In [93]: ---------------------------------------------------------------------------
+AttributeError                            Traceback (most recent call last)
+Cell In[93], line 1
+----> 1 reward.save()
+
+AttributeError: 'NoneType' object has no attribute 'save'
+
+In [94]: 
+In [94]:   Cell In[94], line 1
+    ```
+    ^
+SyntaxError: invalid syntax
+
+
+In [95]: ---------------------------------------------------------------------------
+AttributeError                            Traceback (most recent call last)
+Cell In[95], line 1
+----> 1 reward.refresh_from_db()
+
+AttributeError: 'NoneType' object has no attribute 'refresh_from_db'
+
+In [96]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[96], line 1
+----> 1 assert_check("Reward unlock ready", reward.unlocked_at <= timezone.now())
+
+NameError: name 'assert_check' is not defined
+
+In [97]:   Cell In[97], line 1
+    ```
+    ^
+SyntaxError: invalid syntax
+
+
+In [98]: 
+In [98]: 
+In [99]: 
+In [99]: 
+In [100]: 
+In [100]: 
+In [101]: 
+In [101]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[101], line 1
+----> 1 section("DISCOUNT")
+
+NameError: name 'section' is not defined
+
+In [102]: 
+In [102]: 
+In [103]: 
+In [104]: 
+In [104]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[104], line 1
+----> 1 assert_check("Discount applied (<= original)", actual_price <= original_price)
+
+NameError: name 'assert_check' is not defined
+
+In [105]: 
+In [105]: 
+In [106]: 
+In [106]: 
+In [107]: 
+In [107]: 
+In [108]: 
+In [108]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[108], line 1
+----> 1 section("DASHBOARD")
+
+NameError: name 'section' is not defined
+
+In [109]: 
+In [109]: 
+In [110]: 
+In [110]:      ...:   Cell In[110], line 2
+    request = type("obj", (), {"user": user_a})
+    ^
+IndentationError: expected an indented block after class definition on line 1
+
+
+In [111]: 
+In [111]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[111], line 1
+----> 1 view = DummyView()
+
+NameError: name 'DummyView' is not defined
+
+In [112]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[112], line 1
+----> 1 context = view.get_context_data()
+
+NameError: name 'view' is not defined
+
+In [113]: 
+In [113]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[113], line 1
+----> 1 assert_check("Context has reward %", "reward_percentage" in context)
+
+NameError: name 'assert_check' is not defined
+
+In [114]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[114], line 1
+----> 1 assert_check("Context has credits", "referral_stats" in context)
+
+NameError: name 'assert_check' is not defined
+
+In [115]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[115], line 1
+----> 1 assert_check("Context has progress", "progress_message" in context)
+
+NameError: name 'assert_check' is not defined
+
+In [116]: 
+In [116]: Dashboard OK
+
+In [117]: 
+In [117]: 
+In [118]: 
+In [118]: 
+In [119]: 
+In [119]: 
+In [120]: 
+In [120]: ---------------------------------------------------------------------------
+NameError                                 Traceback (most recent call last)
+Cell In[120], line 1
+----> 1 section("RESULT")
+
+NameError: name 'section' is not defined
+
+In [121]: 
+In [121]: If all PASS → system is TRUE DROP-IN
+
+In [122]: Do you really want to exit ([y]/n)? 

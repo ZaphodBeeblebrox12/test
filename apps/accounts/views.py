@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 from datetime import datetime
+from decimal import Decimal
 
 from django.conf import settings
 from django.contrib.auth import login
@@ -26,6 +27,9 @@ from apps.accounts.serializers import (
     UserSerializer, UserProfileSerializer, UserPreferenceSerializer
 )
 from apps.audit.models import AuditLog
+from django.views.generic import TemplateView
+from apps.accounts.referral_dashboard_mixin import ReferralDashboardContextMixin
+from apps.growth.models import ReferralSettings
 
 
 def check_banned(view_func):
@@ -180,6 +184,75 @@ You'll get discounts and exclusive access, and I'll get extra subscription days 
         # ===== END REFERRAL INTEGRATION =====
         
         return render(request, "accounts/dashboard.html", context)
+
+
+# ===== REFERRAL DASHBOARD VIEW (with forced fallbacks) =====
+@method_decorator(login_required, name="dispatch")
+@method_decorator(check_banned, name="dispatch")
+class ReferralDashboardView(ReferralDashboardContextMixin, TemplateView):
+    """
+    Dedicated referral dashboard with psychology-driven UX.
+    Uses ReferralDashboardContextMixin to inject all referral context.
+    """
+    template_name = "growth/referral_dashboard.html"
+
+    def get_context_data(self, **kwargs):
+        # Try to get context from the mixin
+        try:
+            context = super().get_context_data(**kwargs)
+        except Exception as e:
+            context = super(ReferralDashboardContextMixin, self).get_context_data(**kwargs)
+            import logging
+            logging.error(f"ReferralDashboardView mixin failed: {e}")
+
+        # FORCE-SET critical variables (overwrite if missing, None, or empty)
+        if not context.get("reward_percentage"):
+            try:
+                context["reward_percentage"] = ReferralSettings.get_settings().default_reward_percentage
+            except Exception:
+                context["reward_percentage"] = Decimal("20")
+        if not context.get("social_framing"):
+            context["social_framing"] = "You earn rewards. Your friend gets a better deal."
+        if not context.get("reward_scaling_message"):
+            context["reward_scaling_message"] = "Rewards scale with the plan your friend chooses"
+        if not context.get("progress_message"):
+            context["progress_message"] = "Refer friends to earn credits"
+        if not context.get("reward_timing_note"):
+            context["reward_timing_note"] = "Rewards unlock after subscription is confirmed"
+        if not context.get("referral_link"):
+            context["referral_link"] = "#"
+        if not context.get("site_name"):
+            context["site_name"] = getattr(settings, 'SITE_NAME', 'TradeAdmin')
+        if not context.get("currency_symbol"):
+            context["currency_symbol"] = "$"
+        if not context.get("optimized_share_message"):
+            context["optimized_share_message"] = f"Join me on {context['site_name']}!"
+
+        # Force-set referral_stats structure
+        if not context.get("referral_stats"):
+            context["referral_stats"] = {}
+        stats = context["referral_stats"]
+        stats.setdefault("completed", 0)
+        stats.setdefault("pending", 0)
+        stats.setdefault("total_referrals", 0)
+        stats.setdefault("total_rewards_available_cents", 0)
+        stats.setdefault("total_rewards_available_display", "$0.00")
+        stats.setdefault("pending_rewards_cents", 0)
+        stats.setdefault("pending_rewards_display", "$0.00")
+
+        # Other optional structures
+        context.setdefault("extension_estimate", {"extra_days": 0})
+        context.setdefault("recent_referrals", [])
+        context.setdefault("reward_buckets", 0)
+        context.setdefault("next_reward_estimate", None)
+        context.setdefault("pending_unlock_soonest", None)
+        context.setdefault("newly_unlocked_reward", None)
+        context.setdefault("next_billing_date", None)
+        context.setdefault("days_until_billing", None)
+        context.setdefault("billing_urgency", "normal")
+        context.setdefault("referral_error", False)
+
+        return context
 
 
 @method_decorator(login_required, name="dispatch")

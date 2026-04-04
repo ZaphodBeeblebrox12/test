@@ -98,16 +98,51 @@ class ReferralDashboardView(LoginRequiredMixin, TemplateView):
         context["reward_balance_display"] = balance.total_display
         context["reward_buckets"] = balance.reward_count
 
-        # Referral stats
+        # ===== ADD MISSING VARIABLES (FIX FOR PERCENTAGE DISPLAY) =====
+        # Get reward percentage from settings or default 20%
+        try:
+            ref_settings = ReferralSettings.get_settings()
+            reward_percentage = ref_settings.default_reward_percentage if ref_settings else Decimal("20")
+        except Exception:
+            reward_percentage = Decimal("20")
+        context["reward_percentage"] = reward_percentage
+
+        # Ensure psychology messages exist (fallbacks)
+        context.setdefault("social_framing", "You earn rewards. Your friend gets a better deal.")
+        context.setdefault("reward_scaling_message", "Rewards scale with the plan your friend chooses")
+        context.setdefault("reward_timing_note", "Rewards unlock after subscription is confirmed (up to 3 days)")
+        context.setdefault("progress_message", "Refer friends to earn credits")
+        
+        # Currency symbol (dynamic fallback) – used for pending rewards display
+        currency_symbol = "$"
+        try:
+            from apps.subscriptions.api import get_active_subscription
+            active_sub = get_active_subscription(user)
+            if active_sub and active_sub.plan_price and hasattr(active_sub.plan_price, 'currency'):
+                curr = active_sub.plan_price.currency
+                symbols = {'USD':'$','INR':'₹','EUR':'€','GBP':'£'}
+                currency_symbol = symbols.get(curr, '$')
+        except Exception:
+            pass
+        context["currency_symbol"] = currency_symbol
+
+        # Referral stats (after currency_symbol is available)
         stats = ReferralService.get_referral_stats(user)
         stats['total_rewards_available_cents'] = balance.total_cents
         stats['total_rewards_available_display'] = balance.total_display
-        stats['pending_rewards_display'] = f"${stats.get('pending_rewards_cents', 0) / 100:.2f}"
+        # ✅ FIX 1: Use dynamic currency symbol instead of hardcoded $
+        stats['pending_rewards_display'] = f"{context['currency_symbol']}{stats.get('pending_rewards_cents', 0) / 100:.2f}"
         context["referral_stats"] = stats
+        # ===== END ADDITIONS =====
 
-        # Extension estimate
-        from apps.subscriptions.api import get_active_subscription
-        active_sub = get_active_subscription(user)
+        # Extension estimate – reuse active_sub from above (no duplicate import)
+        # active_sub is already defined in the currency block; if that block failed, define it again safely
+        try:
+            from apps.subscriptions.api import get_active_subscription
+            active_sub = get_active_subscription(user)
+        except Exception:
+            active_sub = None
+
         plan_price_cents = 1000
         plan_duration_days = 30
         
@@ -273,6 +308,9 @@ class AdminReferralRewardsView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        
+        # Pass the ReferralSettings object to the template
+        context["settings"] = ReferralSettings.get_settings()
 
         from django.db.models import Sum, Count
 
