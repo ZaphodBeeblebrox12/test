@@ -23,6 +23,9 @@ urlpatterns = [
     path("", include("apps.accounts.profile_urls")),
     path("", include("apps.payments.urls")),
     path("growth/", include("apps.growth.urls")),
+
+    # NEW: Bot integration app (Telegram deep link, Discord OAuth, channel sync)
+    path("bot/", include("apps.bot_integration.urls")),
 ]
 
 if settings.DEBUG:

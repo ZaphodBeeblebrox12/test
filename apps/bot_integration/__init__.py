@@ -1,0 +1,1 @@
+default_app_config = 'apps.bot_integration.apps.BotIntegrationConfig'

@@ -56,7 +56,8 @@ LOCAL_APPS = [
     "apps.system_settings",
     "apps.subscriptions",
     "apps.payments",
-    "apps.growth",  # ADDED: Growth module for gift invites
+    "apps.growth", 
+    "apps.bot_integration",  
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -66,6 +67,7 @@ MIDDLEWARE = [
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "apps.bot_integration.middleware.DisableCSRFForWebhook",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -182,10 +184,14 @@ LOGGING = {
     },
 }
 
-CSRF_TRUSTED_ORIGINS = [
-    "http://127.0.0.1:8000",
-    "http://localhost:8000",
-]
+# CSRF trusted origins – allow all origins when DEBUG=True (for ngrok testing)
+if DEBUG:
+    CSRF_TRUSTED_ORIGINS = ["*"]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        "http://127.0.0.1:8000",
+        "http://localhost:8000","dbb7-223-190-85-112.ngrok-free.app",
+    ]
 
 # =============================================================================
 # DJANGO-ALLAUTH CONFIGURATION

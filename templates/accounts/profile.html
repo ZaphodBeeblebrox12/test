@@ -38,7 +38,7 @@
             </div>
         </div>
 
-        <!-- TELEGRAM SECTION -->
+        <!-- TELEGRAM SECTION (UPDATED) -->
         <div class="card mb-4" id="telegram">
             <div class="card-header">
                 <i class="bi bi-telegram"></i> Telegram Connection
@@ -54,14 +54,14 @@
                     <i class="bi bi-exclamation-triangle-fill"></i>
                     Not connected
                 </div>
-                <a href="{% url 'telegram_login' %}" class="btn btn-primary">
+                <a href="{% url 'bot_integration:telegram_connect' %}" class="btn btn-primary">
                     Connect Telegram
                 </a>
                 {% endif %}
             </div>
         </div>
 
-        <!-- DISCORD SECTION -->
+        <!-- DISCORD SECTION (UPDATED) -->
         <div class="card mb-4" style="border-left: 4px solid #5865F2;">
             <div class="card-header">
                 <i class="bi bi-discord"></i> Discord Connection
@@ -95,7 +95,7 @@
                     Discord account not connected
                 </div>
                 <p class="text-muted small">Connect your Discord account to join community channels and receive notifications.</p>
-                <a href="{% url 'discord_connect' %}" class="btn btn-primary" style="background: #5865F2; border: none;">
+                <a href="{% url 'bot_integration:discord_connect' %}" class="btn btn-primary" style="background: #5865F2; border: none;">
                     <i class="bi bi-discord"></i> Connect Discord
                 </a>
                 {% endif %}
