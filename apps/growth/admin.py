@@ -79,15 +79,25 @@ class ReferralAdmin(admin.ModelAdmin):
 class ReferralSettingsAdmin(admin.ModelAdmin):
     list_display = [
         'id', 'rewards_enabled', 'default_reward_percentage',
-        'minimum_purchase_amount_cents', 'reward_delay_hours', 'updated_at'
+        'referee_discount_percent', 'minimum_purchase_amount_cents',
+        'reward_delay_hours', 'updated_at'
     ]
     readonly_fields = ['created_at', 'updated_at']
     fieldsets = (
         (None, {
             'fields': ('rewards_enabled',)
         }),
-        ('Reward Configuration', {
+        ('Referrer Reward Configuration', {
             'fields': ('default_reward_percentage', 'minimum_purchase_amount_cents', 'reward_delay_hours')
+        }),
+        ('Referee Discount (Checkout)', {
+            'fields': ('referee_discount_percent',),
+            'description': 'Percentage discount applied at checkout for the referee (e.g., 20 = 20% off)'
+        }),
+        ('Referee Bonus Credits (Optional)', {
+            'fields': ('referee_benefit_enabled', 'referee_bonus_cents'),
+            'classes': ('collapse',),
+            'description': 'Post-purchase credit bonus for referee (separate from discount)'
         }),
         ('Timestamps', {
             'fields': ('created_at', 'updated_at'),
