@@ -173,10 +173,11 @@ class ReferralRewardService:
         Returns:
             ReferralReward if created, None if skipped (rewards disabled, already exists, etc.)
         """
-        # Idempotency check - don't create duplicate rewards
-        if hasattr(referral, 'reward') and referral.reward is not None:
+        # Idempotency — one ReferralReward per referral (referrer only)
+        existing = ReferralReward.objects.filter(referral=referral).first()
+        if existing is not None:
             logger.info(f"Reward already exists for referral {referral.id}")
-            return referral.reward
+            return existing
 
         settings_obj = ReferralSettings.get_settings()
 
@@ -604,6 +605,22 @@ class SubscriptionCreditService:
             user, plan_price_cents, plan_duration_days
         )
 
+    @classmethod
+    def add_credits(cls, user: User, amount_cents: int, reason: str = "") -> None:
+        """
+        Apply referee / non-referrer credits. Does NOT use ReferralReward (referrer-only).
+
+        Hook point: extend this to post to your wallet, promo ledger, or billing credits.
+        """
+        if amount_cents <= 0:
+            return
+        logger.info(
+            "SubscriptionCreditService.add_credits: user_id=%s amount_cents=%s reason=%s",
+            user.pk,
+            amount_cents,
+            reason or "",
+        )
+
 
 # ============================================================================
 # REFERRAL SERVICE (Purchase Completion)
@@ -834,6 +851,22 @@ class ReferralService:
                     triggering_subscription=triggering_subscription
                 )
 
+            referral = Referral.objects.select_for_update().get(pk=referral.pk)
+            settings_obj = ReferralSettings.get_settings()
+            if (
+                purchase_amount_cents > 0
+                and settings_obj.referee_benefit_enabled
+                and settings_obj.referee_bonus_cents > 0
+                and not referral.referee_reward_applied
+            ):
+                SubscriptionCreditService.add_credits(
+                    user=referral.referred_user,
+                    amount_cents=settings_obj.referee_bonus_cents,
+                    reason="referral_bonus",
+                )
+                referral.referee_reward_applied = True
+                referral.save(update_fields=["referee_reward_applied"])
+
             return referral
 
         except Referral.DoesNotExist:
@@ -862,6 +895,63 @@ class ReferralService:
                 r.amount_cents for r in rewards 
                 if r.status == ReferralReward.Status.PENDING
             ),
+        }
+
+    @classmethod
+    def get_checkout_discount(cls, user: User, amount_cents: int) -> dict:
+        """
+        Returns discount info for checkout.
+        Safe to call outside transactions (read-only).
+
+        Returns:
+            {
+                'has_discount': bool,
+                'discount_percent': int,
+                'final_amount_cents': int,
+                'referral': Referral or None,
+                'reason': str or None
+            }
+        """
+        from apps.subscriptions.models import Subscription
+
+        # User already has an active subscription → no discount
+        if Subscription.objects.filter(user=user, is_active=True).exists():
+            return {
+                'has_discount': False,
+                'reason': 'existing_subscription',
+                'final_amount_cents': amount_cents,
+                'referral': None,
+                'discount_percent': 0
+            }
+
+        # Find eligible referral
+        referral = Referral.objects.filter(
+            referred_user=user,
+            discount_used=False,
+            status=Referral.Status.PENDING
+        ).first()
+
+        # If no eligible referral → no discount
+        if not referral:
+            return {
+                'has_discount': False,
+                'reason': 'no_eligible_referral',
+                'final_amount_cents': amount_cents,
+                'referral': None,
+                'discount_percent': 0
+            }
+
+        settings_obj = ReferralSettings.get_settings()
+        discount_percent = getattr(settings_obj, 'referee_discount_percent', 20)
+        discount_amount = int(amount_cents * discount_percent / 100)
+        final_amount = amount_cents - discount_amount
+
+        return {
+            'has_discount': True,
+            'discount_percent': discount_percent,
+            'final_amount_cents': final_amount,
+            'referral': referral,
+            'reason': None
         }
 
 

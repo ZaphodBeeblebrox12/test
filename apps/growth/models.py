@@ -196,6 +196,15 @@ class Referral(models.Model):
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    referee_reward_applied = models.BooleanField(
+        default=False,
+        help_text="True once the one-time referee bonus credit has been granted",
+    )
+    # NEW: one-time discount flag for referee at checkout
+    discount_used = models.BooleanField(
+        default=False,
+        help_text="Whether the referee has used their one-time checkout discount"
+    )
 
     class Meta:
         verbose_name = "referral"
@@ -240,9 +249,21 @@ class ReferralSettings(models.Model):
     rewards_enabled = models.BooleanField(
         default=True, help_text="Enable or disable referral rewards system-wide"
     )
-    # NEW: Configurable reward delay (default 72 hours = 3 days)
     reward_delay_hours = models.PositiveIntegerField(
         default=72, help_text="Hours to delay before unlocking referral rewards (default: 72 = 3 days)"
+    )
+    referee_benefit_enabled = models.BooleanField(
+        default=False,
+        help_text="If True, referred user receives a one-time credit bonus on qualifying purchase",
+    )
+    referee_bonus_cents = models.PositiveIntegerField(
+        default=0,
+        help_text="Fixed credit (cents) granted to the referred user once per referral",
+    )
+    # NEW: configurable discount percentage for referee at checkout
+    referee_discount_percent = models.PositiveSmallIntegerField(
+        default=20,
+        help_text="Discount percentage for referee at checkout (e.g., 20 = 20% off)"
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -263,6 +284,9 @@ class ReferralSettings(models.Model):
                 "minimum_purchase_amount_cents": 0,
                 "rewards_enabled": True,
                 "reward_delay_hours": 72,
+                "referee_benefit_enabled": False,
+                "referee_bonus_cents": 0,
+                "referee_discount_percent": 20,
             }
         )
         return obj
@@ -299,15 +323,12 @@ class ReferralReward(models.Model):
         default=0, help_text="Amount already used/consumed (in cents)"
     )
     used_at = models.DateTimeField(null=True, blank=True)
-    # NEW: Delayed unlock fields
     unlocked_at = models.DateTimeField(
         null=True, blank=True, help_text="When this reward becomes available (after delay)"
     )
-    # NEW: Track if reward was blocked (circular, refunded, etc.)
     block_reason = models.CharField(
         max_length=50, blank=True, help_text="Reason if reward was blocked (circular, refunded, etc.)"
     )
-    # NEW: Explicit link to triggering subscription for refund checking
     triggering_subscription = models.ForeignKey(
         "subscriptions.Subscription",
         on_delete=models.SET_NULL,
@@ -324,7 +345,7 @@ class ReferralReward(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["referrer", "status"]),
-            models.Index(fields=["status", "unlocked_at"]),  # For unlock task
+            models.Index(fields=["status", "unlocked_at"]),
         ]
 
     def __str__(self) -> str:
@@ -350,7 +371,6 @@ class ReferralReward(models.Model):
 
     @property
     def is_unlocked(self) -> bool:
-        """Check if reward delay has passed and can be credited."""
         if self.status != self.Status.PENDING:
             return self.status == self.Status.CREDITED
         if not self.unlocked_at:
@@ -358,13 +378,11 @@ class ReferralReward(models.Model):
         return timezone.now() >= self.unlocked_at
 
     def mark_credited(self) -> None:
-        """Mark reward as credited (available in wallet)."""
         if self.status == self.Status.PENDING:
             self.status = self.Status.CREDITED
             self.save(update_fields=["status", "updated_at"])
 
     def mark_expired(self, reason: str = "") -> None:
-        """Mark reward as expired (refunded, circular, etc.)."""
         self.status = self.Status.EXPIRED
         if reason:
             self.block_reason = reason

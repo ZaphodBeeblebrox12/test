@@ -70,6 +70,16 @@ class PaymentIntent(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    # NEW: track which referral's discount was applied to this payment
+    applied_referral_discount = models.ForeignKey(
+        "growth.Referral",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="payment_intents",
+        help_text=_("Referral whose discount was applied to this payment")
+    )
 
     class Meta:
         verbose_name = _("payment intent")

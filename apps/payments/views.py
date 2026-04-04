@@ -1,6 +1,7 @@
 """
 Minimal payment views for simple payment flow.
 """
+import logging
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
@@ -12,6 +13,11 @@ from apps.subscriptions.models import Plan, Subscription
 from apps.subscriptions.services import resolve_plan_price, get_pricing_country
 
 from .models import PaymentIntent
+
+from apps.growth.services import ReferralService
+from apps.growth.models import Referral
+
+logger = logging.getLogger(__name__)
 
 
 def get_provider_for_country(country_code: str) -> str:
@@ -47,16 +53,22 @@ def payment_start(request):
     country = get_pricing_country(request)
     provider = get_provider_for_country(country)
 
+    # ========== NEW: Apply referral discount ==========
+    discount_info = ReferralService.get_checkout_discount(request.user, resolved_price.price_cents)
+    final_amount = discount_info["final_amount_cents"]
+    applied_referral = discount_info.get("referral")
+
     with transaction.atomic():
         payment_intent = PaymentIntent.objects.create(
             user=request.user,
             plan=plan,
             plan_price=resolved_price if hasattr(resolved_price, 'plan') else None,
-            amount=resolved_price.price_cents,
+            amount=final_amount,
             currency=getattr(resolved_price, 'currency', 'USD'),
             provider=provider,
             status=PaymentIntent.Status.PENDING,
-            country=country or ""
+            country=country or "",
+            applied_referral_discount=applied_referral,
         )
 
     checkout_url = f"/payments/checkout/{payment_intent.id}/"
@@ -66,6 +78,9 @@ def payment_start(request):
         "payment_intent_id": str(payment_intent.id),
         "checkout_url": checkout_url,
         "amount": payment_intent.amount,
+        "original_amount": resolved_price.price_cents,
+        "discount_applied": applied_referral is not None,
+        "discount_percent": discount_info["discount_percent"] if discount_info["has_discount"] else 0,
         "currency": payment_intent.currency,
         "plan": {"id": str(plan.id), "name": plan.name, "tier": plan.tier}
     })
@@ -76,12 +91,7 @@ def payment_start(request):
 def payment_confirm(request):
     """
     Confirm a payment and activate subscription with referral reward.
-
-    Phase 4 (Viral Mode):
-    - Referral completion only triggered for paid subscriptions
-    - Gift subscriptions do NOT trigger referral completion
-    - Credit application happens after referral completion
-    - Uses plan model as single source of truth for pricing/duration
+    Idempotent: will not process same payment twice.
     """
     payment_intent_id = request.data.get("payment_intent_id")
 
@@ -93,6 +103,7 @@ def payment_confirm(request):
     except PaymentIntent.DoesNotExist:
         return Response({"detail": "Payment intent not found."}, status=status.HTTP_404_NOT_FOUND)
 
+    # Idempotency: already successful
     if payment_intent.status == PaymentIntent.Status.SUCCESS:
         try:
             subscription = Subscription.objects.get(
@@ -114,17 +125,27 @@ def payment_confirm(request):
     if payment_intent.status == PaymentIntent.Status.FAILED:
         return Response({"detail": "Payment has already failed."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Get plan as single source of truth
     plan = payment_intent.plan
 
     with transaction.atomic():
+        # ========== CRITICAL: Lock referral FIRST (if exists) ==========
+        referral = None
+        if payment_intent.applied_referral_discount:
+            referral = Referral.objects.select_for_update().get(
+                id=payment_intent.applied_referral_discount.id
+            )
+
+        # Then update payment intent
         payment_intent.status = PaymentIntent.Status.SUCCESS
         payment_intent.save()
 
-        # Use plan model as single source of truth for duration
-        # plan.duration_days should be defined in your Plan model
-        plan_duration_days = getattr(plan, 'duration_days', 30)  # fallback if not defined
+        # Then mark discount used
+        if referral and not referral.discount_used:
+            referral.discount_used = True
+            referral.save(update_fields=["discount_used"])
 
+        # Create subscription
+        plan_duration_days = getattr(plan, 'duration_days', 30)
         expires_at = timezone.now() + timezone.timedelta(days=plan_duration_days)
 
         subscription = Subscription.objects.create(
@@ -139,41 +160,30 @@ def payment_confirm(request):
             pricing_country=payment_intent.country
         )
 
-        # ================================================================
-        # REFERRAL COMPLETION AND CREDIT APPLICATION (Phase 4 - Viral Mode)
-        # ================================================================
-        # Order: 1. Create subscription, 2. Complete referral, 3. Apply credit
-        # Uses plan model as single source of truth for pricing
-
+        # ========== Referral completion and credit application ==========
         try:
             from apps.growth.services import ReferralService, SubscriptionCreditService
 
-            # 2. Complete referral (creates pending reward, not available yet)
-            # Only for paid subscriptions (amount > 0)
+            # Complete referral (creates pending referrer reward)
             if payment_intent.amount > 0:
                 ReferralService.complete_referral_on_purchase(
                     user=request.user,
                     purchase_amount_cents=payment_intent.amount,
                     currency=payment_intent.currency,
-                    triggering_subscription=subscription  # Explicit link for refund checking
+                    triggering_subscription=subscription
                 )
 
-            # 3. Apply existing credits (from previous rewards)
-            # Uses plan as single source of truth
+            # Apply existing credits (from previous rewards)
             credit_result = SubscriptionCreditService.apply_credit_to_subscription(
                 user=request.user,
                 subscription=subscription,
-                plan_price_cents=plan.price_cents,  # Plan is source of truth
-                plan_duration_days=plan_duration_days  # From plan model
+                plan_price_cents=plan.price_cents,
+                plan_duration_days=plan_duration_days
             )
-
             if credit_result:
-                # Update expires_at if credit was applied
                 subscription.refresh_from_db()
 
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"Failed to process referral/credit: {e}")
             # Don't fail the payment if referral/credit fails
 

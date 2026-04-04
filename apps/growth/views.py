@@ -247,7 +247,7 @@ class ReferralDashboardView(LoginRequiredMixin, TemplateView):
         try:
             recent_referrals = Referral.objects.filter(
                 referrer=user
-            ).select_related('referred_user').prefetch_related('reward').order_by('-created_at')[:10]
+            ).select_related('referred_user', 'reward').order_by('-created_at')[:10]
             
             # Add days_until_unlock for each
             for referral in recent_referrals:
