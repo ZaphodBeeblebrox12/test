@@ -146,11 +146,43 @@ def has_user_used_trial(user, plan: Plan) -> bool:
     return UserTrialUsage.objects.filter(user=user, plan=plan).exists()
 
 
+def get_geo_price_for_trial(plan: Plan, country_code: Optional[str] = None) -> Optional[GeoPlanPrice]:
+    """
+    Check if trial is available for user's region.
+    Returns GeoPlanPrice if trial should be shown, None if hidden.
+    Trials are REGION-LOCKED: only show if GeoPlanPrice exists for country/region.
+    """
+    if not country_code or not plan.is_trial:
+        return None
+
+    country_code = country_code.upper()
+
+    # Country-specific check
+    try:
+        return GeoPlanPrice.objects.get(plan=plan, country=country_code, is_active=True)
+    except GeoPlanPrice.DoesNotExist:
+        pass
+
+    # Region-specific check
+    region = get_region_for_country(country_code)
+    if region:
+        try:
+            return GeoPlanPrice.objects.get(
+                plan=plan, 
+                region=region, 
+                country__isnull=True, 
+                is_active=True
+            )
+        except GeoPlanPrice.DoesNotExist:
+            pass
+
+    return None
+
+
 @transaction.atomic
 def purchase_plan(user, plan: Plan, request=None) -> Subscription:
     """
     Purchase a plan (regular or trial) with full geo pricing support.
-
     This is the MAIN entry point for plan purchases.
     """
     country_code = get_pricing_country(request) if request else None
@@ -266,6 +298,7 @@ def grant_subscription_by_admin(user, plan, duration_days, admin_user, reason=""
 
 
 def start_trial(user, plan, duration_days=7):
+    """Legacy trial function - use purchase_plan() for new code."""
     from apps.subscriptions.models import Subscription
     return Subscription.objects.create(
         user=user, plan=plan, status=Subscription.Status.ACTIVE, is_trial=True,

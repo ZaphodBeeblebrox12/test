@@ -1,5 +1,6 @@
 """
-Subscription API views with geo pricing and trial support.
+Subscription API views with geo pricing and REGION-LOCKED trial support.
+Trials ONLY show if a GeoPlanPrice exists for the user's specific country/region.
 """
 import logging
 
@@ -24,6 +25,8 @@ from .services import (
     get_region_for_country,
     purchase_plan,
     has_user_used_trial,
+    format_price,
+    get_geo_price_for_trial,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,7 +42,10 @@ def plan_list(request):
 
 @api_view(["GET"])
 def plan_list_geo(request):
-    """List all active plans with geo-specific pricing and trial flags."""
+    """
+    List active plans with geo-specific pricing.
+    TRIALS ARE REGION-LOCKED: Only show if GeoPlanPrice exists for user's region.
+    """
     country = get_pricing_country(request)
     region = get_region_for_country(country) if country else None
     user = request.user if request.user.is_authenticated else None
@@ -48,13 +54,32 @@ def plan_list_geo(request):
     data = []
 
     for plan in plans:
-        plan_data = PlanSerializer(plan).data
-        plan_data["is_trial"] = plan.is_trial
+        # === TRIAL PLAN LOGIC (Region-Locked) ===
         if plan.is_trial:
+            geo_price = get_geo_price_for_trial(plan, country)
+
+            # SKIP: No geo price for this region - hide trial completely
+            if not geo_price:
+                logger.info(f"Hiding trial '{plan.name}' for {country or 'unknown'} - no geo price")
+                continue
+
+            # SHOW: Build trial data with geo-specific price
+            plan_data = PlanSerializer(plan).data
+            plan_data["is_trial"] = True
             plan_data["trial_duration_days"] = plan.trial_duration_days
             plan_data["already_used"] = has_user_used_trial(user, plan) if user else False
-        else:
-            plan_data["already_used"] = False
+            plan_data["price_cents"] = geo_price.price_cents
+            plan_data["currency"] = geo_price.currency
+            plan_data["price_display"] = format_price(geo_price.price_cents, geo_price.currency)
+            plan_data["geo_pricing"] = True
+            data.append(plan_data)
+            continue
+
+        # === REGULAR PLAN LOGIC (non-trial) ===
+        # Use existing resolve_plan_price with fallback to base price
+        plan_data = PlanSerializer(plan).data
+        plan_data["is_trial"] = False
+        plan_data["already_used"] = False
 
         try:
             price_info = resolve_plan_price(plan, country)
@@ -80,7 +105,10 @@ def plan_list_geo(request):
 
 @api_view(["GET"])
 def plan_detail_geo(request, plan_id):
-    """Get plan details with geo-specific pricing and trial status."""
+    """
+    Get plan details with geo-specific pricing.
+    For trials: returns 404 if no geo price exists for user's region.
+    """
     try:
         plan = Plan.objects.get(id=plan_id, is_active=True)
     except Plan.DoesNotExist:
@@ -90,14 +118,37 @@ def plan_detail_geo(request, plan_id):
         )
 
     country = get_pricing_country(request)
-    plan_data = PlanSerializer(plan).data
-    plan_data["is_trial"] = plan.is_trial
 
+    # === TRIAL REGION CHECK ===
     if plan.is_trial:
+        geo_price = get_geo_price_for_trial(plan, country)
+
+        # Return 404 if trial not available in this region
+        if not geo_price:
+            return Response(
+                {"error": "This trial is not available in your region"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Return trial with geo price
+        plan_data = PlanSerializer(plan).data
+        plan_data["is_trial"] = True
         plan_data["trial_duration_days"] = plan.trial_duration_days
         plan_data["already_used"] = has_user_used_trial(request.user, plan) if request.user.is_authenticated else False
-    else:
-        plan_data["already_used"] = False
+        plan_data["price_cents"] = geo_price.price_cents
+        plan_data["currency"] = geo_price.currency
+        plan_data["price_display"] = format_price(geo_price.price_cents, geo_price.currency)
+        plan_data["geo_pricing"] = True
+
+        return Response({
+            "plan": plan_data,
+            "user_country": country,
+        })
+
+    # === REGULAR PLAN ===
+    plan_data = PlanSerializer(plan).data
+    plan_data["is_trial"] = False
+    plan_data["already_used"] = False
 
     try:
         price_info = resolve_plan_price(plan, country)
@@ -146,7 +197,7 @@ def my_subscription(request):
 def purchase_plan_view(request):
     """
     Purchase a plan (regular or trial).
-    Request body: {"plan_id": "uuid-string"}
+    For trials: enforces region-lock (verifies geo price exists).
     """
     plan_id = request.data.get("plan_id")
 
@@ -163,6 +214,17 @@ def purchase_plan_view(request):
             {"error": "Plan not found"},
             status=status.HTTP_404_NOT_FOUND
         )
+
+    # === REGION CHECK FOR TRIALS ===
+    if plan.is_trial:
+        country = get_pricing_country(request)
+        geo_price = get_geo_price_for_trial(plan, country)
+
+        if not geo_price:
+            return Response(
+                {"error": "This trial is not available in your region"},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
     try:
         subscription = purchase_plan(request.user, plan, request)
