@@ -12,6 +12,7 @@ urlpatterns = [
 
     # Django admin (default) - comes after so growth URLs take precedence
     path("admin/", admin.site.urls),
+    path('', include('apps.public_views.urls')),
 
     path("accounts/", include("allauth.urls")),
     path("api/auth/", include("apps.accounts.urls")),

@@ -57,7 +57,8 @@ LOCAL_APPS = [
     "apps.subscriptions",
     "apps.payments",
     "apps.growth", 
-    "apps.bot_integration",  
+    "apps.bot_integration", 
+    "apps.public_views",  
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -186,11 +187,12 @@ LOGGING = {
 
 # CSRF trusted origins – allow all origins when DEBUG=True (for ngrok testing)
 if DEBUG:
-    CSRF_TRUSTED_ORIGINS = ["*"]
+    CSRF_TRUSTED_ORIGINS = ["http://*", "https://*"]
 else:
     CSRF_TRUSTED_ORIGINS = [
         "http://127.0.0.1:8000",
-        "http://localhost:8000","dbb7-223-190-85-112.ngrok-free.app",
+        "http://localhost:8000",
+        "https://dbb7-223-190-85-112.ngrok-free.app",
     ]
 
 # =============================================================================

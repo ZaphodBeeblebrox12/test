@@ -1,0 +1,429 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In - {{ site_name|default:"TradeAdmin" }}</title>
+    <style>
+        :root {
+            --color-bg: #fafafa;
+            --color-surface: #ffffff;
+            --color-text: #1a1a1a;
+            --color-text-secondary: #525252;
+            --color-text-muted: #737373;
+            --color-accent: #2563eb;
+            --color-dark: #0a0a0a;
+            --color-muted: #e5e5e5;
+            --color-border: #e7e5e4;
+            --font-serif: 'Georgia', 'Times New Roman', serif;
+            --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-mono: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: var(--font-sans);
+            background: var(--color-bg);
+            color: var(--color-text);
+            line-height: 1.5;
+            min-height: 100vh;
+            display: flex;
+        }
+
+        .split-layout {
+            display: grid;
+            grid-template-columns: 1fr 480px;
+            width: 100%;
+            min-height: 100vh;
+        }
+
+        /* Left side - Brand/Context */
+        .brand-side {
+            background: linear-gradient(135deg, #171717 0%, #0a0a0a 100%);
+            color: white;
+            padding: 3rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+            overflow: hidden;
+        }
+        .brand-side::before {
+            content: "";
+            position: absolute;
+            top: -20%;
+            right: -10%;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(37, 99, 235, 0.15) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        .brand-header {
+            position: relative;
+            z-index: 1;
+        }
+        .brand-logo {
+            font-family: var(--font-serif);
+            font-size: 1.5rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+            color: white;
+        }
+        .brand-logo::before {
+            content: "◆";
+            color: var(--color-accent);
+        }
+        .brand-content {
+            position: relative;
+            z-index: 1;
+            max-width: 480px;
+        }
+        .brand-tagline {
+            font-family: var(--font-serif);
+            font-size: 2.5rem;
+            line-height: 1.2;
+            margin-bottom: 1.5rem;
+            font-weight: 400;
+        }
+        .brand-desc {
+            font-size: 1.125rem;
+            color: #888;
+            line-height: 1.6;
+            margin-bottom: 2rem;
+        }
+        .feature-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 0.875rem;
+            font-size: 0.95rem;
+            color: #ccc;
+        }
+        .feature-check {
+            width: 1.5rem;
+            height: 1.5rem;
+            background: rgba(5, 150, 105, 0.2);
+            color: #34d399;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.875rem;
+            flex-shrink: 0;
+        }
+        .brand-footer {
+            position: relative;
+            z-index: 1;
+            font-size: 0.875rem;
+            color: #666;
+        }
+
+        /* Right side - Form */
+        .form-side {
+            background: var(--color-surface);
+            padding: 3rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            overflow-y: auto;
+        }
+        .form-container {
+            width: 100%;
+            max-width: 360px;
+            margin: 0 auto;
+        }
+        .form-header {
+            margin-bottom: 2rem;
+        }
+        .form-title {
+            font-family: var(--font-serif);
+            font-size: 1.875rem;
+            margin-bottom: 0.5rem;
+            color: var(--color-dark);
+        }
+        .form-subtitle {
+            color: var(--color-text-secondary);
+            font-size: 0.95rem;
+        }
+        .form-subtitle a {
+            color: var(--color-accent);
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .form-subtitle a:hover {
+            text-decoration: underline;
+        }
+
+        .input-group {
+            margin-bottom: 1.25rem;
+        }
+        .input-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--color-dark);
+        }
+        .input-field {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--color-border);
+            border-radius: 0.5rem;
+            font-size: 0.95rem;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: var(--color-accent);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+        .input-hint {
+            font-size: 0.8rem;
+            color: var(--color-text-muted);
+            margin-top: 0.375rem;
+        }
+
+        .form-options {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+        .checkbox-wrapper input {
+            width: 1rem;
+            height: 1rem;
+            accent-color: var(--color-accent);
+        }
+        .checkbox-label {
+            font-size: 0.875rem;
+            color: var(--color-text-secondary);
+        }
+        .forgot-link {
+            font-size: 0.875rem;
+            color: var(--color-accent);
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .forgot-link:hover {
+            text-decoration: underline;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 0.875rem;
+            background: var(--color-dark);
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 1.5rem;
+        }
+        .submit-btn:hover {
+            background: var(--color-accent);
+            transform: translateY(-1px);
+        }
+
+        .divider {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            color: var(--color-text-muted);
+            font-size: 0.875rem;
+        }
+        .divider::before,
+        .divider::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background: var(--color-border);
+        }
+
+        .social-login {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .social-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            background: white;
+            border: 1px solid var(--color-border);
+            border-radius: 0.5rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            color: var(--color-text);
+        }
+        .social-btn:hover {
+            background: var(--color-bg);
+            border-color: var(--color-muted);
+        }
+        .social-icon {
+            width: 1.25rem;
+            height: 1.25rem;
+        }
+
+        .trial-banner {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: #eff6ff;
+            border-left: 3px solid var(--color-accent);
+            border-radius: 0 0.5rem 0.5rem 0;
+        }
+        .trial-title {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            color: var(--color-dark);
+        }
+        .trial-text {
+            font-size: 0.875rem;
+            color: var(--color-text-secondary);
+        }
+
+        .error-message {
+            color: #dc2626;
+            font-size: 0.875rem;
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: #fef2f2;
+            border-radius: 0.375rem;
+            border-left: 3px solid #dc2626;
+        }
+
+        @media (max-width: 900px) {
+            .split-layout {
+                grid-template-columns: 1fr;
+            }
+            .brand-side {
+                display: none;
+            }
+            .form-side {
+                padding: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="split-layout">
+        <div class="brand-side">
+            <div class="brand-header">
+                <a href="{% url 'landing' %}" class="brand-logo">{{ site_name|default:"TradeAdmin" }}</a>
+            </div>
+            <div class="brand-content">
+                <h1 class="brand-tagline">Stop guessing.<br>Start trading with confidence.</h1>
+                <p class="brand-desc">Join thousands of traders who never miss an update. Real-time guidance from entry to exit.</p>
+                <ul class="feature-list">
+                    <li class="feature-item">
+                        <span class="feature-check">✓</span>
+                        Timestamped trade updates
+                    </li>
+                    <li class="feature-item">
+                        <span class="feature-check">✓</span>
+                        Breakeven guidance in real-time
+                    </li>
+                    <li class="feature-item">
+                        <span class="feature-check">✓</span>
+                        Clear exit plans, never hindsight
+                    </li>
+                    {% if trial_plan %}
+                    <li class="feature-item">
+                        <span class="feature-check">✓</span>
+                        {{ trial_plan.duration_days }}-day trial for ${{ trial_plan.trial_price }}
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+            <div class="brand-footer">
+                © {% now "Y" %} {{ site_name|default:"TradeAdmin" }}. All rights reserved.
+            </div>
+        </div>
+
+        <div class="form-side">
+            <div class="form-container">
+                <div class="form-header">
+                    <h2 class="form-title">Welcome back</h2>
+                    <p class="form-subtitle">Don't have an account? <a href="{% url 'account_signup' %}">Start free trial</a></p>
+                </div>
+
+                {% if form.errors %}
+                <div class="error-message">
+                    {% for error in form.non_field_errors %}
+                        {{ error }}
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <form method="post" action="{% url 'custom_login' %}">
+                    {% csrf_token %}
+                    <div class="input-group">
+                        <label class="input-label" for="id_username">Email Address</label>
+                        <input type="email" name="username" id="id_username" class="input-field" placeholder="you@example.com" required>
+                    </div>
+
+                    <div class="input-group">
+                        <label class="input-label" for="id_password">Password</label>
+                        <input type="password" name="password" id="id_password" class="input-field" placeholder="••••••••" required>
+                        <p class="input-hint">Must be at least 8 characters</p>
+                    </div>
+
+                    <div class="form-options">
+                        <label class="checkbox-wrapper">
+                            <input type="checkbox" name="remember" checked>
+                            <span class="checkbox-label">Remember me</span>
+                        </label>
+                        <a href="{% url 'account_reset_password' %}" class="forgot-link">Forgot password?</a>
+                    </div>
+
+                    <input type="hidden" name="next" value="{{ next|default:'/dashboard/' }}">
+                    <button type="submit" class="submit-btn">Sign In to Dashboard</button>
+                </form>
+
+                <div class="divider">or continue with</div>
+
+                <div class="social-login">
+                    <a href="{% url 'telegram_login' %}" class="social-btn">
+                        <span style="font-size: 1.25rem;">✈</span>
+                        Continue with Telegram
+                    </a>
+                    <a href="{% provider_login_url 'google' %}" class="social-btn">
+                        <span style="font-size: 1.25rem; color: #5865F2;">⚯</span>
+                        Continue with Google
+                    </a>
+                </div>
+
+                {% if trial_plan %}
+                <div class="trial-banner">
+                    <div class="trial-title">New to {{ site_name|default:"TradeAdmin" }}?</div>
+                    <div class="trial-text">Start your {{ trial_plan.duration_days }}-day trial for ${{ trial_plan.trial_price }}. Full access, cancel anytime.</div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

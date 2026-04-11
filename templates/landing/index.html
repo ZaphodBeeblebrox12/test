@@ -1,0 +1,491 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ site_name|default:"TradeAdmin" }} — Real-Time Trade Guidance</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+
+    <!-- NAVIGATION -->
+    <nav class="nav">
+        <a href="{% url 'landing' %}" class="nav-logo">{{ site_name|default:"TradeAdmin" }}</a>
+        <div class="nav-links">
+            <a href="#features" class="nav-link">Features</a>
+            <a href="#pricing" class="nav-link">Pricing</a>
+            {% if user.is_authenticated %}
+            <a href="{% url 'dashboard' %}" class="nav-button">Dashboard</a>
+            {% else %}
+            <a href="{% url 'custom_login' %}" class="nav-button">Log in</a>
+            <a href="{% url 'account_signup' %}" class="nav-button-primary">Sign up</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <!-- HERO -->
+    <section class="hero" id="hero">
+        <div class="hero-content">
+            <div class="hero-label">Real-Time Trade Guidance</div>
+            <h1 class="hero-headline-primary">Stop <span class="accent">guessing</span> after entry.</h1>
+            <div class="hero-headline-secondary">Most traders fail because they're trading alone.</div>
+            <p class="hero-subhead">
+                {{ site_name|default:"TradeAdmin" }} guides you through every step — timestamped, transparent, and in real time. 
+                No more wondering what to do when the chart moves against you.
+            </p>
+            <div class="hero-features">
+                <div class="hero-feature">
+                    Timestamped updates
+                    <span class="hero-feature-desc">Know exactly what was said when</span>
+                </div>
+                <div class="hero-feature">
+                    Breakeven guidance
+                    <span class="hero-feature-desc">Move to profit with confidence</span>
+                </div>
+                <div class="hero-feature">
+                    Clear exit plans
+                    <span class="hero-feature-desc">Never wonder when to take profits</span>
+                </div>
+            </div>
+            <div class="hero-cta">
+                <a href="#pricing" class="hero-button">Start My First Managed Trade</a>
+                <span class="hero-note">
+                    {% if trial_plan %}
+                        ${{ trial_plan.trial_price }} trial · Then ${{ default_plan_price }}/mo · Cancel anytime
+                    {% else %}
+                        ${{ default_plan_price }}/mo · Cancel anytime
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+
+        <div class="hero-visual">
+            <div class="phone-frame">
+                <div class="phone-notch"></div>
+                <div class="phone-screen">
+                    <div class="screenshot-placeholder">
+                        <div>Your Telegram screenshot<br>goes here</div>
+                        <div style="font-size: 0.7rem; margin-top: 1rem; color: #aaa;">
+                            Replace with:<br>
+                            &lt;img src="{% static 'images/telegram-screenshot.webp' %}"&gt;
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="hero-visual-caption">
+                <span class="caption-dot"></span>
+                This is what you get — timestamped, actionable, real time
+            </div>
+        </div>
+    </section>
+
+    <!-- PROBLEM -->
+    <section class="problem" id="problem">
+        <div class="problem-content">
+            <div class="problem-header">The Signal Provider Loop</div>
+
+            <div class="problem-scene">
+                <div class="scene-timestamp">09:47 AM — The Signal</div>
+                <div class="scene-message">"BUY BTC @ 70,000, SL 69,000, TP 72,000"</div>
+                <div class="scene-context">You enter. The setup looks good. Everything is defined.</div>
+            </div>
+
+            <div class="problem-scene">
+                <div class="scene-timestamp">Then — Silence</div>
+                <div class="scene-message">Hours of nothing.</div>
+                <div class="scene-context">
+                    No updates. Just you watching the chart, wondering if the setup is still valid. 
+                    The drawdown tests your conviction. Doubt creeps in.
+                </div>
+            </div>
+
+            <div class="problem-scene">
+                <div class="scene-timestamp">Later — The Result</div>
+                <div class="scene-message">"Target hit! +2.8% profit"</div>
+                <div class="scene-context">
+                    A screenshot appears. But you don't see the four-hour drawdown that tested your conviction. 
+                    You don't see whether they moved their stop or held firm. You don't see if they took 
+                    partial profits or rode the full move. You see the result, not the uncertainty.
+                </div>
+            </div>
+
+            <div class="problem-question">
+                "Was I supposed to hold through that drawdown? Did I do something wrong?"
+            </div>
+        </div>
+    </section>
+
+    <!-- COMPARISON -->
+    <section class="comparison-section" id="comparison">
+        <div class="comparison-header">
+            <div class="comparison-label">The Core Insight</div>
+            <div class="comparison-title">Three Approaches, Three Outcomes</div>
+            <div class="comparison-sub">Why real-time guidance changes everything</div>
+        </div>
+
+        <div class="comparison-grid">
+            <div class="comparison-card them">
+                <div class="card-badge">The Problem</div>
+                <div class="card-title">Signal Provider</div>
+                <div class="card-flow">
+                    <div class="flow-item">
+                        <span class="flow-text strong">Entry given</span>
+                    </div>
+                    <div class="flow-item">
+                        <span class="flow-arrow">→</span>
+                        <span class="flow-text">Silence</span>
+                    </div>
+                    <div class="flow-item">
+                        <span class="flow-arrow">→</span>
+                        <span class="flow-text">Result posted later</span>
+                    </div>
+                </div>
+                <div class="card-outcome">Confusion & Doubt</div>
+            </div>
+
+            <div class="comparison-card tradeadmin">
+                <div class="card-badge">The Solution</div>
+                <div class="card-title">{{ site_name|default:"TradeAdmin" }}</div>
+                <div class="card-flow">
+                    <div class="flow-item">
+                        <span class="flow-text strong">Entry + full plan</span>
+                    </div>
+                    <div class="flow-item">
+                        <span class="flow-arrow">→</span>
+                        <span class="flow-text">Updates during trade</span>
+                    </div>
+                    <div class="flow-item">
+                        <span class="flow-arrow">→</span>
+                        <span class="flow-text">Clear exit guidance</span>
+                    </div>
+                </div>
+                <div class="card-outcome">Clarity & Confidence</div>
+            </div>
+        </div>
+
+        <div class="proof-bar">
+            <div class="proof-text">Every update timestamped in real time.</div>
+            <div class="proof-sub">Not after the move. No hindsight. No "I meant to say that."</div>
+        </div>
+
+        <div class="cta-bar">
+            <div class="cta-text">
+                <div class="cta-headline">Stop guessing after entry.</div>
+                <div class="cta-sub">Start trading with a plan.</div>
+            </div>
+            <a href="#pricing" class="cta-button">Start My First Managed Trade</a>
+        </div>
+
+        <div class="example-micro">
+            <div class="example-pill them">
+                <div class="example-time">10:15 AM</div>
+                <div>Price up 0.6%. You freeze. "Move stop? Hold?" No answer.</div>
+            </div>
+            <div class="example-pill tradeadmin">
+                <div class="example-time">10:15 AM</div>
+                <div>"Move stop to breakeven." You click. No doubt.</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="features-section" id="features">
+        <div class="features-header">
+            <div class="features-label">How It Works</div>
+            <div class="features-title">See every trade. Trust every decision.</div>
+            <div class="features-sub">From entry to exit, you're never alone.</div>
+        </div>
+
+        <div class="trade-showcase">
+            <div class="trade-card">
+                <div class="trade-visual">
+                    <div class="trade-interface">
+                        <div class="trade-header">
+                            <span class="trade-pair">BTC/USD</span>
+                            <span class="trade-time">09:47:23</span>
+                        </div>
+                        <div class="trade-row">
+                            <span class="trade-label">Entry</span>
+                            <span class="trade-value entry">70,000</span>
+                        </div>
+                        <div class="trade-row">
+                            <span class="trade-label">Stop</span>
+                            <span class="trade-value stop">69,000 (-1.4%)</span>
+                        </div>
+                        <div class="trade-row">
+                            <span class="trade-label">Target</span>
+                            <span class="trade-value target">72,000 (+2.9%)</span>
+                        </div>
+                        <div class="trade-row">
+                            <span class="trade-label">Risk</span>
+                            <span class="trade-value">2%</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="trade-card-content">
+                    <div class="trade-feature">Entry + Full Plan</div>
+                    <div class="trade-desc">
+                        You get <strong>entry, stop, target, and risk</strong> before the trade. No guessing. Every number calculated.
+                    </div>
+                </div>
+            </div>
+
+            <div class="trade-card">
+                <div class="trade-visual">
+                    <div class="trade-interface">
+                        <div class="trade-header">
+                            <span class="trade-pair">BTC/USD</span>
+                            <span class="trade-time">10:15:42</span>
+                        </div>
+                        <div class="trade-row">
+                            <span class="trade-label">Price</span>
+                            <span class="trade-value entry">70,450 (+0.6%)</span>
+                        </div>
+                        <div class="trade-update">
+                            <strong>UPDATE:</strong> Move stop to breakeven (70,000). Now playing with house money. Zero risk of loss.
+                        </div>
+                        <div class="trade-row" style="margin-top: 0.5rem;">
+                            <span class="trade-label">New Stop</span>
+                            <span class="trade-value target">70,000 (0%)</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="trade-card-content">
+                    <div class="trade-feature">Real-Time Updates</div>
+                    <div class="trade-desc">
+                        Price moves. You get <strong>exact instructions</strong> — timestamped, specific, actionable. No ambiguity.
+                    </div>
+                </div>
+            </div>
+
+            <div class="trade-card">
+                <div class="trade-visual">
+                    <div class="trade-interface">
+                        <div class="trade-header">
+                            <span class="trade-pair">BTC/USD</span>
+                            <span class="trade-time">14:02:08</span>
+                        </div>
+                        <div class="trade-row">
+                            <span class="trade-label">Final Price</span>
+                            <span class="trade-value target">72,000 (+2.9%)</span>
+                        </div>
+                        <div class="trade-update">
+                            <strong>EXIT:</strong> Target hit. Close remaining 50%. Total: +2.3% (1.15R profit).
+                        </div>
+                    </div>
+                </div>
+                <div class="trade-card-content">
+                    <div class="trade-feature">Verified Exit</div>
+                    <div class="trade-desc">
+                        Every decision logged. <strong>Scroll back and verify</strong> what was said when. No memory games. No doubt.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="feature-details">
+            <div class="detail-item">
+                <div class="detail-icon">🎯</div>
+                <div class="detail-title">Precise Entries</div>
+                <div class="detail-text">Exact price levels, not ranges. Stop and target calculated before you click. Risk defined upfront.</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-icon">⚡</div>
+                <div class="detail-title">Live Updates</div>
+                <div class="detail-text">Breakeven moves, partial profits, stop adjustments — all in real time as the trade unfolds.</div>
+            </div>
+            <div class="detail-item">
+                <div class="detail-icon">📋</div>
+                <div class="detail-title">Full History</div>
+                <div class="detail-text">Every timestamp preserved. Review complete trades after close. Learn from real execution, not hindsight.</div>
+            </div>
+        </div>
+
+        <div class="final-cta">
+            <div class="final-cta-text">Stop trading alone. Start trading with a plan.</div>
+            <div class="final-cta-sub">Every update timestamped. Every decision explained.</div>
+            <a href="#pricing" class="final-cta-button">Start My First Managed Trade</a>
+            <div class="final-cta-note">
+                {% if trial_plan %}
+                    First {{ trial_plan.duration_days }} days for ${{ trial_plan.trial_price }} · Cancel anytime
+                {% else %}
+                    Cancel anytime
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
+    <!-- PRICING -->
+    <section class="pricing-section" id="pricing">
+        <div class="pricing-header">
+            <div class="pricing-label">Simple Pricing</div>
+            <div class="pricing-title">Start Trading With {{ site_name|default:"TradeAdmin" }}</div>
+            <div class="pricing-sub">
+                {% if trial_plan %}
+                    First {{ trial_plan.duration_days }} days for ${{ trial_plan.trial_price }}. Cancel anytime.
+                {% else %}
+                    Cancel anytime.
+                {% endif %}
+            </div>
+            {% if trial_plan %}
+            <div class="trial-notice">
+                <div class="trial-notice-text">Try any plan for {{ trial_plan.duration_days }} days. Then choose monthly or annual billing.</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="pricing-grid">
+            {% for plan_data in pricing_plans %}
+            <div class="pricing-card {% if plan_data.is_popular %}popular{% endif %}">
+                <div class="plan-header">
+                    <div class="plan-name">{{ plan_data.name }}</div>
+                    <div class="plan-description">{{ plan_data.description }}</div>
+                </div>
+                <div class="plan-price-container">
+                    <div class="plan-price">
+                        <span class="currency">{{ plan_data.currency_symbol|default:"$" }}</span>{{ plan_data.price }}<span class="period">/mo</span>
+                        {% if plan_data.original_price %}
+                        <span class="plan-original-price">${{ plan_data.original_price }}</span>
+                        {% endif %}
+                    </div>
+                    {% if trial_plan %}
+                    <div class="plan-trial-price">{{ trial_plan.duration_days }}-day trial: ${{ trial_plan.trial_price }}</div>
+                    {% endif %}
+                    {% if plan_data.savings %}
+                    <div class="plan-savings">Save ${{ plan_data.savings }} with annual billing</div>
+                    {% endif %}
+                </div>
+                <ul class="plan-features">
+                    {% for feature in plan_data.features %}
+                    <li {% if feature.disabled %}class="disabled"{% endif %}>{{ feature.text }}</li>
+                    {% endfor %}
+                </ul>
+                <a href="{% url 'account_signup' %}?plan={{ plan_data.plan_id }}" class="plan-cta">
+                    {% if trial_plan %}
+                        Start {{ trial_plan.duration_days }}-Day Trial — ${{ trial_plan.trial_price }}
+                    {% else %}
+                        Get Started
+                    {% endif %}
+                </a>
+                <div class="plan-guarantee">
+                    {% if trial_plan %}
+                        Trial renews to monthly. <strong>Cancel anytime.</strong>
+                    {% else %}
+                        <strong>Cancel anytime.</strong>
+                    {% endif %}
+                </div>
+            </div>
+            {% empty %}
+            <!-- Fallback static pricing if no plans in database -->
+            <div class="pricing-card">
+                <div class="plan-header">
+                    <div class="plan-name">Starter</div>
+                    <div class="plan-description">Perfect for traders learning real-time execution</div>
+                </div>
+                <div class="plan-price-container">
+                    <div class="plan-price">
+                        <span class="currency">$</span>47<span class="period">/mo</span>
+                    </div>
+                    <div class="plan-trial-price">7-day trial: $7</div>
+                </div>
+                <ul class="plan-features">
+                    <li>5 real-time trades per week</li>
+                    <li>Entry, stop & target alerts</li>
+                    <li>Basic risk management</li>
+                    <li>Email notifications</li>
+                    <li>24/7 chat support</li>
+                    <li class="disabled">Advanced analytics</li>
+                </ul>
+                <a href="{% url 'account_signup' %}" class="plan-cta">Start 7-Day Trial — $7</a>
+                <div class="plan-guarantee">Trial renews to monthly. <strong>Cancel anytime.</strong></div>
+            </div>
+
+            <div class="pricing-card popular">
+                <div class="plan-header">
+                    <div class="plan-name">Pro</div>
+                    <div class="plan-description">For serious traders who want unlimited guidance</div>
+                </div>
+                <div class="plan-price-container">
+                    <div class="plan-price">
+                        <span class="currency">$</span>81<span class="period">/mo</span>
+                        <span class="plan-original-price">$97</span>
+                    </div>
+                    <div class="plan-trial-price">7-day trial: $7</div>
+                    <div class="plan-savings">Save $194 with annual billing</div>
+                </div>
+                <ul class="plan-features">
+                    <li>Unlimited real-time trades</li>
+                    <li>Entry, updates & exit alerts</li>
+                    <li>Advanced risk management</li>
+                    <li>SMS + Email notifications</li>
+                    <li>24/7 chat support</li>
+                    <li>Full trade history & review</li>
+                </ul>
+                <a href="{% url 'account_signup' %}" class="plan-cta">Start 7-Day Trial — $7</a>
+                <div class="plan-guarantee">Trial renews to monthly. <strong>Cancel anytime.</strong></div>
+            </div>
+
+            <div class="pricing-card">
+                <div class="plan-header">
+                    <div class="plan-name">Elite</div>
+                    <div class="plan-description">White-glove service for professional traders</div>
+                </div>
+                <div class="plan-price-container">
+                    <div class="plan-price">
+                        <span class="currency">$</span>164<span class="period">/mo</span>
+                        <span class="plan-original-price">$197</span>
+                    </div>
+                    <div class="plan-trial-price">7-day trial: $7</div>
+                    <div class="plan-savings">Save $394 with annual billing</div>
+                </div>
+                <ul class="plan-features">
+                    <li>Everything in Pro, plus:</li>
+                    <li>1-on-1 monthly strategy call</li>
+                    <li>Priority trade alerts (faster)</li>
+                    <li>Custom risk parameters</li>
+                    <li>API access <span class="coming-soon-badge">Soon</span></li>
+                    <li>White-label exports</li>
+                </ul>
+                <a href="{% url 'account_signup' %}" class="plan-cta">Start 7-Day Trial — $7</a>
+                <div class="plan-guarantee">Trial renews to monthly. <strong>Cancel anytime.</strong></div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="footer" id="footer">
+        <div class="footer-content">
+            <div class="footer-brand-section">
+                <div class="footer-brand">{{ site_name|default:"TradeAdmin" }}</div>
+                <div class="footer-tagline">Real-time trade guidance for traders who refuse to trade alone.</div>
+            </div>
+            <div class="footer-links-section">
+                <div class="footer-section-title">Product</div>
+                <ul class="footer-links">
+                    <li><a href="#features">Features</a></li>
+                    <li><a href="#pricing">Pricing</a></li>
+                    <li><a href="#">FAQ</a></li>
+                </ul>
+            </div>
+            <div class="footer-links-section">
+                <div class="footer-section-title">Company</div>
+                <ul class="footer-links">
+                    <li><a href="#">About</a></li>
+                    <li><a href="#">Contact</a></li>
+                    <li><a href="#">Terms</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <div class="footer-copyright">© {% now "Y" %} {{ site_name|default:"TradeAdmin" }}. All rights reserved.</div>
+            <div class="footer-social">
+                <a href="#">Twitter</a>
+                <a href="#">Discord</a>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>
