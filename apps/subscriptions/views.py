@@ -7,7 +7,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 
-from .models import Plan, Subscription, GiftSubscription, UpgradeHistory
+from .models import Plan, Subscription, GiftSubscription, UpgradeHistory, PlanPrice, GeoPlanPrice   # added PlanPrice, GeoPlanPrice
 from .serializers import (
     PlanSerializer, SubscriptionSerializer, 
     GiftSubscriptionSerializer, UpgradeHistorySerializer
@@ -107,7 +107,7 @@ def plan_list_geo(request):
                 "price_cents": resolved_price.price_cents,
                 "price_dollars": resolved_price.price_cents / 100,
                 "currency": getattr(resolved_price, 'currency', 'USD'),
-                "is_geo_price": hasattr(resolved_price, 'geo_prices'),
+                "is_geo_price": isinstance(resolved_price, GeoPlanPrice),
             }
         except PlanPrice.DoesNotExist:
             price_data = None

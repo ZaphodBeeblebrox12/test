@@ -1,6 +1,6 @@
 """
 Public views for landing page and custom login.
-Uses EXISTING models - zero modifications to your codebase.
+Uses geo‑aware pricing from subscriptions services.
 """
 import logging
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class LandingPageView(TemplateView):
     """
-    Landing page with dynamic pricing from your existing Plan model.
+    Landing page with dynamic geo‑pricing from your existing Plan model.
     Template: templates/landing/index.html
     """
     template_name = "landing/index.html"
@@ -30,31 +30,46 @@ class LandingPageView(TemplateView):
             'duration_days': 7
         }
 
-        # Get pricing from existing models
-        context['pricing_plans'] = self._get_pricing_plans()
-        context['default_plan_price'] = self._get_default_price()
+        # Get geo‑aware pricing using the request
+        context['pricing_plans'] = self._get_pricing_plans(self.request)
+        context['default_plan_price'] = self._get_default_price(self.request)
 
         return context
 
-    def _get_pricing_plans(self):
-        """Fetch plans from your existing Plan and PlanPrice models."""
+    def _get_pricing_plans(self, request):
+        """Fetch plans with geo‑resolved pricing using subscriptions.services."""
         try:
-            from apps.subscriptions.models import Plan, PlanPrice
+            from apps.subscriptions.models import Plan
+            from apps.subscriptions.services import resolve_plan_price, get_pricing_country
 
             plans = []
             active_plans = Plan.objects.filter(
                 is_active=True
             ).order_by('display_order')[:3]
 
-            for idx, plan in enumerate(active_plans):
-                # Get monthly price
-                price_obj = PlanPrice.objects.filter(
-                    plan=plan,
-                    interval='monthly',
-                    is_active=True
-                ).first()
+            # Determine interval (you can make this configurable, e.g., via query param)
+            interval = request.GET.get('interval', 'monthly')
 
-                price = int(price_obj.price_dollars) if price_obj else 47
+            for idx, plan in enumerate(active_plans):
+                try:
+                    resolved_price = resolve_plan_price(plan, interval, request)
+                    price = resolved_price.price_cents / 100  # convert to base unit
+                    currency = resolved_price.currency
+                    symbol = self._get_currency_symbol(currency)
+
+                    is_geo = hasattr(resolved_price, 'country')  # True for GeoPlanPrice
+
+                except Exception as e:
+                    logger.warning(f"Could not resolve price for {plan.name}: {e}")
+                    # Fallback to first active PlanPrice
+                    from apps.subscriptions.models import PlanPrice
+                    price_obj = PlanPrice.objects.filter(plan=plan, interval=interval, is_active=True).first()
+                    if price_obj:
+                        price = price_obj.price_cents / 100
+                        currency = price_obj.currency
+                        symbol = self._get_currency_symbol(currency)
+                    else:
+                        continue  # skip this plan
 
                 # Build feature list based on tier
                 features = self._get_features_for_tier(plan.tier)
@@ -63,12 +78,13 @@ class LandingPageView(TemplateView):
                     'plan_id': str(plan.id),
                     'name': plan.name,
                     'description': plan.description or self._get_default_desc(plan.tier),
-                    'price': price,
-                    'currency_symbol': '$',
-                    'original_price': price + 16 if plan.tier == 'pro' else (price + 33 if plan.tier == 'enterprise' else None),
-                    'savings': 194 if plan.tier == 'pro' else (394 if plan.tier == 'enterprise' else None),
+                    'price': int(price) if price.is_integer() else price,
+                    'currency_symbol': symbol,
+                    'original_price': None,   # you can compute if needed
+                    'savings': None,
                     'is_popular': plan.tier == 'pro',
                     'features': features,
+                    'is_geo': is_geo,         # optional, for debugging
                 })
 
             return plans
@@ -77,18 +93,30 @@ class LandingPageView(TemplateView):
             logger.warning(f"Could not load plans from database: {e}")
             return []
 
-    def _get_default_price(self):
-        """Get default price for hero section."""
+    def _get_default_price(self, request):
+        """Get geo‑resolved default price for hero section."""
         try:
-            from apps.subscriptions.models import Plan, PlanPrice
+            from apps.subscriptions.models import Plan
+            from apps.subscriptions.services import resolve_plan_price
+
             basic = Plan.objects.filter(tier='basic', is_active=True).first()
             if basic:
-                price = PlanPrice.objects.filter(plan=basic, interval='monthly').first()
-                if price:
-                    return int(price.price_dollars)
+                resolved = resolve_plan_price(basic, 'monthly', request)
+                return int(resolved.price_cents / 100)
         except Exception:
             pass
         return 47
+
+    def _get_currency_symbol(self, currency_code):
+        """Return currency symbol for given ISO code."""
+        symbols = {
+            'USD': '$',
+            'INR': '₹',
+            'EUR': '€',
+            'GBP': '£',
+            'JPY': '¥',
+        }
+        return symbols.get(currency_code.upper(), currency_code)
 
     def _get_default_desc(self, tier):
         """Default descriptions by tier."""
