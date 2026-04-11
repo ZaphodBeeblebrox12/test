@@ -1,6 +1,6 @@
 """
 Public views for landing page and custom login.
-Uses geo‑aware pricing from subscriptions services.
+Uses geo-aware pricing from subscriptions services.
 """
 import logging
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class LandingPageView(TemplateView):
     """
-    Landing page with dynamic geo‑pricing from your existing Plan model.
+    Landing page with dynamic geo-pricing from your existing Plan model.
     Template: templates/landing/index.html
     """
     template_name = "landing/index.html"
@@ -30,14 +30,14 @@ class LandingPageView(TemplateView):
             'duration_days': 7
         }
 
-        # Get geo‑aware pricing using the request
+        # Get geo-aware pricing using the request
         context['pricing_plans'] = self._get_pricing_plans(self.request)
         context['default_plan_price'] = self._get_default_price(self.request)
 
         return context
 
     def _get_pricing_plans(self, request):
-        """Fetch plans with geo‑resolved pricing using subscriptions.services."""
+        """Fetch plans with geo-resolved pricing using subscriptions.services."""
         try:
             from apps.subscriptions.models import Plan
             from apps.subscriptions.services import resolve_plan_price, get_pricing_country
@@ -47,27 +47,35 @@ class LandingPageView(TemplateView):
                 is_active=True
             ).order_by('display_order')[:3]
 
-            # Determine interval (you can make this configurable, e.g., via query param)
-            interval = request.GET.get('interval', 'monthly')
+            # Get country for pricing (handles test_country query param)
+            country = get_pricing_country(request)
 
             for idx, plan in enumerate(active_plans):
-                try:
-                    resolved_price = resolve_plan_price(plan, interval, request)
-                    price = resolved_price.price_cents / 100  # convert to base unit
-                    currency = resolved_price.currency
-                    symbol = self._get_currency_symbol(currency)
+                # FIXED: Initialize is_geo at start of iteration
+                is_geo = False
 
-                    is_geo = hasattr(resolved_price, 'country')  # True for GeoPlanPrice
+                try:
+                    # FIXED: Call resolve_plan_price with correct arguments: (plan, country)
+                    # Returns a dictionary, not a model object
+                    price_info = resolve_plan_price(plan, country)
+
+                    # FIXED: Access as dictionary keys, not attributes
+                    price_cents = price_info["price_cents"]
+                    currency = price_info["currency"]
+                    is_geo = price_info["geo_pricing"]  # Boolean from dict
+                    symbol = self._get_currency_symbol(currency)
+                    price = price_cents / 100
 
                 except Exception as e:
                     logger.warning(f"Could not resolve price for {plan.name}: {e}")
                     # Fallback to first active PlanPrice
                     from apps.subscriptions.models import PlanPrice
-                    price_obj = PlanPrice.objects.filter(plan=plan, interval=interval, is_active=True).first()
+                    price_obj = PlanPrice.objects.filter(plan=plan, is_active=True).first()
                     if price_obj:
                         price = price_obj.price_cents / 100
                         currency = price_obj.currency
                         symbol = self._get_currency_symbol(currency)
+                        is_geo = False  # FIXED: Set is_geo in fallback too
                     else:
                         continue  # skip this plan
 
@@ -78,13 +86,13 @@ class LandingPageView(TemplateView):
                     'plan_id': str(plan.id),
                     'name': plan.name,
                     'description': plan.description or self._get_default_desc(plan.tier),
-                    'price': int(price) if price.is_integer() else price,
+                    'price': int(price) if price == int(price) else price,
                     'currency_symbol': symbol,
-                    'original_price': None,   # you can compute if needed
+                    'original_price': None,
                     'savings': None,
                     'is_popular': plan.tier == 'pro',
                     'features': features,
-                    'is_geo': is_geo,         # optional, for debugging
+                    'is_geo': is_geo,  # Now always defined
                 })
 
             return plans
@@ -94,15 +102,21 @@ class LandingPageView(TemplateView):
             return []
 
     def _get_default_price(self, request):
-        """Get geo‑resolved default price for hero section."""
+        """Get geo-resolved default price for hero section."""
         try:
             from apps.subscriptions.models import Plan
-            from apps.subscriptions.services import resolve_plan_price
+            from apps.subscriptions.services import resolve_plan_price, get_pricing_country
 
             basic = Plan.objects.filter(tier='basic', is_active=True).first()
             if basic:
-                resolved = resolve_plan_price(basic, 'monthly', request)
-                return int(resolved.price_cents / 100)
+                # FIXED: Get country first, then pass to resolve_plan_price
+                country = get_pricing_country(request)
+
+                # FIXED: Call with 2 arguments: (plan, country)
+                price_info = resolve_plan_price(basic, country)
+
+                # FIXED: Access as dictionary key
+                return int(price_info["price_cents"] / 100)
         except Exception:
             pass
         return 47
