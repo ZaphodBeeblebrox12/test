@@ -6,6 +6,7 @@ import logging
 
 from django.conf import settings
 from django.contrib.auth import views as auth_views
+from allauth.account.views import SignupView
 from django.views.generic import TemplateView
 
 logger = logging.getLogger(__name__)
@@ -193,3 +194,17 @@ class CustomLoginView(auth_views.LoginView):
         """Redirect after successful login."""
         from django.urls import reverse
         return reverse('dashboard')
+
+
+
+class CustomSignupView(SignupView):
+    """
+    Custom signup using our branded template.
+    Template: templates/account/signup.html
+    """
+    template_name = "account/signup.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['site_name'] = getattr(settings, 'SITE_NAME', 'TradeAdmin')
+        return context

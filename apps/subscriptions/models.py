@@ -1,5 +1,5 @@
 """
-Subscription models for SaaS billing.
+Subscription models for SaaS billing with Trial Support.
 """
 import uuid
 
@@ -56,6 +56,18 @@ class Plan(models.Model):
         default=0,
         help_text=_("Order for display in plan lists")
     )
+
+    # TRIAL FIELDS
+    is_trial = models.BooleanField(
+        default=False,
+        help_text=_("Whether this is a one-time trial plan")
+    )
+    trial_duration_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=_("Duration of trial in days (required if is_trial=True)")
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -65,7 +77,22 @@ class Plan(models.Model):
         ordering = ["display_order", "tier"]
 
     def __str__(self) -> str:
+        if self.is_trial:
+            return f"{self.name} (Trial - {self.trial_duration_days} days)"
         return self.name
+
+    def clean(self):
+        """Validate trial configuration."""
+        super().clean()
+        if self.is_trial:
+            if not self.trial_duration_days:
+                raise ValidationError({
+                    "trial_duration_days": "Trial duration is required when is_trial=True"
+                })
+            if self.trial_duration_days < 1:
+                raise ValidationError({
+                    "trial_duration_days": "Trial duration must be at least 1 day"
+                })
 
 
 class PlanPrice(models.Model):
@@ -314,6 +341,10 @@ class Subscription(models.Model):
         blank=True,
         help_text=_("Reason for admin grant")
     )
+    is_trial = models.BooleanField(
+        default=False,
+        help_text=_("Whether this subscription is a trial")
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -343,6 +374,55 @@ class Subscription(models.Model):
             )
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+class UserTrialUsage(models.Model):
+    """
+    Tracks one-time trial usage per user per plan.
+    Ensures users can only claim a trial plan once.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="trial_usages",
+        help_text=_("User who used the trial")
+    )
+    plan = models.ForeignKey(
+        Plan,
+        on_delete=models.CASCADE,
+        related_name="trial_usages",
+        help_text=_("Trial plan that was used")
+    )
+    subscription = models.ForeignKey(
+        Subscription,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="trial_usage_record",
+        help_text=_("Subscription created from this trial")
+    )
+    used_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text=_("When the trial was claimed")
+    )
+    expires_at = models.DateTimeField(
+        help_text=_("When the trial expires")
+    )
+
+    class Meta:
+        verbose_name = _("user trial usage")
+        verbose_name_plural = _("user trial usages")
+        unique_together = ["user", "plan"]
+        ordering = ["-used_at"]
+
+    def __str__(self) -> str:
+        return f"{self.user.username} - {self.plan.name} Trial"
+
+    @property
+    def is_expired(self) -> bool:
+        """Check if trial has expired."""
+        return timezone.now() > self.expires_at
 
 
 class SubscriptionHistory(models.Model):

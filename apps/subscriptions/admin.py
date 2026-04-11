@@ -1,5 +1,6 @@
 """
-Admin configuration for subscriptions with unified Plan + Geo Pricing management.
+Admin configuration for subscriptions with unified Plan + Geo Pricing management
+and Trial Plan support.
 """
 from django.contrib import admin
 from django.utils.html import format_html
@@ -8,7 +9,7 @@ from django.core.exceptions import ValidationError
 
 from .models import (
     Plan, PlanPrice, Subscription, SubscriptionHistory,
-    UpgradeHistory, GiftSubscription, GeoPlanPrice
+    UpgradeHistory, GiftSubscription, GeoPlanPrice, UserTrialUsage
 )
 
 
@@ -69,6 +70,31 @@ class PlanPriceForm(forms.ModelForm):
         return price_cents
 
 
+class PlanForm(forms.ModelForm):
+    """Form for Plan with trial validation."""
+
+    class Meta:
+        model = Plan
+        fields = '__all__'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        is_trial = cleaned_data.get('is_trial')
+        trial_duration_days = cleaned_data.get('trial_duration_days')
+
+        if is_trial:
+            if not trial_duration_days:
+                raise ValidationError({
+                    'trial_duration_days': 'Trial duration is required for trial plans.'
+                })
+            if trial_duration_days < 1:
+                raise ValidationError({
+                    'trial_duration_days': 'Trial duration must be at least 1 day.'
+                })
+
+        return cleaned_data
+
+
 # =============================================================================
 # INLINE ADMIN CLASSES
 # =============================================================================
@@ -111,26 +137,19 @@ class GeoPlanPriceInline(admin.TabularInline):
         if obj and obj.pk:
             if obj.country:
                 return format_html(
-                    '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
-                    'background:#e8f5e9;color:#2e7d32;border-radius:4px;font-size:12px;'
-                    'font-weight:500;border:1px solid #c8e6c9;">🇺🇳 {}</span>',
+                    '🇺🇳 <strong>{}</strong>',
                     obj.country.upper()
                 )
             elif obj.region:
                 return format_html(
-                    '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
-                    'background:#fff3e0;color:#ef6c00;border-radius:4px;font-size:12px;'
-                    'font-weight:500;border:1px solid #ffe0b2;">🌎 {}</span>',
+                    '🌎 <strong>{}</strong>',
                     obj.region.upper()
                 )
             return format_html(
-                '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
-                'background:#ffebee;color:#c62828;border-radius:4px;font-size:12px;'
-                'font-weight:500;border:1px solid #ffcdd2;">⚠️ REQUIRED</span>'
+                '<span style="color: red;">⚠️ REQUIRED</span>'
             )
         return format_html(
-            '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
-            'color:#9e9e9e;font-size:12px;font-style:italic;">Save to see type</span>'
+            '<em>Save to see type</em>'
         )
     price_type_badge.short_description = "Type"
 
@@ -148,24 +167,27 @@ class GeoPlanPriceInline(admin.TabularInline):
 
 
 # =============================================================================
-# MAIN PLAN ADMIN (Unified Interface)
+# MAIN PLAN ADMIN (Unified Interface with Trial Support)
 # =============================================================================
 
 @admin.register(Plan)
 class PlanAdmin(admin.ModelAdmin):
-    """Admin for subscription plans with unified base + geo pricing."""
+    """Admin for subscription plans with unified base + geo pricing + trial support."""
+
+    form = PlanForm
 
     list_display = [
         "name",
         "tier",
         "is_active",
+        "trial_badge",
         "display_order",
         "max_projects",
         "max_storage_mb",
         "created_at",
         "pricing_summary",
     ]
-    list_filter = ["tier", "is_active"]
+    list_filter = ["tier", "is_active", "is_trial"]
     search_fields = ["name", "description"]
     ordering = ["display_order", "tier"]
 
@@ -175,11 +197,34 @@ class PlanAdmin(admin.ModelAdmin):
         ("Plan Information", {
             "fields": ("tier", "name", "description", "is_active", "display_order")
         }),
+        ("Trial Configuration", {
+            "fields": ("is_trial", "trial_duration_days"),
+            "description": """
+                <strong>Trial Plans:</strong><br>
+                • Check "Is trial" to mark this as a one-time trial plan<br>
+                • Set "Trial duration days" (e.g., 7 for 7-day trial)<br>
+                • Users can only claim each trial plan once<br>
+                • Trial plans work with geo pricing like regular plans
+            """
+        }),
         ("Feature Limits", {
             "fields": ("max_projects", "max_storage_mb", "api_calls_per_day"),
             "classes": ("collapse",)
         }),
     )
+
+    def trial_badge(self, obj):
+        """Display trial status badge."""
+        if obj.is_trial:
+            return format_html(
+                '<span style="background: #17a2b8; color: white; padding: 2px 8px; '
+                'border-radius: 4px; font-size: 11px;">🎯 TRIAL {}d</span>',
+                obj.trial_duration_days
+            )
+        return format_html(
+            '<span style="color: #6c757d;">—</span>'
+        )
+    trial_badge.short_description = "Trial"
 
     def pricing_summary(self, obj):
         """Show count of base and geo prices."""
@@ -192,15 +237,60 @@ class PlanAdmin(admin.ModelAdmin):
         return format_html(
             '{} | {}',
             format_html(
-                '<span style="color:#2e7d32;font-weight:500;">{}</span>',
+                '<span style="color: #28a745;">{}</span>',
                 base_label
-            ) if base_count else format_html('<span style="color:#9e9e9e;">No base</span>'),
+            ) if base_count else format_html('<span style="color: #6c757d;">No base</span>'),
             format_html(
-                '<span style="color:#1565c0;font-weight:500;">{}</span>',
+                '<span style="color: #17a2b8;">{}</span>',
                 geo_label
-            ) if geo_count else format_html('<span style="color:#9e9e9e;">No geo</span>')
+            ) if geo_count else format_html('<span style="color: #6c757d;">No geo</span>')
         )
     pricing_summary.short_description = "Pricing"
+
+
+# =============================================================================
+# USER TRIAL USAGE ADMIN
+# =============================================================================
+
+@admin.register(UserTrialUsage)
+class UserTrialUsageAdmin(admin.ModelAdmin):
+    """Admin for tracking trial usage (read-only audit log)."""
+
+    list_display = [
+        "user",
+        "plan",
+        "used_at",
+        "expires_at",
+        "status_badge",
+    ]
+    list_filter = ["plan", "used_at"]
+    search_fields = ["user__username", "user__email", "plan__name"]
+    list_select_related = ["user", "plan", "subscription"]
+    readonly_fields = [
+        "user", "plan", "subscription", "used_at", "expires_at"
+    ]
+    date_hierarchy = "used_at"
+
+    def status_badge(self, obj):
+        """Display trial status."""
+        if obj.is_expired:
+            return format_html(
+                '<span style="background: #6c757d; color: white; padding: 2px 8px; '
+                'border-radius: 4px; font-size: 11px;">EXPIRED</span>'
+            )
+        return format_html(
+            '<span style="background: #28a745; color: white; padding: 2px 8px; '
+            'border-radius: 4px; font-size: 11px;">ACTIVE</span>'
+        )
+    status_badge.short_description = "Status"
+
+    def has_add_permission(self, request):
+        """Prevent manual creation - trials are created via purchase flow."""
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        """Prevent editing - this is an audit log."""
+        return False
 
 
 # =============================================================================
@@ -248,15 +338,15 @@ class GeoPlanPriceAdmin(admin.ModelAdmin):
         ("Geo Override Target", {
             "fields": ("country", "region"),
             "description": """
-**⚠️ REQUIRED: Specify either COUNTRY or REGION (not both empty)**
+<strong>⚠️ REQUIRED: Specify either COUNTRY or REGION (not both empty)</strong>
 
-• **Country-specific:** Enter country code (e.g., IN, US, DE), leave region empty
+• <strong>Country-specific:</strong> Enter country code (e.g., IN, US, DE), leave region empty
 
-• **Regional:** Enter region code (e.g., APAC, EU, NA), leave country empty
+• <strong>Regional:</strong> Enter region code (e.g., APAC, EU, NA), leave country empty
 
-• **Global pricing is managed in PlanPrice, NOT here**
+• <strong>Global pricing is managed in PlanPrice, NOT here</strong>
 
-GeoPlanPrice is for **overrides only**.
+GeoPlanPrice is for <strong>overrides only</strong>.
 """
         }),
         ("Status", {
@@ -267,44 +357,32 @@ GeoPlanPrice is for **overrides only**.
     def geo_badge(self, obj: GeoPlanPrice) -> str:
         if obj.country:
             return format_html(
-                '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
-                'background:#e3f2fd;color:#1565c0;border-radius:4px;font-size:12px;'
-                'font-weight:500;border:1px solid #bbdefb;">🇺🇳 {}</span>',
+                '🇺🇳 <strong>{}</strong>',
                 obj.country.upper()
             )
         elif obj.region:
             return format_html(
-                '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
-                'background:#f3e5f5;color:#7b1fa2;border-radius:4px;font-size:12px;'
-                'font-weight:500;border:1px solid #e1bee7;">🌎 {}</span>',
+                '🌎 <strong>{}</strong>',
                 obj.region.upper()
             )
         return format_html(
-            '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
-            'background:#ffebee;color:#c62828;border-radius:4px;font-size:12px;'
-            'font-weight:500;border:1px solid #ffcdd2;">⚠️ INVALID - No geo specified</span>'
+            '<span style="color: red;">⚠️ INVALID - No geo specified</span>'
         )
     geo_badge.short_description = "Override Target"
 
     def price_type_badge(self, obj: GeoPlanPrice) -> str:
         if obj.country:
             return format_html(
-                '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
-                'background:#e8f5e9;color:#2e7d32;border-radius:4px;font-size:12px;'
-                'font-weight:500;border:1px solid #c8e6c9;">🇺🇳 {}</span>',
+                '🇺🇳 <strong>{}</strong>',
                 obj.country.upper()
             )
         elif obj.region:
             return format_html(
-                '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
-                'background:#fff3e0;color:#ef6c00;border-radius:4px;font-size:12px;'
-                'font-weight:500;border:1px solid #ffe0b2;">🌎 {}</span>',
+                '🌎 <strong>{}</strong>',
                 obj.region.upper()
             )
         return format_html(
-            '<span style="display:inline-block;white-space:nowrap;padding:2px 6px;'
-            'background:#ffebee;color:#c62828;border-radius:4px;font-size:12px;'
-            'font-weight:500;border:1px solid #ffcdd2;">⚠️ INVALID</span>'
+            '<span style="color: red;">⚠️ INVALID</span>'
         )
     price_type_badge.short_description = "Type"
 
@@ -365,6 +443,7 @@ class SubscriptionAdmin(admin.ModelAdmin):
         "plan__tier",
         "is_gift",
         "is_admin_grant",
+        "is_trial",
     ]
     search_fields = [
         "user__username",
@@ -393,10 +472,11 @@ class SubscriptionAdmin(admin.ModelAdmin):
             "fields": ("pricing_country", "pricing_region"),
             "classes": ("collapse",)
         }),
-        ("Gift / Admin Grant", {
+        ("Gift / Admin Grant / Trial", {
             "fields": (
                 "is_gift", "gift_from", "gift_message",
-                "is_admin_grant", "granted_by", "grant_reason"
+                "is_admin_grant", "granted_by", "grant_reason",
+                "is_trial",
             ),
             "classes": ("collapse",)
         }),
@@ -407,28 +487,24 @@ class SubscriptionAdmin(admin.ModelAdmin):
     )
 
     def source_display(self, obj: Subscription) -> str:
+        if obj.is_trial:
+            return format_html(
+                '<span style="background: #17a2b8; color: white; padding: 2px 8px; '
+                'border-radius: 4px; font-size: 11px;">🎯 TRIAL</span>'
+            )
         if obj.is_gift:
             return format_html(
-                '<span style="display:inline-block;white-space:nowrap;padding:2px 8px;'
-                'background:#f3e5f5;color:#7b1fa2;border-radius:4px;font-size:12px;'
-                'font-weight:500;">🎁 Gift</span>'
+                '<span style="background: #e83e8c; color: white; padding: 2px 8px; '
+                'border-radius: 4px; font-size: 11px;">🎁 GIFT</span>'
             )
         elif obj.is_admin_grant:
             return format_html(
-                '<span style="display:inline-block;white-space:nowrap;padding:2px 8px;'
-                'background:#e8f5e9;color:#2e7d32;border-radius:4px;font-size:12px;'
-                'font-weight:500;">👤 Admin</span>'
-            )
-        elif obj.payment_provider == "trial":
-            return format_html(
-                '<span style="display:inline-block;white-space:nowrap;padding:2px 8px;'
-                'background:#e3f2fd;color:#1565c0;border-radius:4px;font-size:12px;'
-                'font-weight:500;">🎯 Trial</span>'
+                '<span style="background: #6610f2; color: white; padding: 2px 8px; '
+                'border-radius: 4px; font-size: 11px;">👤 ADMIN</span>'
             )
         return format_html(
-            '<span style="display:inline-block;white-space:nowrap;padding:2px 8px;'
-            'background:#fff3e0;color:#ef6c00;border-radius:4px;font-size:12px;'
-            'font-weight:500;">💳 Paid</span>'
+            '<span style="background: #28a745; color: white; padding: 2px 8px; '
+            'border-radius: 4px; font-size: 11px;">💳 PAID</span>'
         )
     source_display.short_description = "Source"
 
@@ -477,9 +553,8 @@ class SubscriptionHistoryAdmin(admin.ModelAdmin):
         }
         color = colors.get(obj.event_type, "#6c757d")
         return format_html(
-            '<span style="display:inline-block;white-space:nowrap;padding:2px 8px;'
-            'background:{};color:#fff;border-radius:4px;font-size:12px;'
-            'font-weight:500;">{}</span>',
+            '<span style="background: {}; color: white; padding: 2px 8px; '
+            'border-radius: 4px; font-size: 11px;">{}</span>',
             color,
             obj.get_event_type_display()
         )

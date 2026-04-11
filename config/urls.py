@@ -7,6 +7,9 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib.auth import views as auth_views
 
+# Import allauth views for customization
+from allauth.account.views import SignupView
+
 urlpatterns = [
     # Growth admin views - MUST be first to avoid catch_all_view interception
     path("admin/", include("apps.growth.admin_urls", namespace="growth_admin")),
@@ -15,12 +18,16 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path('', include('apps.public_views.urls')),
 
-    # Custom login view override (before allauth to take precedence)
+    # Custom auth views (before allauth to take precedence)
     path("accounts/login/", auth_views.LoginView.as_view(
         template_name="auth/login.html",
         redirect_authenticated_user=True,
-        authentication_form=None
     ), name="account_login"),
+
+    # NEW: Custom signup view using allauth SignupView with custom template
+    path("accounts/signup/", SignupView.as_view(
+        template_name="auth/signup.html",
+    ), name="account_signup"),
 
     path("accounts/", include("allauth.urls")),
     path("api/auth/", include("apps.accounts.urls")),
@@ -33,11 +40,8 @@ urlpatterns = [
     path("", include("apps.payments.urls")),
     path("growth/", include("apps.growth.urls")),
 
-    # Bot integration app
+    # NEW: Bot integration app (Telegram deep link, Discord OAuth, channel sync)
     path("bot/", include("apps.bot_integration.urls")),
-
-    # ========== NEW: Subscriptions app ==========
-    path("subscriptions/", include("apps.subscriptions.urls")),
 ]
 
 if settings.DEBUG:
