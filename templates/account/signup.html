@@ -1,137 +1,84 @@
-{% load static %}
 {% load i18n %}
-
+{% load account %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% trans "Sign Up" %} - TradeAdmin</title>
-    <link rel="stylesheet" href="{% static 'css/login.css' %}">
+    <title>Sign up - {{ site_name|default:"TradeAdmin" }}</title>
+    <link rel="stylesheet" href="{% static 'css/auth.css' %}">
 </head>
-<body>
-    <div class="split-layout">
-        <!-- Brand Side -->
-        <div class="brand-side">
-            <div class="brand-header">
-                <a href="{% url 'index' %}" class="brand-logo">TradeAdmin</a>
+<body class="auth-page">
+    <div class="auth-container">
+        <div class="auth-box">
+            <div class="auth-header">
+                <h1>Create your account</h1>
+                <p>Start trading with confidence</p>
             </div>
-            <div class="brand-content">
-                <h1 class="brand-tagline">Start your trading journey.<br>7 days free.</h1>
-                <p class="brand-desc">Join thousands of traders who never miss an update. Real-time guidance from entry to exit.</p>
-                <ul class="feature-list">
-                    <li class="feature-item">
-                        <span class="feature-check">✓</span>
-                        Timestamped trade updates
-                    </li>
-                    <li class="feature-item">
-                        <span class="feature-check">✓</span>
-                        Breakeven guidance in real-time
-                    </li>
-                    <li class="feature-item">
-                        <span class="feature-check">✓</span>
-                        Clear exit plans, never hindsight
-                    </li>
-                    <li class="feature-item">
-                        <span class="feature-check">✓</span>
-                        7-day trial for $7
-                    </li>
-                </ul>
-            </div>
-            <div class="brand-footer">
-                © {% now "Y" %} TradeAdmin. All rights reserved.
-            </div>
-        </div>
 
-        <!-- Form Side -->
-        <div class="form-side">
-            <div class="form-container">
-                <div class="form-header">
-                    <h2 class="form-title">{% trans "Create your account" %}</h2>
-                    <p class="form-subtitle">
-                        {% trans "Already have an account?" %} 
-                        <a href="{% url 'account_login' %}">{% trans "Sign in" %}</a>
-                    </p>
-                </div>
+            {% if form.non_field_errors %}
+            <div class="auth-error">
+                {% for error in form.non_field_errors %}
+                <p>{{ error }}</p>
+                {% endfor %}
+            </div>
+            {% endif %}
 
-                {# Global Form Errors #}
-                {% if form.non_field_errors %}
-                <div class="form-errors">
-                    {% for error in form.non_field_errors %}
-                        <p class="error-message">{{ error }}</p>
-                    {% endfor %}
-                </div>
+            <form method="post" action="{% url 'account_signup' %}">
+                {% csrf_token %}
+
+                {% if redirect_field_value %}
+                <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
                 {% endif %}
 
-                <form method="post" action="{% url 'account_signup' %}" class="signup-form">
-                    {% csrf_token %}
-
-                    {# Hidden redirect field #}
-                    {% if redirect_field_value %}
-                    <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
+                <div class="form-group">
+                    <label for="id_email">Email</label>
+                    <input type="email" name="email" id="id_email" required placeholder="you@example.com">
+                    {% if form.email.errors %}
+                    <span class="field-error">{{ form.email.errors.0 }}</span>
                     {% endif %}
-
-                    {# Email Field #}
-                    <div class="input-group {% if form.email.errors %}has-error{% endif %}">
-                        <label class="input-label" for="id_email">{% trans "Email Address" %}</label>
-                        {{ form.email }}
-                        {% if form.email.errors %}
-                            <p class="error-hint">{{ form.email.errors.0 }}</p>
-                        {% endif %}
-                    </div>
-
-                    {# Username Field #}
-                    <div class="input-group {% if form.username.errors %}has-error{% endif %}">
-                        <label class="input-label" for="id_username">{% trans "Username" %}</label>
-                        {{ form.username }}
-                        {% if form.username.errors %}
-                            <p class="error-hint">{{ form.username.errors.0 }}</p>
-                        {% else %}
-                            <p class="input-hint">{% trans "Choose a unique username" %}</p>
-                        {% endif %}
-                    </div>
-
-                    {# Password Field 1 #}
-                    <div class="input-group {% if form.password1.errors %}has-error{% endif %}">
-                        <label class="input-label" for="id_password1">{% trans "Password" %}</label>
-                        {{ form.password1 }}
-                        {% if form.password1.errors %}
-                            <p class="error-hint">{{ form.password1.errors.0 }}</p>
-                        {% else %}
-                            <p class="input-hint">{% trans "Must be at least 8 characters" %}</p>
-                        {% endif %}
-                    </div>
-
-                    {# Password Field 2 #}
-                    <div class="input-group {% if form.password2.errors %}has-error{% endif %}">
-                        <label class="input-label" for="id_password2">{% trans "Confirm Password" %}</label>
-                        {{ form.password2 }}
-                        {% if form.password2.errors %}
-                            <p class="error-hint">{{ form.password2.errors.0 }}</p>
-                        {% endif %}
-                    </div>
-
-                    {# Submit Button #}
-                    <button type="submit" class="submit-btn">{% trans "Start Free Trial" %}</button>
-                </form>
-
-                <div class="divider">{% trans "or sign up with" %}</div>
-
-                <div class="social-login">
-                    <a href="#" class="social-btn">
-                        <span style="font-size: 1.25rem;">✈</span>
-                        {% trans "Continue with Telegram" %}
-                    </a>
-                    <a href="#" class="social-btn">
-                        <span style="font-size: 1.25rem; color: #5865F2;">⚯</span>
-                        {% trans "Continue with Discord" %}
-                    </a>
                 </div>
 
-                <div class="trial-banner">
-                    <div class="trial-title">{% trans "7-Day Trial" %}</div>
-                    <div class="trial-text">{% trans "$7 today, then $47/month. Cancel anytime before your trial ends and pay nothing more." %}</div>
+                <div class="form-group">
+                    <label for="id_username">Username</label>
+                    <input type="text" name="username" id="id_username" required placeholder="trader123">
+                    {% if form.username.errors %}
+                    <span class="field-error">{{ form.username.errors.0 }}</span>
+                    {% endif %}
                 </div>
+
+                <div class="form-group">
+                    <label for="id_password1">Password</label>
+                    <input type="password" name="password1" id="id_password1" required placeholder="••••••••">
+                    {% if form.password1.errors %}
+                    <span class="field-error">{{ form.password1.errors.0 }}</span>
+                    {% endif %}
+                </div>
+
+                <div class="form-group">
+                    <label for="id_password2">Confirm Password</label>
+                    <input type="password" name="password2" id="id_password2" required placeholder="••••••••">
+                    {% if form.password2.errors %}
+                    <span class="field-error">{{ form.password2.errors.0 }}</span>
+                    {% endif %}
+                </div>
+
+                <button type="submit" class="auth-button">Create Account</button>
+            </form>
+
+            <div class="auth-footer">
+                <p>Already have an account? <a href="{% url 'account_login' %}">Log in</a></p>
+
+                <!-- TRIAL VISIBILITY - ONLY MODIFIED THIS -->
+                {% if trial_available and trial_duration %}
+                <div class="trial-box">
+                    <p class="trial-title">{{ trial_duration }}-day trial available</p>
+                    {% if trial_price_display %}
+                    <p class="trial-desc">Start for {{ trial_price_display }}, then regular pricing</p>
+                    {% endif %}
+                </div>
+                {% endif %}
+                <!-- END MODIFICATION -->
             </div>
         </div>
     </div>

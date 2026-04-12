@@ -4,23 +4,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ site_name|default:"TradeAdmin" }} — Real-Time Trade Guidance</title>
+    <title>TradeAdmin — Real-Time Trade Guidance</title>
     <link rel="stylesheet" href="{% static 'css/style.css' %}">
 </head>
 <body>
 
     <!-- NAVIGATION -->
     <nav class="nav">
-        <a href="{% url 'landing' %}" class="nav-logo">{{ site_name|default:"TradeAdmin" }}</a>
+        <a href="#" class="nav-logo">TradeAdmin</a>
         <div class="nav-links">
             <a href="#features" class="nav-link">Features</a>
             <a href="#pricing" class="nav-link">Pricing</a>
-            {% if user.is_authenticated %}
-            <a href="{% url 'dashboard' %}" class="nav-button">Dashboard</a>
-            {% else %}
-            <a href="{% url 'custom_login' %}" class="nav-button">Log in</a>
-            <a href="{% url 'account_signup' %}" class="nav-button-primary">Sign up</a>
-            {% endif %}
+            <a href="#" class="nav-button">Log in</a>
+            <a href="#" class="nav-button-primary">Sign up</a>
         </div>
     </nav>
 
@@ -31,7 +27,7 @@
             <h1 class="hero-headline-primary">Stop <span class="accent">guessing</span> after entry.</h1>
             <div class="hero-headline-secondary">Most traders fail because they're trading alone.</div>
             <p class="hero-subhead">
-                {{ site_name|default:"TradeAdmin" }} guides you through every step — timestamped, transparent, and in real time. 
+                TradeAdmin guides you through every step — timestamped, transparent, and in real time. 
                 No more wondering what to do when the chart moves against you.
             </p>
             <div class="hero-features">
@@ -50,13 +46,7 @@
             </div>
             <div class="hero-cta">
                 <a href="#pricing" class="hero-button">Start My First Managed Trade</a>
-                <span class="hero-note">
-                    {% if trial_plan %}
-                        ${{ trial_plan.trial_price }} trial · Then ${{ default_plan_price }}/mo · Cancel anytime
-                    {% else %}
-                        ${{ default_plan_price }}/mo · Cancel anytime
-                    {% endif %}
-                </span>
+                <span class="hero-note">$7 trial · Then $47/mo · Cancel anytime</span>
             </div>
         </div>
 
@@ -68,7 +58,7 @@
                         <div>Your Telegram screenshot<br>goes here</div>
                         <div style="font-size: 0.7rem; margin-top: 1rem; color: #aaa;">
                             Replace with:<br>
-                            &lt;img src="{% static 'images/telegram-screenshot.webp' %}"&gt;
+                            &lt;img src="assets/telegram-screenshot.webp"&gt;
                         </div>
                     </div>
                 </div>
@@ -146,7 +136,7 @@
 
             <div class="comparison-card tradeadmin">
                 <div class="card-badge">The Solution</div>
-                <div class="card-title">{{ site_name|default:"TradeAdmin" }}</div>
+                <div class="card-title">TradeAdmin</div>
                 <div class="card-flow">
                     <div class="flow-item">
                         <span class="flow-text strong">Entry + full plan</span>
@@ -306,13 +296,7 @@
             <div class="final-cta-text">Stop trading alone. Start trading with a plan.</div>
             <div class="final-cta-sub">Every update timestamped. Every decision explained.</div>
             <a href="#pricing" class="final-cta-button">Start My First Managed Trade</a>
-            <div class="final-cta-note">
-                {% if trial_plan %}
-                    First {{ trial_plan.duration_days }} days for ${{ trial_plan.trial_price }} · Cancel anytime
-                {% else %}
-                    Cancel anytime
-                {% endif %}
-            </div>
+            <div class="final-cta-note">First 7 days for $7 · Cancel anytime</div>
         </div>
     </section>
 
@@ -320,145 +304,93 @@
     <section class="pricing-section" id="pricing">
         <div class="pricing-header">
             <div class="pricing-label">Simple Pricing</div>
-            <div class="pricing-title">Start Trading With {{ site_name|default:"TradeAdmin" }}</div>
-            <div class="pricing-sub">
-                {% if trial_plan %}
-                    First {{ trial_plan.duration_days }} days for ${{ trial_plan.trial_price }}. Cancel anytime.
-                {% else %}
-                    Cancel anytime.
-                {% endif %}
-            </div>
-            {% if trial_plan %}
-            <div class="trial-notice">
-                <div class="trial-notice-text">Try any plan for {{ trial_plan.duration_days }} days. Then choose monthly or annual billing.</div>
-            </div>
+            <div class="pricing-title">Start Trading With TradeAdmin</div>
+            {% if trial_available %}
+            <div class="pricing-sub">First {{ trial_duration }} days for ${{ trial_price }}. Cancel anytime.</div>
+            {% else %}
+            <div class="pricing-sub">Cancel anytime.</div>
             {% endif %}
+            <div class="trial-notice">
+                <div class="trial-notice-text">Choose monthly or annual billing. Try any plan risk-free.</div>
+            </div>
         </div>
 
         <div class="pricing-grid">
-            {% for plan_data in pricing_plans %}
-            <div class="pricing-card {% if plan_data.is_popular %}popular{% endif %}">
+            {% for tier_data in tiered_plans %}
+            <div class="pricing-card {% if tier_data.plan.tier == 'pro' %}popular{% endif %}">
+                {% if tier_data.plan.tier == 'pro' %}
+                <div class="popular-badge">Best Value</div>
+                {% endif %}
                 <div class="plan-header">
-                    <div class="plan-name">{{ plan_data.name }}</div>
-                    <div class="plan-description">{{ plan_data.description }}</div>
+                    <div class="plan-name">{{ tier_data.plan.name }}</div>
+                    <div class="plan-description">{{ tier_data.plan.description|default:"" }}</div>
                 </div>
+
+                <!-- MONTHLY PRICE -->
+                {% if tier_data.monthly %}
                 <div class="plan-price-container">
                     <div class="plan-price">
-                        <span class="currency">{{ plan_data.currency_symbol|default:"$" }}</span>{{ plan_data.price }}<span class="period">/mo</span>
-                        {% if plan_data.original_price %}
-                        <span class="plan-original-price">${{ plan_data.original_price }}</span>
-                        {% endif %}
+                        <span class="currency">{{ tier_data.currency_symbol }}</span>{{ tier_data.monthly.price }}<span class="period">/mo</span>
                     </div>
-                    {% if trial_plan %}
-                    <div class="plan-trial-price">{{ trial_plan.duration_days }}-day trial: ${{ trial_plan.trial_price }}</div>
-                    {% endif %}
-                    {% if plan_data.savings %}
-                    <div class="plan-savings">Save ${{ plan_data.savings }} with annual billing</div>
+                    <div class="price-label">Monthly billing</div>
+                </div>
+                {% endif %}
+
+                <!-- YEARLY PRICE WITH SAVINGS -->
+                {% if tier_data.yearly %}
+                <div class="plan-price-container yearly-option" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #eee;">
+                    <div class="plan-price" style="font-size: 1.75rem;">
+                        <span class="currency">{{ tier_data.currency_symbol }}</span>{{ tier_data.yearly.price }}<span class="period">/yr</span>
+                    </div>
+                    <div class="price-label">Annual billing</div>
+                    {% if tier_data.yearly_savings %}
+                    <div class="plan-savings" style="margin-top: 0.25rem;">Save {{ tier_data.yearly_savings }} with yearly</div>
                     {% endif %}
                 </div>
+                {% endif %}
+
+                <!-- TRIAL BADGE -->
+                {% if tier_data.trial %}
+                <div class="plan-trial-price" style="margin-top: 1rem; text-align: center;">
+                    {{ tier_data.trial.trial_duration_days }}-day trial: {{ tier_data.trial_price_display }}
+                </div>
+                {% endif %}
+
+                {% if tier_data.is_geo %}
+                <p class="geo-note" style="font-size: 0.75rem; color: #2563eb; text-align: center; margin-top: 0.5rem;">Regional pricing applied</p>
+                {% endif %}
+
                 <ul class="plan-features">
-                    {% for feature in plan_data.features %}
+                    {% for feature in tier_data.features %}
                     <li {% if feature.disabled %}class="disabled"{% endif %}>{{ feature.text }}</li>
                     {% endfor %}
                 </ul>
-                <a href="{% url 'account_signup' %}?plan={{ plan_data.plan_id }}" class="plan-cta">
-                    {% if trial_plan %}
-                        Start {{ trial_plan.duration_days }}-Day Trial — ${{ trial_plan.trial_price }}
+
+                {% if tier_data.plan.tier == 'free' %}
+                <a href="{% url 'account_signup' %}" class="plan-cta">Get Started Free</a>
+                {% else %}
+                <a href="{% url 'account_signup' %}" class="plan-cta">
+                    {% if tier_data.trial %}
+                        Start {{ tier_data.trial.trial_duration_days }}-Day Trial
                     {% else %}
                         Get Started
                     {% endif %}
                 </a>
-                <div class="plan-guarantee">
-                    {% if trial_plan %}
-                        Trial renews to monthly. <strong>Cancel anytime.</strong>
-                    {% else %}
-                        <strong>Cancel anytime.</strong>
-                    {% endif %}
-                </div>
+                {% endif %}
+                <div class="plan-guarantee">{% if tier_data.trial %}Trial renews to monthly. {% endif %}<strong>Cancel anytime.</strong></div>
             </div>
             {% empty %}
-            <!-- Fallback static pricing if no plans in database -->
-            <div class="pricing-card">
-                <div class="plan-header">
-                    <div class="plan-name">Starter</div>
-                    <div class="plan-description">Perfect for traders learning real-time execution</div>
-                </div>
-                <div class="plan-price-container">
-                    <div class="plan-price">
-                        <span class="currency">$</span>47<span class="period">/mo</span>
-                    </div>
-                    <div class="plan-trial-price">7-day trial: $7</div>
-                </div>
-                <ul class="plan-features">
-                    <li>5 real-time trades per week</li>
-                    <li>Entry, stop & target alerts</li>
-                    <li>Basic risk management</li>
-                    <li>Email notifications</li>
-                    <li>24/7 chat support</li>
-                    <li class="disabled">Advanced analytics</li>
-                </ul>
-                <a href="{% url 'account_signup' %}" class="plan-cta">Start 7-Day Trial — $7</a>
-                <div class="plan-guarantee">Trial renews to monthly. <strong>Cancel anytime.</strong></div>
-            </div>
-
-            <div class="pricing-card popular">
-                <div class="plan-header">
-                    <div class="plan-name">Pro</div>
-                    <div class="plan-description">For serious traders who want unlimited guidance</div>
-                </div>
-                <div class="plan-price-container">
-                    <div class="plan-price">
-                        <span class="currency">$</span>81<span class="period">/mo</span>
-                        <span class="plan-original-price">$97</span>
-                    </div>
-                    <div class="plan-trial-price">7-day trial: $7</div>
-                    <div class="plan-savings">Save $194 with annual billing</div>
-                </div>
-                <ul class="plan-features">
-                    <li>Unlimited real-time trades</li>
-                    <li>Entry, updates & exit alerts</li>
-                    <li>Advanced risk management</li>
-                    <li>SMS + Email notifications</li>
-                    <li>24/7 chat support</li>
-                    <li>Full trade history & review</li>
-                </ul>
-                <a href="{% url 'account_signup' %}" class="plan-cta">Start 7-Day Trial — $7</a>
-                <div class="plan-guarantee">Trial renews to monthly. <strong>Cancel anytime.</strong></div>
-            </div>
-
-            <div class="pricing-card">
-                <div class="plan-header">
-                    <div class="plan-name">Elite</div>
-                    <div class="plan-description">White-glove service for professional traders</div>
-                </div>
-                <div class="plan-price-container">
-                    <div class="plan-price">
-                        <span class="currency">$</span>164<span class="period">/mo</span>
-                        <span class="plan-original-price">$197</span>
-                    </div>
-                    <div class="plan-trial-price">7-day trial: $7</div>
-                    <div class="plan-savings">Save $394 with annual billing</div>
-                </div>
-                <ul class="plan-features">
-                    <li>Everything in Pro, plus:</li>
-                    <li>1-on-1 monthly strategy call</li>
-                    <li>Priority trade alerts (faster)</li>
-                    <li>Custom risk parameters</li>
-                    <li>API access <span class="coming-soon-badge">Soon</span></li>
-                    <li>White-label exports</li>
-                </ul>
-                <a href="{% url 'account_signup' %}" class="plan-cta">Start 7-Day Trial — $7</a>
-                <div class="plan-guarantee">Trial renews to monthly. <strong>Cancel anytime.</strong></div>
+            <div class="pricing-card" style="grid-column: 1 / -1; text-align: center;">
+                <p>Pricing plans coming soon.</p>
             </div>
             {% endfor %}
         </div>
     </section>
-
-    <!-- FOOTER -->
+<!-- FOOTER -->
     <footer class="footer" id="footer">
         <div class="footer-content">
             <div class="footer-brand-section">
-                <div class="footer-brand">{{ site_name|default:"TradeAdmin" }}</div>
+                <div class="footer-brand">TradeAdmin</div>
                 <div class="footer-tagline">Real-time trade guidance for traders who refuse to trade alone.</div>
             </div>
             <div class="footer-links-section">
@@ -479,7 +411,7 @@
             </div>
         </div>
         <div class="footer-bottom">
-            <div class="footer-copyright">© {% now "Y" %} {{ site_name|default:"TradeAdmin" }}. All rights reserved.</div>
+            <div class="footer-copyright">© 2024 TradeAdmin. All rights reserved.</div>
             <div class="footer-social">
                 <a href="#">Twitter</a>
                 <a href="#">Discord</a>

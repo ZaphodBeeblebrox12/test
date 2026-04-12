@@ -25,7 +25,7 @@ class Plan(models.Model):
     tier = models.CharField(
         max_length=20,
         choices=Tier.choices,
-        unique=True,
+        # REMOVED: unique=True  ← This was preventing multiple plans per tier
         help_text=_("Plan tier level")
     )
     name = models.CharField(
@@ -54,7 +54,7 @@ class Plan(models.Model):
     )
     display_order = models.PositiveSmallIntegerField(
         default=0,
-        help_text=_("Order for display in plan lists")
+        help_text=_("Order for display in plan lists (higher = shown first)")
     )
 
     # TRIAL FIELDS
@@ -75,6 +75,9 @@ class Plan(models.Model):
         verbose_name = _("plan")
         verbose_name_plural = _("plans")
         ordering = ["display_order", "tier"]
+        # ADDED: Unique constraint on tier + is_trial combination
+        # This allows: (basic, False) and (basic, True) but not (basic, False) twice
+        unique_together = ["tier", "is_trial"]
 
     def __str__(self) -> str:
         if self.is_trial:
@@ -434,6 +437,7 @@ class SubscriptionHistory(models.Model):
         RENEWED = "renewed", _("Renewed")
         CANCELED = "canceled", _("Canceled")
         EXPIRED = "expired", _("Expired")
+        PENDING = "pending", _("Pending")
         UPGRADED = "upgraded", _("Upgraded")
         DOWNGRADED = "downgraded", _("Downgraded")
         TRIAL_STARTED = "trial_started", _("Trial Started")
