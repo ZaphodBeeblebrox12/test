@@ -103,6 +103,7 @@ class PlanPrice(models.Model):
 
     class Interval(models.TextChoices):
         MONTHLY = "monthly", _("Monthly")
+        QUARTERLY = "quarterly", _("Quarterly") 
         YEARLY = "yearly", _("Yearly")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -152,6 +153,7 @@ class GeoPlanPrice(models.Model):
 
     class Interval(models.TextChoices):
         MONTHLY = "monthly", _("Monthly")
+        QUARTERLY = "quarterly", _("Quarterly") 
         YEARLY = "yearly", _("Yearly")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

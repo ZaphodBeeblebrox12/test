@@ -1262,3 +1262,219 @@ body {
     transform: scale(0.98);
     transition: transform 0.1s;
 }
+
+/* ============================================
+   PRICING SECTION - PROFESSIONAL STYLES
+   ============================================ */
+
+.pricing-card {
+    position: relative;
+    background: #fff;
+    border: 1px solid var(--color-muted);
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pricing-card.popular {
+    border: 2px solid var(--color-popular);
+    transform: scale(1.02);
+    z-index: 1;
+}
+
+.pricing-card.popular::before {
+    content: "Best Value";
+    position: absolute;
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--color-popular);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 0.4rem 1rem;
+}
+
+.plan-header {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--color-muted);
+}
+
+.plan-name {
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+    color: var(--color-dark);
+    margin-bottom: 0.5rem;
+}
+
+.plan-description {
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+    line-height: 1.4;
+}
+
+/* Price Display */
+.plan-price-container {
+    margin-bottom: 1rem;
+    text-align: center;
+}
+
+.plan-price {
+    font-family: var(--font-serif);
+    font-size: 2.5rem;
+    color: var(--color-dark);
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.1rem;
+}
+
+.plan-price .currency {
+    font-size: 1.25rem;
+}
+
+.price-period {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+}
+
+.period-monthly {
+    font-weight: 600;
+    color: var(--color-dark);
+}
+
+.period-or {
+    color: #9ca3af;
+    font-size: 0.8rem;
+}
+
+.period-yearly {
+    color: var(--color-guided);
+    font-weight: 600;
+}
+
+/* Savings Badge */
+.savings-badge {
+    display: inline-block;
+    margin-top: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    background: #d1fae5;
+    color: #065f46;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: 999px;
+}
+
+/* Trial Badge */
+.trial-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin: 1rem 0;
+    padding: 0.75rem;
+    background: #f3e8ff;
+    border: 1px solid #d8b4fe;
+    border-radius: 0.5rem;
+}
+
+.trial-icon {
+    font-size: 1rem;
+}
+
+.trial-text {
+    font-size: 0.9rem;
+    color: #6b21a8;
+    font-weight: 600;
+}
+
+/* Geo Note */
+.geo-note {
+    font-size: 0.75rem;
+    color: var(--color-accent);
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+/* Features */
+.plan-features {
+    list-style: none;
+    margin-bottom: 1.5rem;
+    flex-grow: 1;
+}
+
+.plan-features li {
+    padding: 0.6rem 0;
+    padding-left: 1.5rem;
+    position: relative;
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.plan-features li:last-child {
+    border-bottom: none;
+}
+
+.plan-features li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: var(--color-guided);
+    font-weight: 700;
+}
+
+.plan-features li.disabled {
+    color: #d1d5db;
+    text-decoration: line-through;
+}
+
+.plan-features li.disabled::before {
+    content: "×";
+    color: #d1d5db;
+}
+
+/* CTA Button */
+.plan-cta {
+    display: block;
+    padding: 1rem;
+    background: var(--color-dark);
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-decoration: none;
+    text-align: center;
+    transition: all 0.2s;
+    margin-bottom: 0.75rem;
+}
+
+.plan-cta:hover {
+    background: var(--color-accent);
+}
+
+.pricing-card.popular .plan-cta {
+    background: var(--color-popular);
+}
+
+.pricing-card.popular .plan-cta:hover {
+    background: #d97706;
+}
+
+/* Guarantee */
+.plan-guarantee {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    text-align: center;
+}
+
+.plan-guarantee strong {
+    color: var(--color-dark);
+}

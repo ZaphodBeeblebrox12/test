@@ -1,6 +1,6 @@
 """
-Public views for landing page and custom login/signup.
-Uses geo-aware pricing from subscriptions services.
+Public views for landing page with improved pricing display.
+Supports Monthly, Quarterly, and Yearly with tab-style selection.
 """
 import logging
 from typing import Optional, Dict, Any, List
@@ -12,9 +12,7 @@ from django.views.generic import TemplateView
 
 from apps.subscriptions.models import Plan, PlanPrice, GeoPlanPrice
 from apps.subscriptions.services import (
-    resolve_plan_price, 
-    get_pricing_country, 
-    get_geo_price_for_trial,
+    get_pricing_country,
     format_price,
 )
 
@@ -23,8 +21,8 @@ logger = logging.getLogger(__name__)
 
 class LandingPageView(TemplateView):
     """
-    Landing page with dynamic geo-pricing.
-    Supports BOTH monthly and yearly pricing with savings calculation.
+    Landing page with improved pricing display.
+    Shows Monthly/Quarterly/Yearly as toggle options.
     """
     template_name = "landing/index.html"
 
@@ -32,22 +30,19 @@ class LandingPageView(TemplateView):
         context = super().get_context_data(**kwargs)
         context['site_name'] = getattr(settings, 'SITE_NAME', 'TradeAdmin')
 
-        # Get tiered plans with attached trials
         tiered_plans = self._get_tiered_plans(self.request)
         context['tiered_plans'] = tiered_plans
 
-        # Check if any trial is available for hero/footer messaging
         any_trial = any(p.get('trial') for p in tiered_plans)
         context['trial_available'] = any_trial
 
-        # Get trial info for display (use first found)
         trial_duration = None
         trial_price = None
         for p in tiered_plans:
             if p.get('trial'):
                 trial_duration = p['trial'].trial_duration_days
                 price_str = p.get('trial_price_display', '$7')
-                trial_price = ''.join(c for c in price_str if c.isdigit())
+                trial_price = ''.join(c for c in price_str if c.isdigit() and c != ',')
                 break
 
         context['trial_duration'] = trial_duration
@@ -56,18 +51,13 @@ class LandingPageView(TemplateView):
         return context
 
     def _get_tiered_plans(self, request) -> List[Dict[str, Any]]:
-        """
-        Get one plan per tier with monthly AND yearly pricing.
-        """
+        """Get plans with all billing intervals."""
         try:
             country = get_pricing_country(request)
             plans_data = []
-
-            # Define tier order for display
             tier_order = ['free', 'basic', 'pro', 'enterprise']
 
             for tier in tier_order:
-                # Get non-trial plans for this tier, ordered by display_order desc
                 tier_plans = Plan.objects.filter(
                     tier=tier,
                     is_active=True,
@@ -77,22 +67,18 @@ class LandingPageView(TemplateView):
                 if not tier_plans.exists():
                     continue
 
-                # Select top plan (highest display_order)
                 selected_plan = tier_plans.first()
 
-                # Get BOTH monthly and yearly pricing
-                pricing = self._get_plan_pricing_with_intervals(selected_plan, country)
+                pricing = self._get_all_interval_pricing(selected_plan, country)
                 if not pricing:
                     continue
 
-                # Find trial for this tier
                 trial = Plan.objects.filter(
                     tier=tier,
                     is_active=True,
                     is_trial=True
                 ).first()
 
-                # Get trial pricing
                 trial_info = None
                 trial_price_display = None
                 if trial:
@@ -101,16 +87,13 @@ class LandingPageView(TemplateView):
                         trial_info = trial
                         trial_price_display = trial_price_data['display']
 
-                # Build features
                 features = self._get_features_for_tier(tier)
 
                 plans_data.append({
                     'plan': selected_plan,
                     'tier': tier,
-                    'monthly': pricing.get('monthly'),
-                    'yearly': pricing.get('yearly'),
-                    'yearly_savings': pricing.get('yearly_savings'),
-                    'currency_symbol': pricing.get('currency_symbol', '$'),
+                    'pricing': pricing,
+                    'currency_symbol': pricing.get('currency_symbol', '₹'),
                     'is_geo': pricing.get('is_geo', False),
                     'trial': trial_info,
                     'trial_price_display': trial_price_display,
@@ -123,33 +106,55 @@ class LandingPageView(TemplateView):
             logger.warning(f"Could not load tiered plans: {e}")
             return []
 
-    def _get_plan_pricing_with_intervals(self, plan: Plan, country: Optional[str]) -> Optional[Dict[str, Any]]:
-        """Get monthly AND yearly pricing for a plan."""
+    def _get_all_interval_pricing(self, plan: Plan, country: Optional[str]) -> Optional[Dict[str, Any]]:
+        """Get monthly, quarterly, and yearly pricing with proper savings calculation."""
         try:
             monthly = self._get_price_for_interval(plan, country, 'monthly')
+            quarterly = self._get_price_for_interval(plan, country, 'quarterly')
             yearly = self._get_price_for_interval(plan, country, 'yearly')
 
-            if not monthly and not yearly:
+            if not any([monthly, quarterly, yearly]):
                 return None
 
-            # Use monthly as default for currency/symbol
-            default = monthly or yearly
+            default = monthly or quarterly or yearly
 
-            # Calculate yearly savings
-            yearly_savings = None
+            # Calculate savings properly
+            savings = {}
+            if monthly and quarterly:
+                monthly_cost_3mo = monthly['price_cents'] * 3
+                quarterly_cost = quarterly['price_cents']
+                quarterly_save = monthly_cost_3mo - quarterly_cost
+                if quarterly_save > 0:
+                    savings['quarterly'] = {
+                        'amount': format_price(quarterly_save, monthly['currency']),
+                        'percent': int((quarterly_save / monthly_cost_3mo) * 100)
+                    }
+
             if monthly and yearly:
-                monthly_total = monthly['price_cents'] * 12
-                yearly_total = yearly['price_cents']
-                savings_cents = monthly_total - yearly_total
-                if savings_cents > 0:
-                    yearly_savings = format_price(savings_cents, monthly['currency'])
+                monthly_cost_12mo = monthly['price_cents'] * 12
+                yearly_cost = yearly['price_cents']
+                yearly_save = monthly_cost_12mo - yearly_cost
+                if yearly_save > 0:
+                    savings['yearly'] = {
+                        'amount': format_price(yearly_save, monthly['currency']),
+                        'percent': int((yearly_save / monthly_cost_12mo) * 100)
+                    }
+
+            # Determine best value (yearly if saves 20%+, else quarterly if saves 10%+)
+            best_value = None
+            if yearly and savings.get('yearly', {}).get('percent', 0) >= 20:
+                best_value = 'yearly'
+            elif quarterly and savings.get('quarterly', {}).get('percent', 0) >= 10:
+                best_value = 'quarterly'
 
             return {
                 'monthly': monthly,
+                'quarterly': quarterly,
                 'yearly': yearly,
-                'yearly_savings': yearly_savings,
+                'savings': savings,
+                'best_value': best_value,
                 'currency_symbol': self._get_currency_symbol(default['currency']),
-                'is_geo': monthly.get('geo_pricing', False) if monthly else yearly.get('geo_pricing', False),
+                'is_geo': monthly.get('geo_pricing', False) if monthly else False,
             }
 
         except Exception as e:
@@ -157,7 +162,7 @@ class LandingPageView(TemplateView):
             return None
 
     def _get_price_for_interval(self, plan: Plan, country: Optional[str], interval: str) -> Optional[Dict[str, Any]]:
-        """Get price for specific interval, checking GeoPlanPrice first then PlanPrice."""
+        """Get price for specific interval."""
         try:
             # Try GeoPlanPrice first
             if country:
@@ -169,11 +174,22 @@ class LandingPageView(TemplateView):
                 ).first()
 
                 if geo_price:
+                    price_cents = geo_price.price_cents
+                    # Calculate monthly equivalent
+                    if interval == 'yearly':
+                        monthly_equiv = int(price_cents / 12)
+                    elif interval == 'quarterly':
+                        monthly_equiv = int(price_cents / 3)
+                    else:
+                        monthly_equiv = price_cents
+
                     return {
-                        'price_cents': geo_price.price_cents,
-                        'price': int(geo_price.price_cents / 100),
+                        'price_cents': price_cents,
+                        'price_monthly': int(monthly_equiv / 100),
+                        'price_total': int(price_cents / 100),
                         'currency': geo_price.currency,
-                        'display': format_price(geo_price.price_cents, geo_price.currency),
+                        'display': format_price(price_cents, geo_price.currency),
+                        'display_monthly': format_price(monthly_equiv, geo_price.currency),
                         'geo_pricing': True,
                     }
 
@@ -185,11 +201,21 @@ class LandingPageView(TemplateView):
             ).first()
 
             if plan_price:
+                price_cents = plan_price.price_cents
+                if interval == 'yearly':
+                    monthly_equiv = int(price_cents / 12)
+                elif interval == 'quarterly':
+                    monthly_equiv = int(price_cents / 3)
+                else:
+                    monthly_equiv = price_cents
+
                 return {
-                    'price_cents': plan_price.price_cents,
-                    'price': int(plan_price.price_cents / 100),
+                    'price_cents': price_cents,
+                    'price_monthly': int(monthly_equiv / 100),
+                    'price_total': int(price_cents / 100),
                     'currency': plan_price.currency,
-                    'display': format_price(plan_price.price_cents, plan_price.currency),
+                    'display': format_price(price_cents, plan_price.currency),
+                    'display_monthly': format_price(monthly_equiv, plan_price.currency),
                     'geo_pricing': False,
                 }
 
@@ -200,7 +226,7 @@ class LandingPageView(TemplateView):
             return None
 
     def _get_trial_price(self, trial: Plan, country: Optional[str]) -> Optional[Dict[str, Any]]:
-        """Get trial price (uses first available GeoPlanPrice)."""
+        """Get trial price."""
         try:
             geo_price = GeoPlanPrice.objects.filter(
                 plan=trial,
@@ -209,7 +235,6 @@ class LandingPageView(TemplateView):
             ).first()
 
             if not geo_price and not country:
-                # Try global (no country)
                 geo_price = GeoPlanPrice.objects.filter(
                     plan=trial,
                     country__isnull=True,
@@ -221,21 +246,15 @@ class LandingPageView(TemplateView):
                     'price_cents': geo_price.price_cents,
                     'display': format_price(geo_price.price_cents, geo_price.currency),
                 }
-
             return None
         except Exception:
             return None
 
     def _get_currency_symbol(self, currency: str) -> str:
-        """Get currency symbol."""
-        symbols = {
-            'USD': '$', 'EUR': '€', 'GBP': '£', 'INR': '₹',
-            'JPY': '¥', 'SGD': 'S$', 'AUD': 'A$', 'CAD': 'C$',
-        }
-        return symbols.get(currency, '$')
+        symbols = {'USD': '$', 'EUR': '€', 'GBP': '£', 'INR': '₹', 'JPY': '¥'}
+        return symbols.get(currency, '₹')
 
     def _get_features_for_tier(self, tier: str) -> List[Dict[str, Any]]:
-        """Generate feature list based on plan tier."""
         features_map = {
             'free': [
                 {'text': '3 real-time trades per week', 'disabled': False},
@@ -274,9 +293,6 @@ class LandingPageView(TemplateView):
 
 
 class CustomLoginView(auth_views.LoginView):
-    """
-    Custom login with dynamic trial availability check.
-    """
     template_name = "account/login.html"
     redirect_authenticated_user = True
 
@@ -290,14 +306,8 @@ class CustomLoginView(auth_views.LoginView):
         try:
             country = get_pricing_country(request)
             trial_plans = Plan.objects.filter(is_trial=True, is_active=True)
-
             for trial in trial_plans:
-                has_price = GeoPlanPrice.objects.filter(
-                    plan=trial,
-                    country=country,
-                    is_active=True
-                ).exists()
-                if has_price:
+                if GeoPlanPrice.objects.filter(plan=trial, country=country, is_active=True).exists():
                     return True
             return False
         except Exception:
@@ -309,9 +319,6 @@ class CustomLoginView(auth_views.LoginView):
 
 
 class CustomSignupView(SignupView):
-    """
-    Custom signup with dynamic trial availability check.
-    """
     template_name = "account/signup.html"
 
     def get_context_data(self, **kwargs):
@@ -324,21 +331,14 @@ class CustomSignupView(SignupView):
             context['trial_duration'] = trial_info['duration']
             context['trial_price'] = trial_info['price']
             context['trial_price_display'] = trial_info['price_display']
-
         return context
 
     def _check_trial_available(self, request) -> bool:
         try:
             country = get_pricing_country(request)
             trial_plans = Plan.objects.filter(is_trial=True, is_active=True)
-
             for trial in trial_plans:
-                has_price = GeoPlanPrice.objects.filter(
-                    plan=trial,
-                    country=country,
-                    is_active=True
-                ).exists()
-                if has_price:
+                if GeoPlanPrice.objects.filter(plan=trial, country=country, is_active=True).exists():
                     return True
             return False
         except Exception:
@@ -348,19 +348,11 @@ class CustomSignupView(SignupView):
         try:
             country = get_pricing_country(request)
             trial = Plan.objects.filter(is_trial=True, is_active=True).first()
-
             if not trial:
                 return None
-
-            geo_price = GeoPlanPrice.objects.filter(
-                plan=trial,
-                country=country,
-                is_active=True
-            ).first()
-
+            geo_price = GeoPlanPrice.objects.filter(plan=trial, country=country, is_active=True).first()
             if not geo_price:
                 return None
-
             return {
                 'duration': trial.trial_duration_days,
                 'price': geo_price.price_cents / 100,

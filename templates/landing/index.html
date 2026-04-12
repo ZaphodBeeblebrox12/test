@@ -306,59 +306,90 @@
             <div class="pricing-label">Simple Pricing</div>
             <div class="pricing-title">Start Trading With TradeAdmin</div>
             {% if trial_available %}
-            <div class="pricing-sub">First {{ trial_duration }} days for ${{ trial_price }}. Cancel anytime.</div>
+            <div class="pricing-sub">First {{ trial_duration }} days for {{ trial_price }}. Cancel anytime.</div>
             {% else %}
             <div class="pricing-sub">Cancel anytime.</div>
             {% endif %}
-            <div class="trial-notice">
-                <div class="trial-notice-text">Choose monthly or annual billing. Try any plan risk-free.</div>
-            </div>
         </div>
 
         <div class="pricing-grid">
             {% for tier_data in tiered_plans %}
             <div class="pricing-card {% if tier_data.plan.tier == 'pro' %}popular{% endif %}">
                 {% if tier_data.plan.tier == 'pro' %}
-                <div class="popular-badge">Best Value</div>
+                <div class="popular-badge">Most Popular</div>
                 {% endif %}
+
                 <div class="plan-header">
                     <div class="plan-name">{{ tier_data.plan.name }}</div>
                     <div class="plan-description">{{ tier_data.plan.description|default:"" }}</div>
                 </div>
 
-                <!-- MONTHLY PRICE -->
-                {% if tier_data.monthly %}
-                <div class="plan-price-container">
-                    <div class="plan-price">
-                        <span class="currency">{{ tier_data.currency_symbol }}</span>{{ tier_data.monthly.price }}<span class="period">/mo</span>
-                    </div>
-                    <div class="price-label">Monthly billing</div>
+                <!-- BILLING TABS -->
+                {% if tier_data.pricing.monthly or tier_data.pricing.quarterly or tier_data.pricing.yearly %}
+                <div class="billing-tabs" data-plan="{{ tier_data.plan.id }}">
+                    {% if tier_data.pricing.monthly %}
+                    <button class="tab-btn active" data-interval="monthly" onclick="switchBilling('{{ tier_data.plan.id }}', 'monthly')">Monthly</button>
+                    {% endif %}
+                    {% if tier_data.pricing.quarterly %}
+                    <button class="tab-btn" data-interval="quarterly" onclick="switchBilling('{{ tier_data.plan.id }}', 'quarterly')">Quarterly</button>
+                    {% endif %}
+                    {% if tier_data.pricing.yearly %}
+                    <button class="tab-btn {% if tier_data.pricing.best_value == 'yearly' %}best-value{% endif %}" data-interval="yearly" onclick="switchBilling('{{ tier_data.plan.id }}', 'yearly')">
+                        Yearly
+                        {% if tier_data.pricing.savings.yearly %}<span class="save-badge">Save {{ tier_data.pricing.savings.yearly.percent }}%</span>{% endif %}
+                    </button>
+                    {% endif %}
                 </div>
-                {% endif %}
 
-                <!-- YEARLY PRICE WITH SAVINGS -->
-                {% if tier_data.yearly %}
-                <div class="plan-price-container yearly-option" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #eee;">
-                    <div class="plan-price" style="font-size: 1.75rem;">
-                        <span class="currency">{{ tier_data.currency_symbol }}</span>{{ tier_data.yearly.price }}<span class="period">/yr</span>
+                <!-- PRICE DISPLAY -->
+                <div class="price-display" id="price-{{ tier_data.plan.id }}">
+                    <!-- Monthly (default) -->
+                    {% if tier_data.pricing.monthly %}
+                    <div class="price-block active" data-interval="monthly">
+                        <div class="plan-price">
+                            <span class="currency">{{ tier_data.currency_symbol }}</span>{{ tier_data.pricing.monthly.price_monthly }}<span class="period">/mo</span>
+                        </div>
+                        <div class="billing-note">Billed monthly</div>
                     </div>
-                    <div class="price-label">Annual billing</div>
-                    {% if tier_data.yearly_savings %}
-                    <div class="plan-savings" style="margin-top: 0.25rem;">Save {{ tier_data.yearly_savings }} with yearly</div>
+                    {% endif %}
+
+                    <!-- Quarterly -->
+                    {% if tier_data.pricing.quarterly %}
+                    <div class="price-block" data-interval="quarterly" style="display: none;">
+                        <div class="plan-price">
+                            <span class="currency">{{ tier_data.currency_symbol }}</span>{{ tier_data.pricing.quarterly.price_monthly }}<span class="period">/mo</span>
+                        </div>
+                        <div class="billing-note">{{ tier_data.currency_symbol }}{{ tier_data.pricing.quarterly.price_total }} billed quarterly</div>
+                        {% if tier_data.pricing.savings.quarterly %}
+                        <div class="savings-text">Save {{ tier_data.pricing.savings.quarterly.amount }}/year</div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    <!-- Yearly -->
+                    {% if tier_data.pricing.yearly %}
+                    <div class="price-block" data-interval="yearly" style="display: none;">
+                        <div class="plan-price">
+                            <span class="currency">{{ tier_data.currency_symbol }}</span>{{ tier_data.pricing.yearly.price_monthly }}<span class="period">/mo</span>
+                        </div>
+                        <div class="billing-note">{{ tier_data.currency_symbol }}{{ tier_data.pricing.yearly.price_total }} billed yearly</div>
+                        {% if tier_data.pricing.savings.yearly %}
+                        <div class="savings-text">Save {{ tier_data.pricing.savings.yearly.amount }}/year ({{ tier_data.pricing.savings.yearly.percent }}% off)</div>
+                        {% endif %}
+                    </div>
                     {% endif %}
                 </div>
                 {% endif %}
 
-                <!-- TRIAL BADGE -->
+                <!-- TRIAL -->
                 {% if tier_data.trial %}
-                <div class="plan-trial-price" style="margin-top: 1rem; text-align: center;">
-                    {{ tier_data.trial.trial_duration_days }}-day trial: {{ tier_data.trial_price_display }}
+                <div class="trial-badge">
+                    <span class="trial-icon">🎯</span>
+                    <span class="trial-text">{{ tier_data.trial.trial_duration_days }}-day trial: {{ tier_data.trial_price_display }}</span>
                 </div>
                 {% endif %}
 
-                {% if tier_data.is_geo %}
-                <p class="geo-note" style="font-size: 0.75rem; color: #2563eb; text-align: center; margin-top: 0.5rem;">Regional pricing applied</p>
-                {% endif %}
+
 
                 <ul class="plan-features">
                     {% for feature in tier_data.features %}
@@ -377,7 +408,11 @@
                     {% endif %}
                 </a>
                 {% endif %}
-                <div class="plan-guarantee">{% if tier_data.trial %}Trial renews to monthly. {% endif %}<strong>Cancel anytime.</strong></div>
+
+                <div class="plan-guarantee">
+                    {% if tier_data.trial %}Trial renews to monthly. {% endif %}
+                    <strong>Cancel anytime.</strong>
+                </div>
             </div>
             {% empty %}
             <div class="pricing-card" style="grid-column: 1 / -1; text-align: center;">
@@ -386,6 +421,133 @@
             {% endfor %}
         </div>
     </section>
+
+    <script>
+    function switchBilling(planId, interval) {
+        // Update tabs
+        const tabs = document.querySelectorAll(`[data-plan="${planId}"] .tab-btn`);
+        tabs.forEach(tab => {
+            tab.classList.remove('active');
+            if (tab.dataset.interval === interval) {
+                tab.classList.add('active');
+            }
+        });
+
+        // Update price display
+        const priceBlocks = document.querySelectorAll(`#price-${planId} .price-block`);
+        priceBlocks.forEach(block => {
+            block.style.display = 'none';
+            if (block.dataset.interval === interval) {
+                block.style.display = 'block';
+            }
+        });
+    }
+    </script>
+
+    <style>
+    .billing-tabs {
+        display: flex;
+        gap: 0.5rem;
+        margin: 1.5rem 0;
+        padding: 0.25rem;
+        background: #f3f4f6;
+        border-radius: 0.5rem;
+    }
+
+    .tab-btn {
+        flex: 1;
+        padding: 0.5rem 0.75rem;
+        border: none;
+        background: transparent;
+        color: #6b7280;
+        font-size: 0.8rem;
+        font-weight: 500;
+        cursor: pointer;
+        border-radius: 0.375rem;
+        transition: all 0.2s;
+        position: relative;
+    }
+
+    .tab-btn:hover {
+        color: #1f2937;
+    }
+
+    .tab-btn.active {
+        background: #fff;
+        color: #1f2937;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .tab-btn.best-value {
+        color: #059669;
+    }
+
+    .save-badge {
+        position: absolute;
+        top: -8px;
+        right: -4px;
+        background: #10b981;
+        color: white;
+        font-size: 0.6rem;
+        padding: 0.125rem 0.375rem;
+        border-radius: 9999px;
+        font-weight: 700;
+    }
+
+    .price-display {
+        margin-bottom: 1rem;
+    }
+
+    .price-block {
+        animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-5px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .billing-note {
+        font-size: 0.8rem;
+        color: #6b7280;
+        margin-top: 0.25rem;
+    }
+
+    .savings-text {
+        font-size: 0.85rem;
+        color: #059669;
+        font-weight: 600;
+        margin-top: 0.5rem;
+    }
+
+    .trial-badge {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        margin: 1rem 0;
+        padding: 0.75rem;
+        background: #f3e8ff;
+        border-radius: 0.5rem;
+    }
+
+    .trial-icon {
+        font-size: 1rem;
+    }
+
+    .trial-text {
+        font-size: 0.9rem;
+        color: #6b21a8;
+        font-weight: 600;
+    }
+
+    .geo-note {
+        font-size: 0.75rem;
+        color: #2563eb;
+        text-align: center;
+        margin-bottom: 1rem;
+    }
+    </style>
 <!-- FOOTER -->
     <footer class="footer" id="footer">
         <div class="footer-content">
