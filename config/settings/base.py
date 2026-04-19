@@ -36,7 +36,6 @@ DJANGO_APPS = [
     "django.contrib.staticfiles",
     "django.contrib.sites",
     "django.contrib.humanize",
-
 ]
 
 THIRD_PARTY_APPS = [
@@ -68,7 +67,7 @@ MIDDLEWARE = [
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
-    "apps.bot_integration.middleware.DisableCSRFForWebhook",
+    "apps.bot_integration.middleware.DisableCSRFWebhook",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -185,7 +184,7 @@ LOGGING = {
     },
 }
 
-# CSRF trusted origins – allow all origins when DEBUG=True (for ngrok testing)
+# CSRF trusted origins — allow all origins when DEBUG=True (for ngrok testing)
 if DEBUG:
     CSRF_TRUSTED_ORIGINS = ["http://*", "https://*"]
 else:
@@ -195,9 +194,9 @@ else:
         "https://dbb7-223-190-85-112.ngrok-free.app",
     ]
 
-# =============================================================================
+# ============================================================
 # DJANGO-ALLAUTH CONFIGURATION
-# =============================================================================
+# ============================================================
 
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
@@ -245,3 +244,17 @@ EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="noreply@example.com")
 
 SITE_ID = 1
+
+# ============================================================
+# MAXMIND GEOLITE2 CONFIGURATION
+# ============================================================
+
+# Path to MaxMind GeoLite2 Country database file
+# Download from: https://dev.maxmind.com/geoip/geolite2-free-geolocation-data
+MAXMIND_DB_PATH = env("MAXMIND_DB_PATH", default=os.path.join(BASE_DIR, "data", "GeoLite2-Country.mmdb"))
+
+# Enable/disable MaxMind fallback
+MAXMIND_ENABLED = env("MAXMIND_ENABLED", default=False)
+
+# Cache TTL for MaxMind lookups (seconds) - 24 hours default
+MAXMIND_CACHE_TTL = env("MAXMIND_CACHE_TTL", default=86400)
