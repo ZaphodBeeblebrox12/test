@@ -55,9 +55,9 @@ LOCAL_APPS = [
     "apps.system_settings",
     "apps.subscriptions",
     "apps.payments",
-    "apps.growth", 
-    "apps.bot_integration", 
-    "apps.public_views",  
+    "apps.growth",
+    "apps.bot_integration",
+    "apps.public_views",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -67,7 +67,7 @@ MIDDLEWARE = [
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
-    "apps.bot_integration.middleware.DisableCSRFWebhook",
+    "apps.bot_integration.middleware.DisableCSRFForWebhook",  # FIXED: correct class name
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
@@ -152,6 +152,16 @@ CELERY_RESULT_BACKEND = env("REDIS_URL", default="redis://localhost:6379/0")
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
+
+# Celery Beat Schedule
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    'update-maxmind-database': {
+        'task': 'apps.subscriptions.tasks.update_maxmind_database_task',
+        'schedule': crontab(hour=3, minute=0),  # Daily at 3 AM UTC
+    },
+}
 
 TELEGRAM_BOT_TOKEN = env("TELEGRAM_BOT_TOKEN", default="")
 TELEGRAM_BOT_USERNAME = env("TELEGRAM_BOT_USERNAME", default="")
@@ -250,7 +260,6 @@ SITE_ID = 1
 # ============================================================
 
 # Path to MaxMind GeoLite2 Country database file
-# Download from: https://dev.maxmind.com/geoip/geolite2-free-geolocation-data
 MAXMIND_DB_PATH = env("MAXMIND_DB_PATH", default=os.path.join(BASE_DIR, "data", "GeoLite2-Country.mmdb"))
 
 # Enable/disable MaxMind fallback
@@ -258,3 +267,9 @@ MAXMIND_ENABLED = env("MAXMIND_ENABLED", default=False)
 
 # Cache TTL for MaxMind lookups (seconds) - 24 hours default
 MAXMIND_CACHE_TTL = env("MAXMIND_CACHE_TTL", default=86400)
+
+# License key for automatic database downloads (free from maxmind.com)
+MAXMIND_LICENSE_KEY = env("MAXMIND_LICENSE_KEY", default="")
+
+# Optional: Update interval in days (default 7)
+MAXMIND_UPDATE_INTERVAL_DAYS = env("MAXMIND_UPDATE_INTERVAL_DAYS", default=7)

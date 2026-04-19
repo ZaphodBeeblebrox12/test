@@ -7,10 +7,14 @@ from typing import Optional, Dict, Any
 from django.utils import timezone
 from django.conf import settings
 from django.db import transaction
+from django.core.exceptions import PermissionDenied
 from ipware import get_client_ip
 
 from apps.accounts.models import User
-from .models import Plan, PlanPrice, Subscription, SubscriptionHistory, UpgradeHistory, GiftSubscription, GeoPlanPrice
+from .models import (
+    Plan, PlanPrice, Subscription, SubscriptionHistory,
+    UpgradeHistory, GiftSubscription, GeoPlanPrice, UserTrialUsage
+)
 
 COUNTRY_TO_REGION = {
     # APAC
@@ -114,6 +118,104 @@ def resolve_plan_price(plan: Plan, interval: str, request):
     except PlanPrice.DoesNotExist:
         raise PlanPrice.DoesNotExist(f"No active price for plan '{plan.name}' interval '{interval}'")
 
+# ------------------------------------------------------------------------------
+# NEW HELPER FUNCTIONS FOR VIEWS
+# ------------------------------------------------------------------------------
+
+def format_price(price_cents: int, currency: str = "USD") -> str:
+    """Format price in cents to a human-readable string."""
+    symbols = {'USD': '$', 'EUR': '€', 'GBP': '£', 'INR': '₹', 'JPY': '¥'}
+    symbol = symbols.get(currency, currency)
+    dollars = price_cents / 100
+    if dollars.is_integer():
+        return f"{symbol}{int(dollars)}"
+    return f"{symbol}{dollars:.2f}"
+
+def has_user_used_trial(user, plan):
+    """Check if a user has already used a specific trial plan."""
+    if not user or not user.is_authenticated:
+        return False
+    return UserTrialUsage.objects.filter(user=user, plan=plan).exists()
+
+def get_geo_price_for_trial(plan, country):
+    """Get the GeoPlanPrice for a trial plan for a given country."""
+    if not country:
+        return None
+    try:
+        return GeoPlanPrice.objects.get(
+            plan=plan, country=country.upper(), is_active=True
+        )
+    except GeoPlanPrice.DoesNotExist:
+        return None
+
+def purchase_plan(user, plan, request=None):
+    """Create a subscription for the user (handles both regular and trial plans)."""
+    from datetime import timedelta
+
+    # Check trial usage if it's a trial plan
+    if plan.is_trial:
+        if has_user_used_trial(user, plan):
+            raise PermissionDenied("You have already used this trial.")
+        # Verify geo price exists (region lock)
+        country = get_pricing_country(request) if request else None
+        if not get_geo_price_for_trial(plan, country):
+            raise PermissionDenied("This trial is not available in your region.")
+
+    # Determine expiry
+    if plan.is_trial:
+        expires_at = timezone.now() + timedelta(days=plan.trial_duration_days)
+    else:
+        # For paid plans, you would integrate with payment provider here
+        expires_at = timezone.now() + timedelta(days=30)  # Default monthly
+
+    # Get pricing country/region for record keeping
+    pricing_country = get_pricing_country(request) if request else None
+    pricing_region = get_region_for_country(pricing_country) if pricing_country else None
+
+    # Deactivate any existing active subscriptions
+    Subscription.objects.filter(user=user, is_active=True).update(
+        is_active=False, status=Subscription.Status.CANCELED, canceled_at=timezone.now()
+    )
+
+    # Create the subscription
+    subscription = Subscription.objects.create(
+        user=user,
+        plan=plan,
+        status=Subscription.Status.ACTIVE,
+        is_active=True,
+        started_at=timezone.now(),
+        expires_at=expires_at,
+        is_trial=plan.is_trial,
+        pricing_country=pricing_country,
+        pricing_region=pricing_region,
+    )
+
+    # Record trial usage if applicable
+    if plan.is_trial:
+        UserTrialUsage.objects.create(
+            user=user,
+            plan=plan,
+            subscription=subscription,
+            expires_at=expires_at,
+        )
+
+    # Create history record
+    event_type = SubscriptionHistory.EventType.TRIAL_STARTED if plan.is_trial else SubscriptionHistory.EventType.CREATED
+    SubscriptionHistory.objects.create(
+        subscription=subscription,
+        user=user,
+        event_type=event_type,
+        new_plan_id=plan.id,
+        new_status=subscription.status,
+        notes=f"{'Trial' if plan.is_trial else 'Subscription'} started"
+    )
+
+    return subscription
+
+# ------------------------------------------------------------------------------
+# EXISTING GIFT & ADMIN FUNCTIONS (unchanged)
+# ------------------------------------------------------------------------------
+
 def create_gift_subscription(
     from_user: User,
     plan: Plan,
@@ -130,8 +232,6 @@ def create_gift_subscription(
         duration_days=duration_days,
         expires_at=timezone.now() + timezone.timedelta(days=30),
     )
-    # NOTE: SubscriptionHistory NOT created here - no Subscription exists yet.
-    # History is created when gift is claimed and real Subscription is created.
     return gift
 
 def claim_gift_subscription(

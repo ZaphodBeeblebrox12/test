@@ -153,17 +153,14 @@
                     </div>
                     <p class="text-muted small text-center">You are on the free plan with limited features.</p>
 
-                    {% if available_plans %}
+                    <!-- REPLACED AVAILABLE PLANS SECTION -->
+                    {% if available_plans_geo %}
                     <hr>
                     <h6 class="small fw-bold">Available Plans:</h6>
-                    {% for plan in available_plans %}
+                    {% for plan in available_plans_geo %}
                         <div class="d-flex justify-content-between align-items-center mb-1 small">
                             <span>{{ plan.name }}</span>
-                            {% with plan.prices.first as price %}
-                            {% if price %}
-                                <span class="badge bg-primary">${{ price.price_cents|floatformat:0|floatformat:-2 }}</span>
-                            {% endif %}
-                            {% endwith %}
+                            <span class="badge bg-primary">{{ plan.price_display }}</span>
                         </div>
                     {% endfor %}
                     {% endif %}

@@ -76,17 +76,17 @@ def plan_list_geo(request):
             continue
 
         # === REGULAR PLAN LOGIC (non-trial) ===
-        # Use existing resolve_plan_price with fallback to base price
         plan_data = PlanSerializer(plan).data
         plan_data["is_trial"] = False
         plan_data["already_used"] = False
 
         try:
-            price_info = resolve_plan_price(plan, country)
-            plan_data["price_cents"] = price_info["price_cents"]
-            plan_data["currency"] = price_info["currency"]
-            plan_data["price_display"] = price_info["display"]
-            plan_data["geo_pricing"] = price_info["geo_pricing"]
+            # FIXED: Pass interval (default 'monthly') to resolve_plan_price
+            price_obj = resolve_plan_price(plan, "monthly", request)
+            plan_data["price_cents"] = price_obj.price_cents
+            plan_data["currency"] = price_obj.currency
+            plan_data["price_display"] = format_price(price_obj.price_cents, price_obj.currency)
+            plan_data["geo_pricing"] = isinstance(price_obj, GeoPlanPrice)
         except PlanPrice.DoesNotExist:
             logger.warning(f"No pricing found for plan {plan.name}, skipping")
             continue
@@ -151,12 +151,14 @@ def plan_detail_geo(request, plan_id):
     plan_data["already_used"] = False
 
     try:
-        price_info = resolve_plan_price(plan, country)
-        plan_data["price_cents"] = price_info["price_cents"]
-        plan_data["currency"] = price_info["currency"]
-        plan_data["price_display"] = price_info["display"]
-        plan_data["geo_pricing"] = price_info["geo_pricing"]
-        plan_data["price_breakdown"] = price_info.get("breakdown")
+        # FIXED: Pass interval (default 'monthly') to resolve_plan_price
+        price_obj = resolve_plan_price(plan, "monthly", request)
+        plan_data["price_cents"] = price_obj.price_cents
+        plan_data["currency"] = price_obj.currency
+        plan_data["price_display"] = format_price(price_obj.price_cents, price_obj.currency)
+        plan_data["geo_pricing"] = isinstance(price_obj, GeoPlanPrice)
+        # Optionally include breakdown if needed
+        plan_data["price_breakdown"] = None  # or implement breakdown logic
     except PlanPrice.DoesNotExist:
         return Response(
             {"error": f"No pricing configured for plan {plan.name}"},
@@ -335,7 +337,7 @@ def my_trial_usage(request):
     for plan in trial_plans:
         has_used = has_user_used_trial(request.user, plan)
         usage_record = UserTrialUsage.objects.filter(
-            user=request.user, 
+            user=request.user,
             plan=plan
         ).first()
 

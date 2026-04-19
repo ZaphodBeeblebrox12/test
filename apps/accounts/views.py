@@ -31,6 +31,14 @@ from django.views.generic import TemplateView
 from apps.accounts.referral_dashboard_mixin import ReferralDashboardContextMixin
 from apps.growth.models import ReferralSettings
 
+# ===== NEW IMPORTS FOR GEO PRICING =====
+from apps.subscriptions.services import (
+    get_pricing_country,
+    resolve_plan_price,
+    format_price,
+)
+from apps.subscriptions.models import GeoPlanPrice
+
 
 def check_banned(view_func):
     """Decorator to check if user is banned."""
@@ -78,8 +86,42 @@ class DashboardView(View):
             subscription = None
             current_plan = None
 
-        # Get available plans for upgrade
-        available_plans = Plan.objects.filter(is_active=True).order_by('display_order')
+        # ===== REPLACED: Get available plans with geo‑pricing =====
+        country = get_pricing_country(request)
+        available_plans = Plan.objects.filter(is_active=True, is_trial=False).order_by('display_order')
+        plans_with_pricing = []
+
+        for plan in available_plans:
+            try:
+                price_obj = resolve_plan_price(plan, 'monthly', request)
+                price_display = format_price(price_obj.price_cents, price_obj.currency)
+                is_geo = isinstance(price_obj, GeoPlanPrice)
+                currency = price_obj.currency
+                price_cents = price_obj.price_cents
+            except Exception:
+                # Fallback to base price
+                base_price = plan.prices.filter(interval='monthly', is_active=True).first()
+                if not base_price:
+                    continue
+                price_display = format_price(base_price.price_cents, base_price.currency)
+                is_geo = False
+                currency = base_price.currency
+                price_cents = base_price.price_cents
+
+            plans_with_pricing.append({
+                'id': plan.id,
+                'name': plan.name,
+                'tier': plan.tier,
+                'description': plan.description,
+                'price_display': price_display,
+                'is_geo': is_geo,
+                'currency': currency,
+                'price_cents': price_cents,
+                # Optionally include features for display
+                'features': _get_plan_features(plan.tier),
+            })
+
+        # ===== END OF REPLACED SECTION =====
 
         context = {
             "user": user,
@@ -89,7 +131,11 @@ class DashboardView(View):
             "unread_count": unread_count,
             "subscription": subscription,
             "current_plan": current_plan,
+            # Old variable kept for backward compatibility (list of Plan objects)
             "available_plans": available_plans,
+            # New geo‑aware variables
+            "available_plans_geo": plans_with_pricing,
+            "user_country": country,
         }
         
         # ===== REFERRAL SYSTEM INTEGRATION =====
@@ -490,3 +536,15 @@ class UserActivityAPIView(APIView):
         } for a in activities]
 
         return Response(data)
+
+
+# ===== HELPER FUNCTION FOR PLAN FEATURES =====
+def _get_plan_features(tier):
+    """Return feature list for a given tier."""
+    features_map = {
+        'free': ['3 real-time trades/week', 'Entry alerts', 'Email support'],
+        'basic': ['5 trades/week', 'Stop & target alerts', 'Basic risk', 'Email', 'Chat'],
+        'pro': ['Unlimited trades', 'Advanced risk', 'SMS alerts', '24/7 support'],
+        'enterprise': ['All Pro features', '1-on-1 calls', 'API access', 'Custom'],
+    }
+    return features_map.get(tier, features_map['basic'])
