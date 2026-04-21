@@ -50,20 +50,12 @@
             </div>
         </div>
 
-        <div class="hero-visual">
-            <div class="phone-frame">
-                <div class="phone-notch"></div>
-                <div class="phone-screen">
-                    <div class="screenshot-placeholder">
-                        <div>Your Telegram screenshot<br>goes here</div>
-                        <div style="font-size: 0.7rem; margin-top: 1rem; color: #aaa;">
-                            Replace with:<br>
-                            &lt;img src="assets/telegram-screenshot.webp"&gt;
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="hero-visual-caption">
+        <!-- OPTION 2: Inline styles – no white box, image constrained to 280px -->
+        <div style="text-align: center; background: transparent; padding: 0; margin: 0;">
+            <img src="{% static 'images/telegram-screenshot.png' %}" 
+                 alt="Telegram trade alert screenshot" 
+                 style="width: auto; max-width: 280px; height: auto; border-radius: 20px; box-shadow: 0 20px 35px -10px rgba(0,0,0,0.2); display: inline-block; background: transparent;">
+            <div class="hero-visual-caption" style="margin-top: 1rem;">
                 <span class="caption-dot"></span>
                 This is what you get — timestamped, actionable, real time
             </div>
@@ -389,8 +381,6 @@
                 </div>
                 {% endif %}
 
-
-
                 <ul class="plan-features">
                     {% for feature in tier_data.features %}
                     <li {% if feature.disabled %}class="disabled"{% endif %}>{{ feature.text }}</li>
@@ -424,7 +414,6 @@
 
     <script>
     function switchBilling(planId, interval) {
-        // Update tabs
         const tabs = document.querySelectorAll(`[data-plan="${planId}"] .tab-btn`);
         tabs.forEach(tab => {
             tab.classList.remove('active');
@@ -432,8 +421,6 @@
                 tab.classList.add('active');
             }
         });
-
-        // Update price display
         const priceBlocks = document.querySelectorAll(`#price-${planId} .price-block`);
         priceBlocks.forEach(block => {
             block.style.display = 'none';
@@ -453,7 +440,6 @@
         background: #f3f4f6;
         border-radius: 0.5rem;
     }
-
     .tab-btn {
         flex: 1;
         padding: 0.5rem 0.75rem;
@@ -467,21 +453,13 @@
         transition: all 0.2s;
         position: relative;
     }
-
-    .tab-btn:hover {
-        color: #1f2937;
-    }
-
+    .tab-btn:hover { color: #1f2937; }
     .tab-btn.active {
         background: #fff;
         color: #1f2937;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
-
-    .tab-btn.best-value {
-        color: #059669;
-    }
-
+    .tab-btn.best-value { color: #059669; }
     .save-badge {
         position: absolute;
         top: -8px;
@@ -493,33 +471,23 @@
         border-radius: 9999px;
         font-weight: 700;
     }
-
-    .price-display {
-        margin-bottom: 1rem;
-    }
-
-    .price-block {
-        animation: fadeIn 0.2s ease;
-    }
-
+    .price-display { margin-bottom: 1rem; }
+    .price-block { animation: fadeIn 0.2s ease; }
     @keyframes fadeIn {
         from { opacity: 0; transform: translateY(-5px); }
         to { opacity: 1; transform: translateY(0); }
     }
-
     .billing-note {
         font-size: 0.8rem;
         color: #6b7280;
         margin-top: 0.25rem;
     }
-
     .savings-text {
         font-size: 0.85rem;
         color: #059669;
         font-weight: 600;
         margin-top: 0.5rem;
     }
-
     .trial-badge {
         display: flex;
         align-items: center;
@@ -530,17 +498,12 @@
         background: #f3e8ff;
         border-radius: 0.5rem;
     }
-
-    .trial-icon {
-        font-size: 1rem;
-    }
-
+    .trial-icon { font-size: 1rem; }
     .trial-text {
         font-size: 0.9rem;
         color: #6b21a8;
         font-weight: 600;
     }
-
     .geo-note {
         font-size: 0.75rem;
         color: #2563eb;
@@ -548,7 +511,8 @@
         margin-bottom: 1rem;
     }
     </style>
-<!-- FOOTER -->
+
+    <!-- FOOTER -->
     <footer class="footer" id="footer">
         <div class="footer-content">
             <div class="footer-brand-section">
@@ -580,6 +544,5 @@
             </div>
         </div>
     </footer>
-
 </body>
 </html>

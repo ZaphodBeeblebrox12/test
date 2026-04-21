@@ -150,7 +150,15 @@ body {
         padding-top: 5rem;
     }
 }
-
+.hero-visual img.hero-screenshot {
+    width: 100%;
+    max-width: 280px;
+    height: auto;
+    border-radius: 20px;
+    box-shadow: 0 20px 35px -10px rgba(0,0,0,0.2);
+    display: block;
+    margin: 0 auto;
+}
 .hero-content {
     max-width: 500px;
 }
