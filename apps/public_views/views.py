@@ -6,8 +6,6 @@ import logging
 from typing import Optional, Dict, Any, List
 
 from django.conf import settings
-from django.contrib.auth import views as auth_views
-from allauth.account.views import SignupView
 from django.views.generic import TemplateView
 
 from apps.subscriptions.models import Plan, PlanPrice, GeoPlanPrice
@@ -292,71 +290,4 @@ class LandingPageView(TemplateView):
         return features_map.get(tier, features_map['basic'])
 
 
-class CustomLoginView(auth_views.LoginView):
-    template_name = "account/login.html"
-    redirect_authenticated_user = True
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['site_name'] = getattr(settings, 'SITE_NAME', 'TradeAdmin')
-        context['trial_available'] = self._check_trial_available(self.request)
-        return context
-
-    def _check_trial_available(self, request) -> bool:
-        try:
-            country = get_pricing_country(request)
-            trial_plans = Plan.objects.filter(is_trial=True, is_active=True)
-            for trial in trial_plans:
-                if GeoPlanPrice.objects.filter(plan=trial, country=country, is_active=True).exists():
-                    return True
-            return False
-        except Exception:
-            return False
-
-    def get_success_url(self):
-        from django.urls import reverse
-        return reverse('dashboard')
-
-
-class CustomSignupView(SignupView):
-    template_name = "account/signup.html"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['site_name'] = getattr(settings, 'SITE_NAME', 'TradeAdmin')
-        context['trial_available'] = self._check_trial_available(self.request)
-
-        trial_info = self._get_trial_info(self.request)
-        if trial_info:
-            context['trial_duration'] = trial_info['duration']
-            context['trial_price'] = trial_info['price']
-            context['trial_price_display'] = trial_info['price_display']
-        return context
-
-    def _check_trial_available(self, request) -> bool:
-        try:
-            country = get_pricing_country(request)
-            trial_plans = Plan.objects.filter(is_trial=True, is_active=True)
-            for trial in trial_plans:
-                if GeoPlanPrice.objects.filter(plan=trial, country=country, is_active=True).exists():
-                    return True
-            return False
-        except Exception:
-            return False
-
-    def _get_trial_info(self, request) -> Optional[Dict[str, Any]]:
-        try:
-            country = get_pricing_country(request)
-            trial = Plan.objects.filter(is_trial=True, is_active=True).first()
-            if not trial:
-                return None
-            geo_price = GeoPlanPrice.objects.filter(plan=trial, country=country, is_active=True).first()
-            if not geo_price:
-                return None
-            return {
-                'duration': trial.trial_duration_days,
-                'price': geo_price.price_cents / 100,
-                'price_display': format_price(geo_price.price_cents, geo_price.currency),
-            }
-        except Exception:
-            return None
+# Removed CustomLoginView and CustomSignupView – use allauth's views instead.

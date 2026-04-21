@@ -11,12 +11,12 @@
 
     <!-- NAVIGATION -->
     <nav class="nav">
-        <a href="#" class="nav-logo">TradeAdmin</a>
+        <a href="/" class="nav-logo">TradeAdmin</a>
         <div class="nav-links">
             <a href="#features" class="nav-link">Features</a>
             <a href="#pricing" class="nav-link">Pricing</a>
-            <a href="#" class="nav-button">Log in</a>
-            <a href="#" class="nav-button-primary">Sign up</a>
+            <a href="{% url 'account_login' %}" class="nav-button">Log in</a>
+            <a href="{% url 'account_signup' %}" class="nav-button-primary">Sign up</a>
         </div>
     </nav>
 
@@ -45,7 +45,7 @@
                 </div>
             </div>
             <div class="hero-cta">
-                <a href="#pricing" class="hero-button">Start My First Managed Trade</a>
+                <a href="{% url 'account_signup' %}" class="hero-button">Start My First Managed Trade</a>
                 <span class="hero-note">$7 trial · Then $47/mo · Cancel anytime</span>
             </div>
         </div>
@@ -164,7 +164,7 @@
                 <div class="cta-headline">Stop guessing after entry.</div>
                 <div class="cta-sub">Start trading with a plan.</div>
             </div>
-            <a href="#pricing" class="cta-button">Start My First Managed Trade</a>
+            <a href="{% url 'account_signup' %}" class="cta-button">Start My First Managed Trade</a>
         </div>
 
         <div class="example-micro">
@@ -295,7 +295,7 @@
         <div class="final-cta">
             <div class="final-cta-text">Stop trading alone. Start trading with a plan.</div>
             <div class="final-cta-sub">Every update timestamped. Every decision explained.</div>
-            <a href="#pricing" class="final-cta-button">Start My First Managed Trade</a>
+            <a href="{% url 'account_signup' %}" class="final-cta-button">Start My First Managed Trade</a>
             <div class="final-cta-note">First 7 days for $7 · Cancel anytime</div>
         </div>
     </section>

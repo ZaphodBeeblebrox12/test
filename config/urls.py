@@ -5,10 +5,9 @@ from django.contrib import admin
 from django.urls import include, path
 from django.conf import settings
 from django.conf.urls.static import static
-from django.contrib.auth import views as auth_views
 
-# Import allauth views for customization
-from allauth.account.views import SignupView
+# Use allauth's views for login and signup
+from allauth.account.views import LoginView, SignupView
 
 urlpatterns = [
     # Growth admin views - MUST be first to avoid catch_all_view interception
@@ -18,13 +17,11 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path('', include('apps.public_views.urls')),
 
-    # Custom auth views (before allauth to take precedence)
-    path("accounts/login/", auth_views.LoginView.as_view(
+    # Custom auth views using allauth (with your custom templates)
+    path("accounts/login/", LoginView.as_view(
         template_name="auth/login.html",
-        redirect_authenticated_user=True,
     ), name="account_login"),
 
-    # NEW: Custom signup view using allauth SignupView with custom template
     path("accounts/signup/", SignupView.as_view(
         template_name="auth/signup.html",
     ), name="account_signup"),

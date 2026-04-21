@@ -273,3 +273,11 @@ MAXMIND_LICENSE_KEY = env("MAXMIND_LICENSE_KEY", default="")
 
 # Optional: Update interval in days (default 7)
 MAXMIND_UPDATE_INTERVAL_DAYS = env("MAXMIND_UPDATE_INTERVAL_DAYS", default=7)
+
+
+# ============================================================
+# LOGIN REDIRECTS
+# ============================================================
+
+LOGIN_REDIRECT_URL = "/dashboard/"
+ACCOUNT_LOGOUT_REDIRECT_URL = "/"
