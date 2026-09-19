@@ -70,6 +70,7 @@ MIDDLEWARE = [
     "apps.bot_integration.middleware.DisableCSRFForWebhook",  # FIXED: correct class name
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.accounts.middleware.BanEnforcementMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",

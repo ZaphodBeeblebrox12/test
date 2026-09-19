@@ -13,7 +13,6 @@ from .models import (
     DiscordAccount, BotAccessAudit
 )
 from .services.telegram import TelegramBotService
-from .sync import sync_user_channels
 
 logger = logging.getLogger(__name__)
 
@@ -132,8 +131,8 @@ def telegram_webhook(request):
 
         TelegramBotService.send_message(chat_id, "✅ Your account is now linked! We'll sync your subscription access shortly.")
 
-        from .tasks import sync_user_channels_task
-        sync_user_channels_task.delay(user.id)
+        from .tasks import reconcile_user_access_task
+        reconcile_user_access_task.delay(user.id)
 
         return JsonResponse({"ok": True})
 
@@ -187,7 +186,7 @@ def discord_oauth_callback(request):
         'code': code,
         'redirect_uri': config.discord_redirect_uri,
     }
-    resp = requests.post('https://discord.com/api/oauth2/token', data=token_data)
+    resp = requests.post('https://discord.com/api/oauth2/token', data=token_data, timeout=10)
     if resp.status_code != 200:
         messages.error(request, "Failed to exchange Discord code.")
         return redirect('profile')
@@ -199,7 +198,8 @@ def discord_oauth_callback(request):
 
     user_resp = requests.get(
         'https://discord.com/api/users/@me',
-        headers={'Authorization': f'Bearer {access_token}'}
+        headers={'Authorization': f'Bearer {access_token}'},
+        timeout=10,
     )
     if user_resp.status_code != 200:
         messages.error(request, "Failed to fetch Discord user info.")
@@ -236,7 +236,7 @@ def discord_oauth_callback(request):
     )
 
     messages.success(request, "Discord account linked successfully!")
-    from .tasks import sync_user_channels_task
-    sync_user_channels_task.delay(request.user.id)
+    from .tasks import reconcile_user_access_task
+    reconcile_user_access_task.delay(request.user.id)
 
     return redirect('profile')

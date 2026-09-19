@@ -53,6 +53,7 @@ def check_banned(view_func):
 
 @method_decorator(login_required, name="dispatch")
 @method_decorator(check_banned, name="dispatch")
+@method_decorator(login_required, name='dispatch')
 class DashboardView(View):
     """User dashboard view."""
 
@@ -139,7 +140,8 @@ class DashboardView(View):
         }
         
         # ===== REFERRAL SYSTEM INTEGRATION =====
-        from apps.growth.services import ReferralService, ReferralRewardService, UserRewardBalance
+        from apps.growth.services.rewards import ReferralRewardService, UserRewardBalance
+        from apps.growth.services.referrals import ReferralService
         from apps.growth.models import ReferralCode, ReferralReward, ReferralSettings
         from django.utils import timezone
 

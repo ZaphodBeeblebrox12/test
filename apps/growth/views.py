@@ -14,7 +14,8 @@ from django.utils import timezone
 from django.shortcuts import render
 from django.conf import settings
 
-from .services import ReferralService, ReferralRewardService, SubscriptionCreditService, UserRewardBalance
+from .services.rewards import ReferralRewardService, SubscriptionCreditService, UserRewardBalance
+from .services.referrals import ReferralService
 from .models import ReferralCode, ReferralReward, Referral, ReferralSettings
 
 logger = logging.getLogger(__name__)

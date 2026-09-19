@@ -10,10 +10,12 @@ from rest_framework.views import APIView
 from apps.api.models import APIKey
 from apps.notifications.models import Notification
 from apps.notifications.serializers import NotificationSerializer
+from apps.api.serializers import APIKeySerializer
 
 
 class APIKeyListCreateView(generics.ListCreateAPIView):
     """List or create API keys."""
+    serializer_class = APIKeySerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):

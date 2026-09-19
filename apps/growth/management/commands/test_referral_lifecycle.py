@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 
 from apps.growth.models import ReferralCode, ReferralSettings, ReferralReward
-from apps.growth.services import ReferralService
+from apps.growth.services.referrals import ReferralService
 
 User = get_user_model()
 

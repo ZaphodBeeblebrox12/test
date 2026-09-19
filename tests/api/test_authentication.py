@@ -44,7 +44,7 @@ class APIKeyAuthenticationTest(APITestCase):
         """Test API key generation."""
         key = APIKey.generate_key()
         self.assertTrue(key.startswith('live_'))
-        self.assertEqual(len(key), 39)  # 'live_' + 32 char token + padding
+        self.assertEqual(len(key), 48)  # 'live_' + 43-char urlsafe token (token_urlsafe(32))
 
     def test_api_key_hashing(self):
         """Test API key hashing."""

@@ -11,7 +11,7 @@ from django.utils.decorators import method_decorator
 from django.views import View
 
 from apps.subscriptions.models import Plan
-from .services import GiftService, GiftEmailService
+from .services.gifts import GiftService, GiftEmailService
 from .forms import AdminGiftSendForm
 
 

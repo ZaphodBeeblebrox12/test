@@ -7,7 +7,7 @@ Includes:
 from celery import shared_task
 import logging
 
-from .services import ReferralRewardService
+from .services.rewards import ReferralRewardService
 
 logger = logging.getLogger(__name__)
 

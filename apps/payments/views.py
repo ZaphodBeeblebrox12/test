@@ -14,7 +14,7 @@ from apps.subscriptions.services import resolve_plan_price, get_pricing_country
 
 from .models import PaymentIntent
 
-from apps.growth.services import ReferralService
+from apps.growth.services.referrals import ReferralService
 from apps.growth.models import Referral
 
 logger = logging.getLogger(__name__)
@@ -162,7 +162,7 @@ def payment_confirm(request):
 
         # ========== Referral completion and credit application ==========
         try:
-            from apps.growth.services import ReferralService, SubscriptionCreditService
+            from apps.growth.services.referrals import ReferralService, SubscriptionCreditService
 
             # Complete referral (creates pending referrer reward)
             if payment_intent.amount > 0:

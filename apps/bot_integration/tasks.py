@@ -1,32 +1,41 @@
-from celery import shared_task
+"""Celery tasks for the access reconciliation engine."""
 import logging
-from django.db.models import Q
+from datetime import timedelta
+
+from celery import shared_task
 from django.utils import timezone
-from .sync import sync_user_channels
-from .models import TelegramAccount
+
+from .reconcile import reconcile_user_access
+from .models import (TelegramAccount, DiscordAccount, UserChannelAssignment,
+                     BotAccessAudit)
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=3)
-def sync_user_channels_task(self, user_id):
-    """Celery task to sync a single user's bot channels."""
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def reconcile_user_access_task(self, user_id):
     try:
-        sync_user_channels(user_id)
+        reconcile_user_access(user_id)
     except Exception as exc:
-        logger.error(f"Sync failed for user {user_id}: {exc}")
-        raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
+        logger.exception("reconcile failed for user %s", user_id)
+        raise self.retry(exc=exc)
 
 
 @shared_task
-def periodic_sync_all_users():
-    """Periodic task to reconcile users that haven't been synced recently."""
-    cutoff = timezone.now() - timezone.timedelta(hours=24)
-    stale_users = TelegramAccount.objects.filter(
-        is_active=True
-    ).filter(
-        Q(last_synced_at__isnull=True) | Q(last_synced_at__lt=cutoff)
-    ).values_list('user_id', flat=True)
-    
-    for user_id in stale_users:
-        sync_user_channels_task.delay(user_id)
+def periodic_access_sweep():
+    """Safety net. Reconcile everyone with a linked platform account, plus
+    anyone with a failed access audit in the last 24h (retry failed ops) and
+    anyone holding an active assignment but no active account row (orphans).
+    Includes Discord-only users (the old sweep only looked at Telegram)."""
+    tg_users = set(TelegramAccount.objects.filter(is_active=True)
+                   .values_list("user_id", flat=True))
+    dc_users = set(DiscordAccount.objects.filter(is_active=True)
+                   .values_list("user_id", flat=True))
+    failed_users = set(BotAccessAudit.objects.filter(
+        status="failed", created_at__gte=timezone.now() - timedelta(hours=24)
+    ).values_list("user_id", flat=True))
+    orphans = set(UserChannelAssignment.objects.filter(is_active=True).exclude(
+        user_id__in=list(tg_users | dc_users)).values_list("user_id", flat=True))
+
+    for user_id in sorted(tg_users | dc_users | failed_users | orphans):
+        reconcile_user_access_task.delay(user_id)

@@ -677,9 +677,7 @@ class Migration(migrations.Migration):
                 "ordering": ["plan", "interval", "country", "region"],
                 "constraints": [
                     models.CheckConstraint(
-                        condition=models.Q(
-                            ("country__isnull", True), ("region__isnull", True), _negated=True
-                        ),
+                        check=~models.Q(country__isnull=True, region__isnull=True),
                         name="geo_price_must_have_country_or_region",
                         violation_error_message="GeoPlanPrice must have either country or region specified. Use PlanPrice for global pricing.",
                     )

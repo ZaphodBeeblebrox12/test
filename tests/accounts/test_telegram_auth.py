@@ -104,6 +104,7 @@ class TestTelegramHashVerification:
         assert verify_telegram_auth_hash(data, token) is False
 
 
+@pytest.mark.django_db
 class TestTelegramAuthView:
     """Test Telegram authentication endpoint."""
 

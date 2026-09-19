@@ -77,7 +77,8 @@ class DiscordOAuth2Service:
         response = requests.post(
             f"{cls.DISCORD_API_BASE}/oauth2/token",
             data=data,
-            headers=headers
+            headers=headers,
+            timeout=10,
         )
 
         if response.status_code != 200:
@@ -94,7 +95,8 @@ class DiscordOAuth2Service:
 
         response = requests.get(
             f"{cls.DISCORD_API_BASE}/users/@me",
-            headers=headers
+            headers=headers,
+            timeout=10,
         )
 
         if response.status_code != 200:

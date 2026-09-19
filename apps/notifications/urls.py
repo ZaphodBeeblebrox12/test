@@ -11,7 +11,6 @@ from apps.notifications.views import (
     notifications_list_view,
 )
 
-app_name = "notifications"
 
 urlpatterns = [
     # Template view for /notifications/ page

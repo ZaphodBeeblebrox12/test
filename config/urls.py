@@ -8,6 +8,8 @@ from django.conf.urls.static import static
 
 # Use allauth's views for login and signup
 from allauth.account.views import LoginView, SignupView
+from apps.accounts import views as accounts_views
+from apps.accounts.telegram_views import TelegramCallbackView
 
 urlpatterns = [
     # Growth admin views - MUST be first to avoid catch_all_view interception
@@ -27,6 +29,7 @@ urlpatterns = [
     ), name="account_signup"),
 
     path("accounts/", include("allauth.urls")),
+    path("api/auth/telegram/", TelegramCallbackView.as_view(), name="api_telegram_auth"),
     path("api/auth/", include("apps.accounts.urls")),
     path("api/admin/", include("apps.accounts.admin_urls")),
     path("auth/telegram/", include("apps.accounts.telegram_urls")),
@@ -36,7 +39,9 @@ urlpatterns = [
     path("api/subscriptions/", include("apps.subscriptions.urls")),
     
     path("api/", include("apps.api.urls")),
+    path("api/notifications/", include("apps.notifications.urls")),
     path("", include("apps.core.urls")),
+    path("dashboard/", accounts_views.DashboardView.as_view(), name="dashboard"),
     path("", include("apps.accounts.profile_urls")),
     path("", include("apps.payments.urls")),
     path("growth/", include("apps.growth.urls")),

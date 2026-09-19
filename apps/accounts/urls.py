@@ -14,7 +14,7 @@ from apps.accounts.discord_views import discord_connect_api
 
 urlpatterns = [
     # Telegram endpoints
-    path("telegram/", telegram_connect, name="api_telegram_connect"),
+    path("telegram/connect/", telegram_connect, name="api_telegram_connect"),
 
     # Discord endpoints
     path("discord/connect/", discord_connect_api, name="api_discord_connect"),

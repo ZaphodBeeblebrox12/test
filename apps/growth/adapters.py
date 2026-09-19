@@ -28,7 +28,7 @@ class ReferralSignupAdapter:
         return user
 
     def _process_referral_code(self, request, user):
-        from .services import ReferralService
+        from .services.referrals import ReferralService
 
         referral_code = request.session.pop("referral_code", None)
 
@@ -43,7 +43,7 @@ class ReferralSignupAdapter:
 
 def process_referral_on_signup(request, user):
     """Utility function to process referral code during signup."""
-    from .services import ReferralService
+    from .services.referrals import ReferralService
 
     referral_code = request.session.pop("referral_code", None)
 
@@ -71,7 +71,7 @@ def apply_referral_to_existing_user(request, user, code):
     Returns:
         tuple: (success: bool, message: str)
     """
-    from .services import ReferralService
+    from .services.referrals import ReferralService
 
     # Check if user can apply referral
     if not ReferralService.can_apply_referral(user):

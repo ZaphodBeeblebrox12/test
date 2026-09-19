@@ -13,7 +13,7 @@ from decimal import Decimal
 User = get_user_model()
 
 from apps.growth.models import Referral, ReferralCode, ReferralSettings, ReferralReward
-from apps.growth.services import ReferralService
+from apps.growth.services.referrals import ReferralService
 from apps.payments.models import PaymentIntent
 from apps.subscriptions.models import Plan, PlanPrice, Subscription
 

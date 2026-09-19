@@ -23,6 +23,12 @@ class GoogleLoginTest(TestCase):
 
     def setUp(self):
         self.client = Client()
+        from allauth.socialaccount.models import SocialApp
+        from django.contrib.sites.models import Site
+        app = SocialApp.objects.create(provider="google", name="Google",
+                                       client_id="test-google-client-id", secret="test-google-secret")
+        site = Site.objects.get_or_create(id=1, defaults={"domain": "example.com", "name": "example.com"})[0]
+        app.sites.add(site)
 
     def test_google_login_page_accessible(self):
         """Test that Google login URL is accessible."""

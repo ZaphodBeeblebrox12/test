@@ -377,10 +377,15 @@ class ReferralReward(models.Model):
             return False
         return timezone.now() >= self.unlocked_at
 
-    def mark_credited(self) -> None:
-        if self.status == self.Status.PENDING:
+    def mark_credited(self) -> bool:
+        """Guarded PENDING->CREDITED transition; exactly one concurrent caller wins."""
+        updated = type(self).objects.filter(
+            pk=self.pk, status=self.Status.PENDING).update(
+            status=self.Status.CREDITED, updated_at=timezone.now())
+        if updated:
             self.status = self.Status.CREDITED
-            self.save(update_fields=["status", "updated_at"])
+            self.updated_at = timezone.now()
+        return bool(updated)
 
     def mark_expired(self, reason: str = "") -> None:
         self.status = self.Status.EXPIRED

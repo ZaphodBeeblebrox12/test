@@ -20,7 +20,8 @@ from decimal import Decimal
 from django.utils import timezone
 from django.conf import settings
 from apps.growth.models import ReferralCode, ReferralSettings, ReferralReward, Referral
-from apps.growth.services import UserRewardBalance, ReferralService, ReferralRewardService
+from apps.growth.services.rewards import UserRewardBalance, ReferralRewardService
+from apps.growth.services.referrals import ReferralService
 
 
 class ReferralDashboardContextMixin:

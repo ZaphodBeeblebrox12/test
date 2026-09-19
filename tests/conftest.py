@@ -1,6 +1,8 @@
 """
 Pytest configuration for community platform.
 """
+import uuid
+
 import pytest
 from django.contrib.auth import get_user_model
 
@@ -15,6 +17,8 @@ def user_factory():
     """Factory for creating test users."""
     def factory(**kwargs):
         defaults = {
+            # username must be unique per user; generate one unless overridden.
+            "username": f"user_{uuid.uuid4().hex[:12]}",
             "telegram_id": 123456789,
             "telegram_username": "testuser",
             "first_name": "Test",
@@ -53,7 +57,7 @@ def staff_user(user_factory):
 
 
 @pytest.fixture
-def banned_user(user_factory):
+def banned_user(user_factory, db):
     """Create a banned user."""
     user = user_factory(
         telegram_id=777777777,
@@ -74,3 +78,18 @@ def telegram_auth_data():
         "username": "testuser",
         "photo_url": "https://t.me/i/userpic/320/test.jpg",
     }
+
+
+@pytest.fixture
+def google_social_app(db):
+    """Provide a Google OAuth SocialApp for tests. Uses dummy test-only
+    credentials (never real secrets); satisfies allauth's SocialApp.DoesNotExist
+    so the login URL can be exercised without external OAuth config."""
+    from allauth.socialaccount.models import SocialApp
+    from django.contrib.sites.models import Site
+    app = SocialApp.objects.create(
+        provider="google", name="Google",
+        client_id="test-google-client-id", secret="test-google-secret")
+    site = Site.objects.get_or_create(id=1, defaults={"domain": "testserver", "name": "testserver"})[0]
+    app.sites.add(site)
+    return app

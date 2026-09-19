@@ -15,7 +15,7 @@ from rest_framework.throttling import AnonRateThrottle
 
 from apps.subscriptions.api import get_active_subscription
 
-from .services import (
+from .services.gifts import (
     GiftService,
     GiftClaimService,
     LegacyGiftService,
@@ -24,7 +24,6 @@ from .services import (
     GiftEmailMismatchError,
     SelfGiftError,
     InvalidGiftCodeError,
-    AttributionRequiredError,
 )
 
 logger = logging.getLogger(__name__)

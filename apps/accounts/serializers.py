@@ -42,7 +42,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     preferences = UserPreferenceSerializer(read_only=True)
     telegram_connected = serializers.SerializerMethodField()
-    full_name = serializers.CharField(source="full_name", read_only=True)
+    full_name = serializers.CharField(read_only=True)
 
     class Meta:
         model = User
