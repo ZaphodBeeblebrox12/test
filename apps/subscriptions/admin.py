@@ -24,6 +24,19 @@ class GeoPlanPriceForm(forms.ModelForm):
         model = GeoPlanPrice
         fields = '__all__'
 
+    def clean(self):
+        cleaned = super().clean()
+        country = cleaned.get("country")
+        region = cleaned.get("region")
+        if not country and not region:
+            raise ValidationError(
+                "Choose a COUNTRY (e.g. IN, US, DE) for a country-specific override "
+                "OR a REGION (e.g. EU, APAC, NA) for a regional override — not neither. "
+                "Resolution order is: country → region → global base price."
+            )
+        return cleaned
+
+
     def clean_price_cents(self):
         """Validate price_cents is a non-negative integer."""
         price_cents = self.cleaned_data.get('price_cents')
@@ -51,6 +64,23 @@ class PlanPriceForm(forms.ModelForm):
     class Meta:
         model = PlanPrice
         fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Restrict the interval dropdown to billing intervals that don't already
+        # have an active base price for this plan — prevents duplicate selection
+        # that the backend would reject on Save.
+        plan = self.instance.plan if self.instance.plan_id else None
+        if plan is not None and "interval" in self.fields:
+            taken = set(
+                plan.prices.filter(is_active=True)
+                .exclude(pk=self.instance.pk)
+                .values_list("interval", flat=True)
+            )
+            self.fields["interval"].choices = [
+                (val, lab) for val, lab in self.fields["interval"].choices
+                if val not in taken
+            ]
 
     def clean_price_cents(self):
         """Validate price_cents is a non-negative integer."""
@@ -108,12 +138,54 @@ class PlanPriceInline(admin.TabularInline):
     verbose_name = "Base Price (Global)"
     verbose_name_plural = "Base Prices (Global - Managed Here)"
 
+    def get_extra(self, request, obj=None, **kwargs):
+        # Don't offer "Add another Base Price (Global)" once every billing
+        # interval already has a base price — the backend rejects a duplicate
+        # active base, so offering the row only sets the admin up to fail.
+        if obj is not None:
+            existing = set(obj.prices.values_list("interval", flat=True))
+            all_intervals = {c[0] for c in PlanPrice._meta.get_field("interval").choices}
+            if existing >= all_intervals:
+                return 0
+        return super().get_extra(request, obj, **kwargs)
+
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
         # Add number input type for better UX
         formset.form.base_fields['price_cents'].widget.attrs['type'] = 'number'
         formset.form.base_fields['price_cents'].widget.attrs['min'] = '0'
         formset.form.base_fields['price_cents'].widget.attrs['step'] = '1'
+
+        # Formset-level clean: catch same-interval ACTIVE duplicates across the
+        # SUBMITTED rows. For a NEW plan the rows aren't in the DB when each form
+        # validates, so form.clean() can't see its siblings — this is what turns
+        # the "Monthly USD + Monthly INR" case into a normal inline field error
+        # (HTTP 200) instead of an uncaught ValidationError (HTTP 500).
+        base_clean = formset.clean
+        def _clean(self_):
+            base_clean(self_)
+            from apps.subscriptions.models import PlanPrice as _PP
+            if getattr(formset, 'model', None) is not _PP:
+                return
+            seen = {}
+            for form in self_.forms:
+                if not hasattr(form, "cleaned_data"):
+                    continue
+                if form.cleaned_data.get("DELETE"):
+                    continue
+                if not form.cleaned_data.get("is_active"):
+                    continue
+                interval = form.cleaned_data.get("interval")
+                if interval:
+                    if interval in seen:
+                        form.add_error("interval",
+                            "An active base price already exists for this billing "
+                            "interval. Only ONE active global base price per interval "
+                            "— for a different currency/market price, add a Geo Price "
+                            "Override below, not a second global base price.")
+                    else:
+                        seen[interval] = True
+        formset.clean = _clean
         return formset
 
 

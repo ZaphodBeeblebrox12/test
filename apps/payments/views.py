@@ -10,7 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.subscriptions.models import Plan, Subscription
-from apps.subscriptions.services import resolve_plan_price, get_pricing_country
+from apps.subscriptions.services import resolve_plan_price, get_pricing_country, split_resolved_price
 
 from .models import PaymentIntent
 
@@ -59,12 +59,14 @@ def payment_start(request):
     applied_referral = discount_info.get("referral")
 
     with transaction.atomic():
+        fk = split_resolved_price(resolved_price)
         payment_intent = PaymentIntent.objects.create(
             user=request.user,
             plan=plan,
-            plan_price=resolved_price if hasattr(resolved_price, 'plan') else None,
+            plan_price=fk["plan_price"],
+            geo_plan_price=fk["geo_plan_price"],
             amount=final_amount,
-            currency=getattr(resolved_price, 'currency', 'USD'),
+            currency=fk["price_currency"],
             provider=provider,
             status=PaymentIntent.Status.PENDING,
             country=country or "",
@@ -152,6 +154,9 @@ def payment_confirm(request):
             user=request.user,
             plan=plan,
             plan_price=payment_intent.plan_price,
+            geo_plan_price=payment_intent.geo_plan_price,
+            price_cents=payment_intent.amount,
+            price_currency=payment_intent.currency,
             status=Subscription.Status.ACTIVE,
             is_active=True,
             started_at=timezone.now(),

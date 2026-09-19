@@ -96,6 +96,23 @@ def get_pricing_country(request) -> Optional[str]:
     # Final fallback: None (triggers global pricing)
     return None
 
+
+def split_resolved_price(resolved):
+    """Route a resolved price to the correct FK and an immutable snapshot.
+    Returns a dict suitable for Subscription/PaymentIntent creation/update."""
+    from apps.subscriptions.models import GeoPlanPrice as _GP
+    base = {
+        "price_cents": resolved.price_cents,
+        "price_currency": resolved.currency,
+    }
+    if isinstance(resolved, _GP):
+        base["geo_plan_price"] = resolved
+        base["plan_price"] = None
+    else:
+        base["plan_price"] = resolved
+        base["geo_plan_price"] = None
+    return base
+
 def resolve_plan_price(plan: Plan, interval: str, request):
     country = get_pricing_country(request)
     region = get_region_for_country(country) if country else None

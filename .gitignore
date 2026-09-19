@@ -43,8 +43,8 @@ staticfiles/
 
 # Environment variables
 .env
-.env.*
-!.env.example
+.env.local
+.env.*.local
 
 # Testing
 .coverage
@@ -63,20 +63,8 @@ celerybeat.pid
 
 # Logs
 logs/
+*.log
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Local/generated project artifacts
-ci_test_results.txt
-output.txt
-tree.txt
-file_tree.txt
-
-# Local tunneling/tool binary
-ngrok.exe
-
-# Temporary patch / scratch files
-*.patch
-*.new

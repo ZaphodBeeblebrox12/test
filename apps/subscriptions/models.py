@@ -133,6 +133,21 @@ class PlanPrice(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        qs = PlanPrice.objects.filter(plan=self.plan, interval=self.interval, is_active=True)
+        if self.pk:
+            qs = qs.exclude(pk=self.pk)
+        if self.is_active and qs.exists():
+            raise ValidationError(
+                "An active base price already exists for this plan + interval. "
+                "Only one active global base price is allowed; geo pricing handles market-specific pricing.")
+
     class Meta:
         verbose_name = _("plan price")
         verbose_name_plural = _("plan prices")
@@ -268,6 +283,16 @@ class Subscription(models.Model):
         related_name="subscriptions",
         help_text=_("The price/interval selected")
     )
+    geo_plan_price = models.ForeignKey(
+        "subscriptions.GeoPlanPrice",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="subscriptions",
+        verbose_name="resolved geo price"
+    )
+    price_cents = models.PositiveIntegerField(null=True, blank=True)
+    price_currency = models.CharField(max_length=3, null=True, blank=True)
     status = models.CharField(
         max_length=10,
         choices=Status.choices,
@@ -362,6 +387,11 @@ class Subscription(models.Model):
         return f"{self.user.username} - {self.plan.name} ({self.status})"
 
     def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.pk:
+            orig = Subscription.objects.filter(pk=self.pk).only("price_cents","price_currency").first()
+            if orig and (orig.price_cents != self.price_cents or orig.price_currency != self.price_currency):
+                raise ValidationError("price_cents/price_currency are an immutable historical snapshot and cannot be changed after creation.")
         if self.is_active and self.status not in [self.Status.ACTIVE]:
             raise ValidationError(
                 _("Only active status subscriptions can be marked is_active=True")
