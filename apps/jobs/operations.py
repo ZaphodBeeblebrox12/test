@@ -36,9 +36,24 @@ def _run_revoke(op, transport) -> bool:
     result = transport.revoke(op.telegram_user_id, op.channel_id,
                               idempotency_key=op.provision_key)
     if result.ok:
-        op.state = ProvisioningOperation.ST_COMPLETED
-        op.save(update_fields=["state"])
-        return True
+        # A provisioning "success" is NOT proof of revocation.  The bridge
+        # maps Telegram "user not found"/"kicked" to already_applied, and its
+        # idempotency cache can replay an old success -- either can report
+        # success while the user is still in the channel.  Verify with a
+        # read-only membership probe before declaring completion.
+        member = transport.is_member(op.telegram_user_id, op.channel_id)
+        if member is False:
+            op.state = ProvisioningOperation.ST_COMPLETED
+            op.save(update_fields=["state"])
+            return True
+        op.state = ProvisioningOperation.ST_FAILED
+        op.last_error = (
+            "revoke accepted by bot but user is still a member"
+            if member is True else
+            "revoke accepted by bot but membership could not be verified")
+        op.save(update_fields=["state", "last_error"])
+        return True  # terminal for this attempt; next reconcile retries
+                       # with a fresh revoke operation
     if result.retryable:
         op.state = ProvisioningOperation.ST_FAILED
         op.last_error = result.error_message
@@ -81,29 +96,53 @@ def _run_grant(op, transport) -> bool:
         # Mark creating BEFORE the side effect (durability).
         op.state = st.ST_CREATING
         op.save(update_fields=["state"])
-        created = transport.create_invite_link(op.telegram_user_id, op.channel_id)
+        # provision_key is unique per operation: the bridge's 24h grant
+        # cache is keyed on it, so each NEW lifecycle actually executes the
+        # bot's do_grant (unban + fresh invite + DM) instead of receiving a
+        # cached already_applied from a previous lifecycle.
+        created = transport.create_invite_link(op.telegram_user_id,
+                                               op.channel_id,
+                                               idempotency_key=op.provision_key)
         if created is None:
             # External outcome unknown (transport error after dispatch).
             op.state = st.ST_UNKNOWN
             op.save(update_fields=["state"])
             return False   # not terminal; job retries -> recovery path
         # Persist link + state in the SAME step, immediately on success.
+        # The bridge's do_grant ALREADY delivered the invite DM server-side
+        # as part of minting; do NOT _send_link here -- that would double-DM.
         op.invite_link = created
-        op.state = st.ST_CREATED
+        op.state = st.ST_SENT
         op.save(update_fields=["invite_link", "state"])
-        return _send_link(op, transport)
+        return _confirm_delivered(op, transport)
 
     if op.state == st.ST_CREATED:
-        return _send_link(op, transport)
+        # Link persisted; DM already delivered server-side by do_grant.
+        op.state = st.ST_SENT
+        op.save(update_fields=["state"])
+        return _confirm_delivered(op, transport)
 
     return op.state == st.ST_COMPLETED
+
+
+def _confirm_delivered(op, transport) -> bool:
+    """Post-delivery confirmation for server-side DMs (do_grant): mark SENT,
+    upgrade to COMPLETED when membership is already visible.  Never sends.
+    """
+    st = ProvisioningOperation
+    if transport.is_member(op.telegram_user_id, op.channel_id) is True:
+        op.state = st.ST_COMPLETED
+        op.save(update_fields=["state"])
+    return True
 
 
 def _send_link(op, transport) -> bool:
     st = ProvisioningOperation
     op.state = st.ST_SENDING
     op.save(update_fields=["state"])
-    sent = transport.send_invite_dm(op.telegram_user_id, op.invite_link)
+    sent = transport.send_invite_dm(op.telegram_user_id,
+                                  op.channel_id,
+                                  op.invite_link)
     if sent is True:
         op.state = st.ST_SENT
         op.save(update_fields=["state"])

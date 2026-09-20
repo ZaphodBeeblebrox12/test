@@ -140,6 +140,70 @@ class ProvisionClient:
     def verify_channel(self, channel_id) -> ProvisionResult:
         return self._post("/provision/v1/verify-channel", {"channel_id": str(channel_id)})
 
+    def check_membership(self, telegram_user_id, channel_id) -> ProvisionResult:
+        """Read-only membership probe (Provision Contract v1).
+
+        Uses the same endpoint resolution, HMAC signing, timeout and
+        retryable/non-retryable conventions as _post.  The bridge answers
+        status "ok" with a boolean member flag; errors keep their retryable
+        flag.  Never creates an invite, never sends a message.
+        """
+        try:
+            base_url, source = self._resolve()
+        except BotOffline as exc:
+            return ProvisionResult(ok=False, status="failed", retryable=True,
+                                   error_code="bot_offline", error_message=str(exc))
+        body = json.dumps({
+            "request_id": str(uuid.uuid4()),
+            "telegram_user_id": int(telegram_user_id),
+            "channel_id": str(channel_id),
+        }).encode()
+        url = f"{base_url}/provision/v1/check-membership"
+        try:
+            resp = requests.post(url, data=body, headers=self._signed_headers(body),
+                                 timeout=self.timeout)
+        except requests.RequestException as exc:
+            return ProvisionResult(ok=False, status="failed", retryable=True,
+                                   error_code="transport_error", error_message=str(exc),
+                                   source=source)
+        try:
+            data = resp.json()
+        except ValueError:
+            return ProvisionResult(ok=False, status="failed", retryable=True,
+                                   error_code="malformed_response",
+                                   error_message=f"HTTP {resp.status_code}: non-JSON body",
+                                   source=source)
+        if resp.status_code == 200 and data.get("status") == "ok":
+            return ProvisionResult(ok=True, status="ok", source=source,
+                                   detail={"member": bool(data.get("member"))})
+        if resp.status_code in (400, 401, 403, 404, 409):
+            return ProvisionResult(ok=False, status="failed",
+                                   retryable=bool(data.get("retryable", False)),
+                                   error_code=data.get("error_code", "unknown"),
+                                   error_message=json.dumps(data.get("detail", data))[:500],
+                                   source=source)
+        return ProvisionResult(ok=False, status="failed",
+                               retryable=bool(data.get("retryable", True)),
+                               error_code=data.get("error_code", "unknown"),
+                               error_message=json.dumps(data.get("detail", data))[:500],
+                               source=source)
+
+    def resend_invite(self, telegram_user_id, channel_id,
+                      invite_link) -> ProvisionResult:
+        """Re-deliver a PERSISTED invite link via the bot's DM path.
+
+        Reuses the existing /provision/v1/access contract (operation
+        "resend"): same auth, endpoint resolution, channel semantics, and
+        retryable/error conventions as grant/revoke.  Never mints a new
+        invite.
+        """
+        return self._post("/provision/v1/access", {
+            "operation": "resend",
+            "telegram_user_id": int(telegram_user_id),
+            "channel_id": str(channel_id),
+            "invite_link": str(invite_link),
+        })
+
     def check_health(self) -> dict:
         """Admin 'Verify Bot' — signed version probe + endpoint metadata."""
         base_url, source = self.resolve_endpoint()

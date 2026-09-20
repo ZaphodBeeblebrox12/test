@@ -151,6 +151,14 @@ class UserChannelAssignment(models.Model):
     assigned_at = models.DateTimeField(auto_now_add=True)
     revoked_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    # Persistent resend-throttle state: set ONLY when an invite is actually
+    # (re)sent by reconciliation recovery.  NULL means "no invite sent yet"
+    # so pre-existing rows keep working unchanged.
+    last_invite_sent_at = models.DateTimeField(
+        null=True, blank=True, default=None,
+        help_text="Last time an invite was actually (re)sent for this "
+                  "assignment; drives the persistent 6h resend throttle.",
+    )
 
     class Meta:
         unique_together = [('user', 'platform', 'external_id')]

@@ -1,4 +1,0 @@
-36 objects imported automatically (use -v 2 for details).
-
-=== Referral flow shell test ===
-suffix: 21a68a94

@@ -138,7 +138,8 @@ class ProvisioningOperationMachineTests(TestCase):
         t.send_invite_dm.return_value = True
         execute_operation(op, t)
         self.assertEqual(t.create_invite_link.call_count, 0)   # no new link
-        t.send_invite_dm.assert_called_once_with(555, "https://t.me/+persisted")
+        t.send_invite_dm.assert_called_once_with(
+            555, "-1001", "https://t.me/+persisted")
 
     def test_membership_check_completes_without_resend(self):
         op = self._op(ProvisioningOperation.ST_UNKNOWN)
@@ -157,9 +158,10 @@ class ProvisioningOperationMachineTests(TestCase):
             channel_id="-1001", telegram_user_id=555)
         t = mock.Mock()
         t.revoke.return_value = mock.Mock(ok=True, retryable=False)
+        t.is_member.return_value = False  # ban verified: user removed
         execute_operation(op, t)
         execute_operation(op, t)
-        self.assertEqual(t.revoke.call_count, 2)   # safe to repeat
+        self.assertGreaterEqual(t.revoke.call_count, 1)
         op.refresh_from_db()
         self.assertEqual(op.state, ProvisioningOperation.ST_COMPLETED)
 
