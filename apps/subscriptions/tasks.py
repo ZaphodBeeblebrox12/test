@@ -1,12 +1,10 @@
 import logging
-from celery import shared_task
 from .geoip import check_and_update_database
 
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=1)
-def update_maxmind_database_task(self):
+def update_maxmind_database_task():
     """
     Celery periodic task to download and update the MaxMind GeoLite2 database.
     """

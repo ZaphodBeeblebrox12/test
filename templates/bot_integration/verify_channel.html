@@ -1,0 +1,13 @@
+{% extends "admin/base_site.html" %}{% block content %}
+<h1>{{ title }}</h1>
+<p><strong>Channel:</strong> {{ channel_id }}
+{% if is_control %}<span style="background:#c00;color:#fff;padding:2px 8px;border-radius:3px">CONTROL CHANNEL</span>{% endif %}</p>
+{% if error %}<p style="color:#c00">❌ {{ error }}</p>{% endif %}
+{% if result %}
+{% if result.detail and result.detail.title %}<p>✅ Found: <strong>{{ result.detail.title }}</strong></p>{% endif %}
+{% if result.error %}<p style="color:#c00">❌ {{ result.error }}</p>{% endif %}
+{% if result.detail.bot_status %}<p>Bot membership: {{ result.detail.bot_status }}
+{% if result.detail.can_administer %}(can administer ✅){% else %}(⚠️ needs admin rights){% endif %}</p>{% endif %}
+{% endif %}
+<p><a href="../">← Back</a></p>
+{% endblock %}

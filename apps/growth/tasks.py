@@ -4,7 +4,6 @@ Celery tasks for the growth app.
 Includes:
 - Referral reward unlock task (runs periodically)
 """
-from celery import shared_task
 import logging
 
 from .services.rewards import ReferralRewardService
@@ -12,8 +11,7 @@ from .services.rewards import ReferralRewardService
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, max_retries=3)
-def unlock_pending_referral_rewards(self):
+def unlock_pending_referral_rewards():
     """
     Process pending referral rewards that are ready to unlock.
 

@@ -2,7 +2,9 @@ import json
 import secrets
 import logging
 from django.shortcuts import render, redirect
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse
+from django.utils import timezone
+from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.contrib.auth.decorators import login_required
@@ -78,9 +80,20 @@ def unlink_discord(request):
 @csrf_exempt
 @require_POST
 def telegram_webhook(request):
-    """Handle Telegram bot updates (deep link verification)."""
+    """Handle Telegram bot updates (deep link verification).
+
+    Updates arrive via the signal bot's polling loop, which forwards
+    /start verify_<token> updates here over HTTP (Option 1 architecture —
+    Django runs on localhost and cannot receive Telegram webhooks directly).
+    Requests must carry the Provision Contract v1 HMAC signature; native
+    Telegram webhook delivery is not used.
+    """
+    from .provision_auth import verify_signed_request
+    body, auth_err = verify_signed_request(request)
+    if auth_err:
+        return JsonResponse({"ok": False, "error": auth_err}, status=401)
     try:
-        data = json.loads(request.body)
+        data = json.loads(body)
     except json.JSONDecodeError:
         return HttpResponse(status=400)
 
@@ -111,28 +124,31 @@ def telegram_webhook(request):
             return JsonResponse({"ok": False})
 
         user = token.user
-        TelegramAccount.objects.update_or_create(
-            user=user,
-            defaults={
-                'chat_id': chat_id,
-                'telegram_user_id': telegram_user_id,
-                'is_active': True
-            }
-        )
-        token.delete()
+        # Transactional outbox: account + audit + job commit atomically.
+        from django.db import transaction as _tx
+        from apps.jobs.enqueue import enqueue_reconcile
+        with _tx.atomic():
+            TelegramAccount.objects.update_or_create(
+                user=user,
+                defaults={
+                    'chat_id': chat_id,
+                    'telegram_user_id': telegram_user_id,
+                    'is_active': True
+                }
+            )
+            token.delete()
 
-        BotAccessAudit.objects.create(
-            user=user,
-            action='link',
-            platform='telegram',
-            target=str(chat_id),
-            status='success'
-        )
+            BotAccessAudit.objects.create(
+                user=user,
+                action='link',
+                platform='telegram',
+                target=str(chat_id),
+                status='success'
+            )
+
+            enqueue_reconcile(user.id, reason="telegram_link")
 
         TelegramBotService.send_message(chat_id, "✅ Your account is now linked! We'll sync your subscription access shortly.")
-
-        from .tasks import reconcile_user_access_task
-        reconcile_user_access_task.delay(user.id)
 
         return JsonResponse({"ok": True})
 
@@ -236,7 +252,111 @@ def discord_oauth_callback(request):
     )
 
     messages.success(request, "Discord account linked successfully!")
-    from .tasks import reconcile_user_access_task
-    reconcile_user_access_task.delay(request.user.id)
+    from apps.jobs.enqueue import enqueue_reconcile
+    enqueue_reconcile(request.user.id, reason="discord_link")
 
     return redirect('profile')
+
+# ════════════════════════════════════════════════════════════════════════════
+# Bot bridge self-registration / heartbeat  (Provision Contract v1)
+# HMAC-authenticated API endpoints — NOT user-facing, NOT login-protected;
+# authentication is the shared-secret signature itself.
+# ════════════════════════════════════════════════════════════════════════════
+
+import json as _json
+from urllib.parse import urlsplit as _urlsplit
+
+from django.http import JsonResponse
+from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+
+from .provision_auth import verify_signed_request
+from .runtime_models import BotRuntimeState
+
+
+def _allowed_base_url(url: str) -> bool:
+    """Validate the bot-reported URL without becoming an SSRF primitive."""
+    try:
+        parts = _urlsplit(url)
+    except ValueError:
+        return False
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return False
+    # Intentionally support local/private deployment (127.0.0.1, LAN IPs,
+    # private hostnames).  Only obviously-dangerous targets are refused.
+    blocked = {"169.254.169.254", "metadata.google.internal"}
+    return parts.hostname not in blocked
+
+
+@csrf_exempt
+@require_POST
+def bot_register(request):
+    body, err = verify_signed_request(request)
+    if err:
+        return JsonResponse({"ok": False, "error": err}, status=401)
+    try:
+        data = _json.loads(body.decode() or "{}")
+    except ValueError:
+        return JsonResponse({"ok": False, "error": "malformed JSON"}, status=400)
+
+    instance_id = str(data.get("instance_id") or "").strip()
+    base_url = str(data.get("base_url") or "").strip()
+    contract = data.get("contract", "")
+    version = data.get("version")
+    operations = data.get("operations") or []
+
+    if not instance_id:
+        return JsonResponse({"ok": False, "error": "instance_id required"}, status=400)
+    if not _allowed_base_url(base_url):
+        return JsonResponse({"ok": False, "error": "invalid base_url"}, status=400)
+    if not isinstance(operations, list):
+        return JsonResponse({"ok": False, "error": "operations must be a list"}, status=400)
+
+    bot_info = data.get("bot") if isinstance(data.get("bot"), dict) else {}
+    state = BotRuntimeState.touch(
+        instance_id,
+        base_url=base_url,
+        contract=str(contract),
+        contract_version=int(version or 0),
+        operations=operations,
+        bot_telegram_id=bot_info.get("id"),
+        bot_username=str(bot_info.get("username") or ""),
+        status=(BotRuntimeState.STATUS_ONLINE
+                if contract == "provision" and version == 1
+                else BotRuntimeState.STATUS_INCOMPATIBLE),
+    )
+    return JsonResponse({"ok": True, "instance_id": state.instance_id,
+                         "status": state.status})
+
+
+@csrf_exempt
+@require_POST
+def bot_heartbeat(request):
+    body, err = verify_signed_request(request)
+    if err:
+        return JsonResponse({"ok": False, "error": err}, status=401)
+    try:
+        data = _json.loads(body.decode() or "{}")
+    except ValueError:
+        return JsonResponse({"ok": False, "error": "malformed JSON"}, status=400)
+
+    instance_id = str(data.get("instance_id") or "").strip()
+    try:
+        state = BotRuntimeState.objects.get(instance_id=instance_id)
+    except BotRuntimeState.DoesNotExist:
+        # Django lost our state (DB reset etc.) — force the bot to re-register.
+        return JsonResponse({"ok": False, "error": "unknown instance"}, status=404)
+
+    updates = {"status": BotRuntimeState.STATUS_ONLINE if state.is_compatible()
+               else BotRuntimeState.STATUS_INCOMPATIBLE}
+    base_url = str(data.get("base_url") or "").strip()
+    if base_url and _allowed_base_url(base_url) and base_url != state.base_url:
+        updates["base_url"] = base_url
+    for key, value in updates.items():
+        setattr(state, key, value)
+    # Heartbeat proves liveness: stamp last_seen so the freshness-based
+    # endpoint resolution (ProvisionClient) keeps selecting this instance.
+    state.last_seen = timezone.now()
+    state.save(update_fields=[*updates.keys(), "last_seen", "updated_at"])
+    return JsonResponse({"ok": True, "instance_id": state.instance_id})

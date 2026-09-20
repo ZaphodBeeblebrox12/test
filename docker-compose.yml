@@ -11,24 +11,14 @@ services:
       - DEBUG=${DEBUG:-True}
       - DATABASE_URL=${DATABASE_URL:-sqlite:///db.sqlite3}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
     volumes:
       - .:/app
       - sqlite_data:/app/data
-    depends_on:
-      - redis
     command: >
       sh -c "python manage.py migrate &&
              python manage.py runserver 0.0.0.0:8000"
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-
-  celery:
+  worker:
     build: .
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings.development
@@ -36,14 +26,12 @@ services:
       - DEBUG=${DEBUG:-True}
       - DATABASE_URL=${DATABASE_URL:-sqlite:///db.sqlite3}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
     volumes:
       - .:/app
-    depends_on:
-      - redis
+      - sqlite_data:/app/data
     command: >
-      sh -c "celery -A config.celery worker --loglevel=info"
+      sh -c "python manage.py migrate &&
+             python manage.py runjobs --loop"
 
 volumes:
   sqlite_data:
-  redis_data:

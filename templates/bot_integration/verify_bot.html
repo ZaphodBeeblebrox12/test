@@ -1,0 +1,17 @@
+{% extends "admin/base_site.html" %}{% block content %}
+<h1>Verify Telegram Bot</h1>
+{% if info.ok %}
+<table style="border-collapse:collapse">
+<tr><td style="padding:4px 12px;font-weight:bold">Status</td><td style="padding:4px">✅ Reachable</td></tr>
+<tr><td style="padding:4px 12px;font-weight:bold">Endpoint</td><td style="padding:4px">{{ info.base_url }} ({{ info.source }})</td></tr>
+<tr><td style="padding:4px 12px;font-weight:bold">Contract</td><td style="padding:4px">{{ info.contract }} v{{ info.version }}</td></tr>
+<tr><td style="padding:4px 12px;font-weight:bold">Operations</td><td style="padding:4px">{{ info.operations|join:", " }}</td></tr>
+<tr><td style="padding:4px 12px;font-weight:bold">Bot identity</td><td style="padding:4px">@{{ info.bot.username }} (id {{ info.bot.id }})</td></tr>
+<tr><td style="padding:4px 12px;font-weight:bold">Latency</td><td style="padding:4px">{{ info.latency_ms }} ms</td></tr>
+<tr><td style="padding:4px 12px;font-weight:bold">Compatible</td><td style="padding:4px">{{ info.compatible|yesno:"✅ yes,❌ no" }}</td></tr>
+</table>
+{% else %}
+<p style="color:#c00">❌ {{ info.error }}</p>
+{% endif %}
+<p><a href="../">← Back</a></p>
+{% endblock %}

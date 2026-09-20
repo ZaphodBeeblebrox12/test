@@ -19,7 +19,6 @@ from django.utils import timezone
 from .access import compute_target_access
 from .models import (TelegramAccount, DiscordAccount, PlanChannelMapping,
                      UserChannelAssignment, BotAccessAudit)
-from .services.telegram import TelegramBotService
 from .services.discord import DiscordBotService
 
 logger = logging.getLogger(__name__)
@@ -70,31 +69,41 @@ def _reconcile_telegram(user_id, account, target):
     account.save(update_fields=["last_synced_at"])
 
 
-def _tg_grant(user_id, account, target, channel_id):
-    if account.telegram_user_id:
-        ok, err = TelegramBotService.unban_user(channel_id, account.telegram_user_id)
-        if not ok:
-            _audit(user_id, "grant", "telegram", channel_id, False, f"unban failed: {err}")
-            return
+# ─────────────────── Provision Contract v1 transport ───────────────────
+# Django no longer calls the Telegram Bot API directly. Grant/revoke are
+# intent-level operations executed by the self-registered bot bridge.
+# (Discord branch above is unchanged.)
 
-    invite_link = TelegramBotService.create_one_time_invite_link(channel_id)
-    if not invite_link:
-        mapping = PlanChannelMapping.objects.filter(
-            platform="telegram", external_id=channel_id).first()
-        if mapping and mapping.name and mapping.name.startswith("@"):
-            invite_link = f"https://t.me/{mapping.name[1:]}"
-    if invite_link:
-        ok = TelegramBotService.send_message(
-            account.chat_id, f"🔓 Your subscription is active! Join here: {invite_link}")
-        note = f"Invite link: {invite_link}"
+from django.conf import settings as _settings
+from .services.provision_client import ProvisionClient
+
+
+def _control_channel_guard(channel_id):
+    control = str(getattr(_settings, "PROVISION_CONTROL_CHANNEL_ID", "") or "").strip()
+    if control and str(channel_id).strip() == control:
+        return "Control/admin channel is not a valid subscriber provisioning target"
+    return None
+
+
+def _tg_grant(user_id, account, target, channel_id):
+    tg_id = getattr(account, "telegram_user_id", None)
+    if not tg_id:
+        _audit(user_id, "grant", "telegram", channel_id, False,
+               "Missing telegram_user_id – cannot grant")
+        return
+    guard = _control_channel_guard(channel_id)
+    if guard:
+        _audit(user_id, "grant", "telegram", channel_id, False, guard)
+        return
+    result = ProvisionClient().grant(tg_id, channel_id)
+    if result.ok:
+        UserChannelAssignment.objects.get_or_create(
+            user_id=user_id, platform="telegram", external_id=channel_id,
+            defaults={"is_active": True})
+        _audit(user_id, "grant", "telegram", channel_id, True, "")
     else:
-        ok = TelegramBotService.send_message(
-            account.chat_id, "🔓 Your subscription is active! Please contact support.")
-        note = "support needed"
-    if ok:
-        UserChannelAssignment.objects.create(
-            user_id=user_id, platform="telegram", external_id=channel_id, is_active=True)
-    _audit(user_id, "grant", "telegram", channel_id, ok, "" if ok else note)
+        _audit(user_id, "grant", "telegram", channel_id, False,
+               f"{result.error_code}: {result.error_message}"[:500])
 
 
 def _tg_revoke(user_id, account, channel_id):
@@ -102,12 +111,19 @@ def _tg_revoke(user_id, account, channel_id):
         _audit(user_id, "revoke", "telegram", channel_id, False,
                "Missing telegram_user_id – cannot ban")
         return
-    ok, err = TelegramBotService.ban_user(channel_id, account.telegram_user_id)
-    if ok:
+    guard = _control_channel_guard(channel_id)
+    if guard:
+        _audit(user_id, "revoke", "telegram", channel_id, False, guard)
+        return
+    result = ProvisionClient().revoke(account.telegram_user_id, channel_id)
+    if result.ok:
         UserChannelAssignment.objects.filter(
             user_id=user_id, platform="telegram", external_id=channel_id,
             is_active=True).update(is_active=False, revoked_at=timezone.now())
-    _audit(user_id, "revoke", "telegram", channel_id, ok, "" if ok else err)
+        _audit(user_id, "revoke", "telegram", channel_id, True, "")
+    else:
+        _audit(user_id, "revoke", "telegram", channel_id, False,
+               f"{result.error_code}: {result.error_message}"[:500])
 
 
 def _reconcile_discord(user_id, account, target):

@@ -28,6 +28,29 @@ class BotConfig(models.Model):
     def __str__(self):
         return f"Bot Config (Telegram: {bool(self.telegram_bot_token)}, Discord: {bool(self.discord_bot_token)})"
 
+    @staticmethod
+    def _normalize_bot_username(value):
+        """Canonical form for Telegram bot usernames: bare handle, no '@'.
+
+        Telegram's getMe returns the bare username (e.g. 'inderjeetbot'),
+        and valid t.me deep links require that form.  Operators may enter
+        '@inderjeetbot' in the admin, so normalize at the model boundary —
+        every consumer then sees one canonical representation.
+        """
+        if not value:
+            return value
+        return value.strip().lstrip("@")
+
+    def clean(self):
+        super().clean()
+        self.telegram_bot_username = self._normalize_bot_username(
+            self.telegram_bot_username)
+
+    def save(self, *args, **kwargs):
+        self.telegram_bot_username = self._normalize_bot_username(
+            self.telegram_bot_username)
+        super().save(*args, **kwargs)
+
     @classmethod
     def get_config(cls):
         obj, _ = cls.objects.get_or_create(pk=1)
@@ -203,3 +226,17 @@ class TelegramVerificationToken(models.Model):
     class Meta:
         verbose_name = "Telegram Verification Token"
         verbose_name_plural = "Telegram Verification Tokens"
+
+# ─── Provision v1 hardening: control channel can never be a subscriber target ───
+from django.conf import settings as _provision_settings
+from django.core.exceptions import ValidationError
+
+
+def _plan_channel_mapping_clean(self):
+    control = str(getattr(_provision_settings, "PROVISION_CONTROL_CHANNEL_ID", "") or "").strip()
+    if control and str(self.external_id).strip() == control:
+        raise ValidationError({"external_id": "This is the control/admin channel — "
+                                               "it cannot be a subscriber target."})
+
+
+PlanChannelMapping.clean = _plan_channel_mapping_clean

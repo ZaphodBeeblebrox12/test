@@ -10,4 +10,6 @@ urlpatterns = [
     path('discord/connect/', views.discord_oauth_start, name='discord_connect'),
     path('discord/unlink/', views.unlink_discord, name='discord_unlink'),
     path('discord/callback/', views.discord_oauth_callback, name='discord_callback'),
+    path('api/register/', views.bot_register, name='bot_register'),
+    path('api/heartbeat/', views.bot_heartbeat, name='bot_heartbeat'),
 ]

@@ -48,6 +48,7 @@ urlpatterns = [
 
     # NEW: Bot integration app (Telegram deep link, Discord OAuth, channel sync)
     path("bot/", include("apps.bot_integration.urls")),
+    path("bot-admin/", include("apps.bot_integration.integration_admin")),
 ]
 
 if settings.DEBUG:

@@ -11,7 +11,7 @@ from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 
 from apps.subscriptions.models import Subscription
-from .tasks import reconcile_user_access_task
+from apps.jobs.enqueue import enqueue_reconcile
 
 logger = logging.getLogger(__name__)
 
@@ -29,4 +29,10 @@ def provision_on_transition(sender, instance, created, **kwargs):
     now_active = instance.status == "active" and instance.is_active
     was_active = getattr(instance, "_old_status", None) == "active"
     if (now_active and not was_active) or (was_active and not now_active):
-        reconcile_user_access_task.delay(instance.user_id)
+        # Durability without querying uncommitted state: the job insert runs
+        # after this save's transaction commits (same-transaction outbox is
+        # guaranteed at the service layer; here we avoid uncommitted-state
+        # races inside the signal).
+        from django.db import transaction as _tx
+        _tx.on_commit(lambda: enqueue_reconcile(
+            instance.user_id, reason="subscription_transition"))

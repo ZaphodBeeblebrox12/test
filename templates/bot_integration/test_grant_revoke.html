@@ -1,0 +1,21 @@
+{% extends "admin/base_site.html" %}{% block content %}
+<h1>Test Grant / Revoke (real operations — superuser only)</h1>
+<p style="background:#fff3cd;padding:8px 12px;border-radius:4px">These execute REAL Telegram operations
+through the production Provision v1 path. Control channel is refused.</p>
+<form method="post">{% csrf_token %}
+<table style="border-collapse:collapse">
+<tr><td style="padding:6px 12px;font-weight:bold">Telegram account</td>
+<td><select name="account_id">{% for a in accounts %}
+<option value="{{ a.pk }}">{{ a.user }} — {{ a.telegram_user_id }}</option>{% endfor %}</select></td></tr>
+<tr><td style="padding:6px 12px;font-weight:bold">Target channel</td>
+<td><select name="mapping_id">{% for m in mappings %}
+<option value="{{ m.pk }}">{{ m.plan }} → {{ m.external_id }} ({{ m.platform }})</option>{% endfor %}</select></td></tr>
+<tr><td style="padding:6px 12px;font-weight:bold">Operation</td>
+<td><label><input type="radio" name="operation" value="grant" checked> Grant</label>
+<label style="margin-left:16px"><input type="radio" name="operation" value="revoke"> Revoke</label></td></tr>
+<tr><td></td><td><button type="submit" style="padding:6px 20px">Execute</button></td></tr>
+</table>
+</form>
+{% if result %}<h2>Result</h2><pre style="background:#f4f4f4;padding:12px">{{ result }}</pre>{% endif %}
+<p><a href="../">← Back</a></p>
+{% endblock %}

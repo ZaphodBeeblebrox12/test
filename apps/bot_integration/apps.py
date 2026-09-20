@@ -7,3 +7,4 @@ class BotIntegrationConfig(AppConfig):
 
     def ready(self):
         import apps.bot_integration.signals
+        from . import integration_admin  # noqa: F401  (Provision v1 admin tooling)

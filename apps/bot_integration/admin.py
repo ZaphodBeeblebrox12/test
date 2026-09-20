@@ -15,7 +15,9 @@ class BotConfigAdmin(admin.ModelAdmin):
     list_display = ['id', 'is_active', 'telegram_bot_username', 'discord_bot_token_preview']
     fieldsets = (
         ('Telegram', {
-            'fields': ('telegram_bot_token', 'telegram_bot_username', 'telegram_webhook_url')
+            'fields': ('telegram_bot_token', 'telegram_bot_username', 'telegram_webhook_url'),
+            'description': 'Telegram username: enter WITHOUT the @ prefix '
+                           '(e.g. inderjeetbot). A leading @ is removed automatically.'
         }),
         ('Discord', {
             'fields': ('discord_bot_token', 'discord_guild_id', 'discord_client_id', 'discord_client_secret', 'discord_redirect_uri')

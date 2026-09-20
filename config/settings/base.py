@@ -57,6 +57,7 @@ LOCAL_APPS = [
     "apps.payments",
     "apps.growth",
     "apps.bot_integration",
+    "apps.jobs",
     "apps.public_views",
 ]
 
@@ -148,21 +149,10 @@ REST_FRAMEWORK = {
     ],
 }
 
-CELERY_BROKER_URL = env("REDIS_URL", default="redis://localhost:6379/0")
-CELERY_RESULT_BACKEND = env("REDIS_URL", default="redis://localhost:6379/0")
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-
-# Celery Beat Schedule
-from celery.schedules import crontab
-
-CELERY_BEAT_SCHEDULE = {
-    'update-maxmind-database': {
-        'task': 'apps.subscriptions.tasks.update_maxmind_database_task',
-        'schedule': crontab(hour=3, minute=0),  # Daily at 3 AM UTC
-    },
-}
+# ─── Background jobs: Django-native durable job system (apps.jobs) ──────────
+# No Celery/Redis.  Run the worker alongside the app:
+#     python manage.py runjobs --loop
+# The old Redis-backed Celery settings were removed; REDIS_URL is now unused.
 
 TELEGRAM_BOT_TOKEN = env("TELEGRAM_BOT_TOKEN", default="")
 TELEGRAM_BOT_USERNAME = env("TELEGRAM_BOT_USERNAME", default="")
@@ -282,3 +272,19 @@ MAXMIND_UPDATE_INTERVAL_DAYS = env("MAXMIND_UPDATE_INTERVAL_DAYS", default=7)
 
 LOGIN_REDIRECT_URL = "/dashboard/"
 ACCOUNT_LOGOUT_REDIRECT_URL = "/"
+
+# ─── Provision Contract v1 (Telegram bot bridge integration) ───────────────
+# Shared HMAC secret — MUST equal the bot's PROVISION_SHARED_SECRET. Env only.
+PROVISION_SHARED_SECRET = os.environ.get("PROVISION_SHARED_SECRET", "")
+# Bootstrap fallback ONLY, before the bot has registered itself.
+PROVISION_BOT_URL = os.environ.get("PROVISION_BOT_URL", "")
+PROVISION_FRESHNESS_SECONDS = int(os.environ.get("PROVISION_FRESHNESS_SECONDS", "90"))
+# Admin/control channel — NEVER a valid subscriber provisioning target.
+PROVISION_CONTROL_CHANNEL_ID = os.environ.get(
+    "TELEGRAM_CONTROL_CHANNEL_ID",
+    os.environ.get("PROVISION_CONTROL_CHANNEL_ID", ""),
+)
+PROVISION_TIMEOUT = float(os.environ.get("PROVISION_TIMEOUT", "10"))
+
+# Periodic access sweep is enqueued by the jobs worker (apps.jobs);
+# see apps/jobs/handlers.py::schedule_periodic / the "sweep" job kind.
