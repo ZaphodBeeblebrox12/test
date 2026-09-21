@@ -37,12 +37,6 @@ def activate_paid_subscription(payment_intent) -> tuple[bool, object]:
         return False, existing
 
     interval_days = interval_days_for(payment_intent)
-    # G0: ONE authoritative referral-reward path.  The referral block is
-    # removed from here; reward completion is triggered below (after the
-    # subscription exists) via ReferralService.complete_referral_on_purchase,
-    # which is the existing, fraud-guarded (circular/self/duplicate) path that
-    # also records triggering_subscription provenance.  Keyed to the atomic
-    # claim above, so customer-return + webhook + renewals cannot double-reward.
     with transaction.atomic():
         subscription = Subscription.objects.create(
             user_id=payment_intent.user_id, plan=payment_intent.plan,
@@ -51,11 +45,10 @@ def activate_paid_subscription(payment_intent) -> tuple[bool, object]:
             status=Subscription.Status.ACTIVE, is_active=True,
             started_at=timezone.now(),
             expires_at=timezone.now() + timedelta(days=interval_days),
-            price_cents=payment_intent.amount,          # final (post-discount)
+            price_cents=payment_intent.amount,
             price_currency=payment_intent.currency,
             payment_provider=payment_intent.provider,
             pricing_country=payment_intent.country,
-            # G4 promotional provenance: base -> discount -> final.
             base_price_cents=payment_intent.base_amount_cents,
             discount_cents=payment_intent.coupon_discount_cents,
             coupon_code=payment_intent.applied_coupon_code)
@@ -64,15 +57,20 @@ def activate_paid_subscription(payment_intent) -> tuple[bool, object]:
             event_type=SubscriptionHistory.EventType.CREATED,
             new_plan_id=payment_intent.plan_id,
             new_status=Subscription.Status.ACTIVE)
-        # G0/G4 AUDIT FIX: referral reward completes INSIDE the same atomic
-        # block so the subscription and the reward commit or roll back
-        # together (no active-subscription-with-lost-reward partial commit).
         from apps.growth.services.referrals import ReferralService
         ReferralService.complete_referral_on_purchase(
             user=subscription.user,
             purchase_amount_cents=payment_intent.amount,
             currency=payment_intent.currency,
             triggering_subscription=subscription,
+        )
+        from apps.growth.services.rewards import SubscriptionCreditService
+        SubscriptionCreditService.apply_credit_to_subscription(
+            user=subscription.user,
+            subscription=subscription,
+            plan_price_cents=(
+                payment_intent.base_amount_cents or payment_intent.amount),
+            plan_duration_days=interval_days,
         )
     from apps.events.models import record_event
     record_event(
@@ -84,23 +82,22 @@ def activate_paid_subscription(payment_intent) -> tuple[bool, object]:
                  "subscription_id": str(subscription.pk),
                  "amount": payment_intent.amount, "currency": payment_intent.currency},
     )
-    # G4: redeem the applied coupon exactly once (atomic, no over-redemption).
     if getattr(payment_intent, "applied_coupon_code", ""):
         from apps.promotions.models import Coupon
         from apps.promotions.services.coupons import redeem_coupon
         coupon = Coupon.objects.filter(
             code__iexact=payment_intent.applied_coupon_code).first()
         created = redeem_coupon(coupon=coupon, user=payment_intent.user,
-                      payment_intent=payment_intent, subscription=subscription,
-                      discount_cents=payment_intent.coupon_discount_cents,
-                      base_amount_cents=payment_intent.base_amount_cents,
-                      final_amount_cents=payment_intent.amount,
-                      currency=payment_intent.currency)
+                          payment_intent=payment_intent, subscription=subscription,
+                          discount_cents=payment_intent.coupon_discount_cents,
+                          base_amount_cents=payment_intent.base_amount_cents,
+                          final_amount_cents=payment_intent.amount,
+                          currency=payment_intent.currency)
         if created:
             from apps.promotions.models import CouponRedemption
             from django.utils import timezone as _tz
             CouponRedemption.objects.filter(
-                coupon=coupon, payment_intent=payment_intent).update(
+               coupon=coupon, payment_intent=payment_intent).update(
                     finalized=True, finalized_at=_tz.now())
 
     return True, subscription

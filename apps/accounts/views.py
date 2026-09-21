@@ -526,7 +526,7 @@ class UserActivityAPIView(APIView):
     def get(self, request):
         activities = AuditLog.objects.filter(
             user=request.user
-        ).order_by("-created_at")[:50]
+        ).order_by("-created_at", "-pk")[:50]
 
         data = [{
             "id": str(a.id),

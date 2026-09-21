@@ -277,6 +277,13 @@ class UserActivityLogTest(APITestCase):
         # Create some audit logs
         AuditLog.log('login_telegram', self.user, 'user', self.user.id)
         AuditLog.log('profile_updated', self.user, 'user', self.user.id)
+        # Pin distinct created_at values: auto_now_add stamps timezone.now()
+        # per save, and both logs can land in the same clock tick, which
+        # makes ORDER BY created_at non-deterministic.
+        t0 = timezone.now()
+        AuditLog.objects.filter(action='login_telegram').update(created_at=t0)
+        AuditLog.objects.filter(action='profile_updated').update(
+            created_at=t0 + timedelta(seconds=1))
 
     def test_get_activity_log(self):
         """Test getting user activity log."""

@@ -266,8 +266,10 @@ class SubscriptionHistoryInline(admin.TabularInline):
 
     def get_queryset(self, request):
         # SUMMARY: cap at the most recent 15 events, newest first, so the
-        # page stays usable for long-lived subscriptions.
-        return super().get_queryset(request).order_by("-created_at")[:15]
+        # page stays usable for long-lived subscriptions.  Ties on
+        # created_at (events within one clock tick) break by pk so the
+        # displayed order is deterministic.
+        return super().get_queryset(request).order_by("-created_at", "-pk")[:15]
 
     def has_add_permission(self, request, obj=None):
         return False

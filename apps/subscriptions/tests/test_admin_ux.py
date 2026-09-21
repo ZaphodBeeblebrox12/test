@@ -83,11 +83,20 @@ class HistoryInlineTests(TestCase):
         self.assertFalse(inline.can_delete)
 
     def test_history_capped_and_newest_first(self):
-        for i in range(20):
-            SubscriptionHistory.objects.create(
-                subscription=self.sub, user=self.user,
-                event_type=SubscriptionHistory.EventType.CREATED,
-                notes=f"evt {i}")
+        # Explicit increasing timestamps via update(): create() stamps
+        # auto_now_add with timezone.now() (a tight loop can give several
+        # rows the same created_at, making ORDER BY created_at
+        # non-deterministic), and bulk_create applies auto_now_add itself --
+        # so create normally, then pin each row's created_at with update(),
+        # which bypasses pre_save.
+        rows = [SubscriptionHistory.objects.create(
+            subscription=self.sub, user=self.user,
+            event_type=SubscriptionHistory.EventType.CREATED,
+            notes=f"evt {i}") for i in range(20)]
+        base = timezone.now() - datetime.timedelta(seconds=1)
+        for i, row in enumerate(rows):
+            SubscriptionHistory.objects.filter(pk=row.pk).update(
+                created_at=base + datetime.timedelta(microseconds=i))
         inline = SubscriptionHistoryInline(SubscriptionHistory, admin.site)
         qs = inline.get_queryset(authed_req())
         self.assertLessEqual(qs.count(), 15)

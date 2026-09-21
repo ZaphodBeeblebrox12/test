@@ -545,7 +545,7 @@ class SubscriptionCreditService:
 
         # Extend the subscription
         old_expires = subscription.expires_at
-        new_expires = old_expires + timedelta(days=extra_days)
+        new_expires = old_expires + timezone.timedelta(days=extra_days)
         subscription.expires_at = new_expires
         subscription.save(update_fields=["expires_at"])
 

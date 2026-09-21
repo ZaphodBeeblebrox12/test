@@ -1,29 +1,23 @@
-import datetime
-from datetime import timedelta
-
-"""
-Minimal payment views for simple payment flow.
-"""
+"""Minimal payment views for simple payment flow."""
 import logging
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.shortcuts import get_object_or_404, render
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.subscriptions.models import Plan, Subscription, SubscriptionHistory
+from apps.subscriptions.models import Plan, Subscription
 from apps.subscriptions.services import resolve_plan_price, get_pricing_country, split_resolved_price
 
 from . import providers
 from .models import PaymentIntent
+from .services import activate_paid_subscription
 
 from apps.growth.services.referrals import ReferralService
-from apps.growth.models import Referral
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +45,7 @@ def payment_start(request):
         interval = request.data.get("interval", "monthly")
     if not plan_id:
         return Response({"detail": "plan_id required"},
-                        status=status.HTTP_400_BAD_REQUEST)
+                       status=status.HTTP_400_BAD_REQUEST)
 
     if not plan_id:
         return Response({"detail": "plan_id is required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -72,14 +66,11 @@ def payment_start(request):
     country = get_pricing_country(request)
     provider = get_provider_for_country(country)
 
-    # G4: capture the immutable base catalog price before any discount.
     base_amount = resolved_price.price_cents
-    # ========== NEW: Apply referral discount ==========
     discount_info = ReferralService.get_checkout_discount(request.user, base_amount)
     final_amount = discount_info["final_amount_cents"]
     applied_referral = discount_info.get("referral")
 
-    # ========== G4: Apply coupon (after referral discount) ==========
     coupon_code = request.data.get("coupon_code") or request.GET.get("coupon_code", "")
     if coupon_code:
         from apps.promotions.services.coupons import apply_coupon, CouponError
@@ -89,7 +80,7 @@ def payment_start(request):
                 code=coupon_code, has_referral_discount=applied_referral is not None)
         except CouponError as exc:
             return Response({"detail": f"coupon: {exc.reason}"},
-                            status=status.HTTP_400_BAD_REQUEST)
+                           status=status.HTTP_400_BAD_REQUEST)
     else:
         applied_coupon, coupon_discount = None, 0
 
@@ -108,7 +99,7 @@ def payment_start(request):
             applied_referral_discount=applied_referral,
             applied_coupon_code=(applied_coupon.code if applied_coupon else ""),
             coupon_discount_cents=coupon_discount,
-            base_amount_cents=base_amount,  # pre-discount catalog price
+            base_amount_cents=base_amount,
         )
 
     success_url = f"{settings.SITE_BASE_URL}/confirm-page/{payment_intent.id}/"
@@ -119,7 +110,7 @@ def payment_start(request):
     except providers.ProviderError as exc:
         payment_intent.delete()
         return Response({"detail": f"payment provider error: {exc}"},
-                        status=status.HTTP_502_BAD_GATEWAY)
+                      status=status.HTTP_502_BAD_GATEWAY)
     payment_intent.provider_reference = checkout.provider_reference
     payment_intent.save(update_fields=["provider_reference"])
 
@@ -141,8 +132,11 @@ def payment_start(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def payment_confirm(request):
-    """Verify-first confirmation; the intent is claimed only after the
-    provider reports the payment paid. Never trust the browser alone."""
+    """Verify-first confirmation; delegates activation to the shared service.
+
+    The browser flow never claims the intent or creates subscription-side
+    effects itself — `activate_paid_subscription` is the single authoritative
+    activation path (also used by webhook processing)."""
     payment_intent_id = request.data.get("payment_intent_id")
     if not payment_intent_id:
         return Response({"detail": "payment_intent_id required"},
@@ -172,55 +166,23 @@ def payment_confirm(request):
             user_id=payment_intent.user_id,
             object_ref=f"payment:{payment_intent.pk}",
             payload={"payment_intent_id": str(payment_intent.pk),
-                     "amount": payment_intent.amount, "currency": payment_intent.currency},
+                     "amount": payment_intent.amount,
+                     "currency": payment_intent.currency},
         )
         return Response({"status": "failed",
                          "payment_intent_id": str(payment_intent.id)})
 
-    claimed = PaymentIntent.objects.filter(
-        pk=payment_intent.pk,
-        status=PaymentIntent.Status.PENDING).update(
-            status=PaymentIntent.Status.SUCCESS)
-    if not claimed:
-        return Response(_existing_result(request.user, payment_intent))
-
-    with transaction.atomic():
-        plan = payment_intent.plan
-        price_source = payment_intent.plan_price or payment_intent.geo_plan_price
-        interval = getattr(price_source, "interval", "monthly")
-        interval_days = {"monthly": 30, "quarterly": 90, "yearly": 365}.get(
-            interval, 30)
-        if payment_intent.applied_referral_discount:
-            referral = (Referral.objects.select_for_update()
-                        .filter(id=payment_intent.applied_referral_discount_id)
-                        .first())
-            if referral and not referral.discount_used:
-                referral.mark_reward(reward_user=request.user,
-                                     reward_reason="referral_reward")
-                SubscriptionCreditService().apply_credit_to_subscription(
-                    user=request.user, plan=plan, source="referral",
-                    metadata={"referral_id": str(referral.id)},
-                    plan_duration_days=interval_days)
-        subscription = Subscription.objects.create(
-            user=request.user, plan=plan,
-            plan_price=payment_intent.plan_price,
-            geo_plan_price=payment_intent.geo_plan_price,
-            status=Subscription.Status.ACTIVE, is_active=True,
-            started_at=timezone.now(),
-            expires_at=timezone.now() + timedelta(days=interval_days),
-            price_cents=payment_intent.amount,
-            price_currency=payment_intent.currency,
-            payment_provider=payment_intent.provider,
-            pricing_country=payment_intent.country)
-        SubscriptionHistory.objects.create(
-            subscription=subscription, user=request.user,
-            event_type=SubscriptionHistory.EventType.CREATED,
-            new_plan_id=plan.id, new_status=Subscription.Status.ACTIVE)
-
-    return Response({"status": "success",
-                     "subscription_id": str(subscription.id),
-                     "payment_intent_id": str(payment_intent.id),
-                     "expires_at": subscription.expires_at})
+    activated, subscription = activate_paid_subscription(payment_intent)
+    if subscription is None:
+        return Response({"status": "pending",
+                         "payment_intent_id": str(payment_intent.id)})
+    result = {"status": "success",
+              "subscription_id": str(subscription.id),
+              "payment_intent_id": str(payment_intent.id),
+              "expires_at": subscription.expires_at}
+    if not activated:
+        result["already_processed"] = True
+    return Response(result)
 
 
 def _existing_result(user, payment_intent):
@@ -267,27 +229,33 @@ class ConfirmPageView(APIView):
 
 
 def _confirm_response(request, pk):
-    intent = get_object_or_404(PaymentIntent, pk=pk, user=request.user)
-    """Provider return URL: minimal server-side verification, then result page."""
+    """Provider return URL: verify server-side, activate via the shared
+    service, then render the result page.
+
+    GET never flips a PaymentIntent to SUCCESS without the matching
+    subscription: activation flows exclusively through
+    `activate_paid_subscription`, which claims the intent and creates the
+    subscription in the same flow."""
     intent = get_object_or_404(PaymentIntent, pk=pk, user=request.user)
     result = {"status": "pending", "intent": intent}
     if intent.status == PaymentIntent.Status.SUCCESS:
-        result["status"] = "success"
+        subscription = Subscription.objects.filter(
+            user=request.user, plan=intent.plan, is_active=True).first()
+        if subscription is not None:
+            result["status"] = "success"
     else:
         try:
             verified = providers.verify_provider_payment(intent)
         except providers.ProviderError:
             verified = None
         if verified is True:
-            PaymentIntent.objects.filter(
-                pk=intent.pk, status=PaymentIntent.Status.PENDING).update(
-                    status=PaymentIntent.Status.SUCCESS)
-            intent.refresh_from_db()
-            result["status"] = "success" if (
-                intent.status == PaymentIntent.Status.SUCCESS) else "pending"
+            _activated, subscription = activate_paid_subscription(intent)
+            if subscription is not None:
+                result["status"] = "success"
         elif verified is False:
             PaymentIntent.objects.filter(
-                pk=intent.pk, status=PaymentIntent.Status.PENDING).update(
+                pk=intent.pk,
+                status=PaymentIntent.Status.PENDING).update(
                     status=PaymentIntent.Status.FAILED)
             result["status"] = "failed"
     return render(request, "payments/confirm.html", result)
