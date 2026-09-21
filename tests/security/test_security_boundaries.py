@@ -29,13 +29,13 @@ import apps.bot_integration.signals as _sig
 
 
 @pytest.fixture(autouse=True)
-def _no_celery_broker(monkeypatch):
-    """Subscription activation enqueues reconcile_user_access_task via Celery;
+def _no_enqueue_side_effects(monkeypatch):
+    """Subscription activation enqueues reconcile jobs via the durable-jobs queue;
     under test there is no broker. Scope the patch per-test with monkeypatch so
     it auto-reverts and cannot leak into other test modules. Tests the claim
     invariant, not the queue transport."""
-    monkeypatch.setattr(_sig, "reconcile_user_access_task",
-                        type("T", (), {"delay": staticmethod(lambda *a, **k: None)}))
+    monkeypatch.setattr(_sig, "enqueue_reconcile",
+                        lambda *a, **k: None)
 
 
 def make_user(username, **kw):

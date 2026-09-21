@@ -19,8 +19,16 @@ class IsRoleAdmin(permissions.BasePermission):
     """Require an authenticated user with role=ADMIN (the app's admin notion)."""
 
     def has_permission(self, request, view):
+        # ACCOUNTS AUDIT: a Django superuser/staff must also be able to use the
+        # operational admin endpoints (ban/approve); gating ONLY on role=ADMIN
+        # excluded the standard Django admin path.  Role=ADMIN OR elevated Django
+        # perms all grant access (BanUserView still refuses to ban an admin target).
         u = request.user
-        return bool(u and u.is_authenticated and getattr(u, "role", None) == User.Role.ADMIN)
+        return bool(
+            u and u.is_authenticated
+            and (getattr(u, "role", None) == User.Role.ADMIN
+                 or u.is_superuser or u.is_staff)
+        )
 
 
 class BanUserView(APIView):

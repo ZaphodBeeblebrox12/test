@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block content %}
+<h2>Payment {{ status }}</h2>
+{% if status == "success" %}<p>Your subscription is active.</p>
+{% elif status == "failed" %}<p>Payment failed. <a href="{% url 'checkout-page' intent.id %}">Try again</a>.</p>
+{% else %}<p>Payment pending — refresh shortly.</p>{% endif %}
+{% endblock %}

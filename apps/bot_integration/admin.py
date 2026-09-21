@@ -139,17 +139,46 @@ class UserChannelAssignmentAdmin(admin.ModelAdmin):
     list_filter = ['platform', 'is_active']
     raw_id_fields = ['user']
 
+    # Lifecycle-controlled fields are owned by reconciliation; admins must not
+    # hand-edit entitlement/timestamps (would desync from reconcile).
+    def get_readonly_fields(self, request, obj=None):
+        base = list(super().get_readonly_fields(request, obj))
+        for f in ("is_active", "last_invite_sent_at", "revoked_at"):
+            if f not in base:
+                base.append(f)
+        return base
+
 
 @admin.register(BotAccessAudit)
 class BotAccessAuditAdmin(admin.ModelAdmin):
+    # Access audit trail: fully read-only, never add/change/delete.
     list_display = ['user', 'action', 'platform', 'status', 'created_at']
     list_filter = ['action', 'platform', 'status']
     raw_id_fields = ['user']
-    readonly_fields = ['created_at']
+    readonly_fields = [f.name for f in BotAccessAudit._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(TelegramVerificationToken)
 class TelegramVerificationTokenAdmin(admin.ModelAdmin):
+    # Issued verification tokens: read-only audit, never add/change/delete.
     list_display = ['user', 'token', 'created_at', 'expires_at']
     raw_id_fields = ['user']
-    readonly_fields = ['token', 'created_at', 'expires_at']
+    readonly_fields = [f.name for f in TelegramVerificationToken._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

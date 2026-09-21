@@ -400,7 +400,8 @@
                 {% if tier_data.plan.tier == 'free' %}
                 <a href="{% url 'account_signup' %}" class="plan-cta">Get Started Free</a>
                 {% else %}
-                <a href="{% url 'account_signup' %}" class="plan-cta">
+                <a href="#" class="plan-cta" data-plan="{{ tier_data.plan.id }}"
+                   onclick="selectPlanAndSignup('{{ tier_data.plan.id }}'); return false;">
                     {% if tier_data.trial %}
                         Start {{ tier_data.trial.trial_duration_days }}-Day Trial
                     {% else %}
@@ -423,9 +424,28 @@
     </section>
 
     <script>
+    // Track the selected billing interval per plan so the CTA carries it
+    // through signup and into payment_start.
+    const selectedInterval = {};
+
+    function selectPlanAndSignup(planId) {
+        const interval = selectedInterval[planId] || 'monthly';
+        // G5: carry UTM attribution params through signup so the first touch
+        // is captured.  (?utm_* present in the current URL are forwarded.)
+        const params = new URLSearchParams(window.location.search);
+        let utm = '';
+        ['utm_source','utm_medium','utm_campaign','utm_term','utm_content'].forEach(function(k){
+            if (params.get(k)) { utm += '&' + k + '=' + encodeURIComponent(params.get(k)); }
+        });
+        const next = '/start/?plan_id=' + encodeURIComponent(planId)
+            + '&interval=' + encodeURIComponent(interval);
+        window.location = '{% url 'account_signup' %}?next=' + encodeURIComponent(next) + utm;
+    }
+
     function switchBilling(planId, interval) {
         // Update tabs
         const tabs = document.querySelectorAll(`[data-plan="${planId}"] .tab-btn`);
+        selectedInterval[planId] = interval;
         tabs.forEach(tab => {
             tab.classList.remove('active');
             if (tab.dataset.interval === interval) {

@@ -7,6 +7,8 @@ import logging
 from django.utils import timezone
 from django.core.exceptions import PermissionDenied
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
@@ -20,6 +22,7 @@ from .serializers import (
     GiftSubscriptionSerializer, UpgradeHistorySerializer
 )
 from .services import (
+    cancel_subscription,
     resolve_plan_price,
     get_pricing_country,
     get_region_for_country,
@@ -82,7 +85,10 @@ def plan_list_geo(request):
 
         try:
             # FIXED: Pass interval (default 'monthly') to resolve_plan_price
-            price_obj = resolve_plan_price(plan, "monthly", request)
+            interval = request.GET.get("interval", "monthly")
+            if interval not in [c[0] for c in PlanPrice.Interval.choices]:
+                interval = "monthly"
+            price_obj = resolve_plan_price(plan, interval, request)
             plan_data["price_cents"] = price_obj.price_cents
             plan_data["currency"] = price_obj.currency
             plan_data["price_display"] = format_price(price_obj.price_cents, price_obj.currency)
@@ -228,6 +234,18 @@ def purchase_plan_view(request):
                 status=status.HTTP_403_FORBIDDEN
             )
 
+    if not plan.is_trial:
+        # PAID plans must go through the verified payment flow: the API
+        # response carries the payment start URL; the client POSTs there to
+        # create the PaymentIntent and provider checkout.  Never activate a
+        # paid subscription from this endpoint.
+        from django.urls import reverse
+        return Response({
+            "requires_payment": True,
+            "plan_id": str(plan.id),
+            "payment_start_url": reverse("payment-start"),
+        }, status=status.HTTP_402_PAYMENT_REQUIRED)
+
     try:
         subscription = purchase_plan(request.user, plan, request)
         serializer = SubscriptionSerializer(subscription)
@@ -356,3 +374,50 @@ def my_trial_usage(request):
         "total_trials_available": trial_plans.count(),
         "trials_used": sum(1 for u in usage_data if u["already_used"]),
     })
+
+class CancelSubscriptionView(APIView):
+    """POST /subscriptions/cancel/ — cancel the caller's ACTIVE subscription.
+
+    Semantics (see services.cancel_subscription): access ends IMMEDIATELY;
+    repeated calls are idempotent no-ops; no active subscription -> 404.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        # Idempotent cancel: look at the user's LATEST subscription whatever
+        # its status.  ACTIVE -> cancel now.  CANCELED -> already done (200,
+        # no duplicate history/reconcile).  EXPIRED -> gone (409).  None -> 404.
+        subscription = Subscription.objects.filter(
+            user=request.user).order_by("-created_at").first()
+        if subscription is None:
+            return Response(
+                {"detail": "No subscription to cancel."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if subscription.status == Subscription.Status.CANCELED:
+            return Response({
+                "status": "canceled",
+                "subscription_id": str(subscription.id),
+                "already_processed": True,
+            })
+        if subscription.status != Subscription.Status.ACTIVE:
+            return Response({
+                "status": subscription.status,
+                "subscription_id": str(subscription.id),
+                "detail": "Subscription is not active.",
+            }, status=status.HTTP_409_CONFLICT)
+        if cancel_subscription(subscription, actor="user"):
+            subscription.refresh_from_db()
+            return Response({
+                "status": "canceled",
+                "subscription_id": str(subscription.id),
+                "canceled_at": subscription.canceled_at,
+            })
+        # Lost a concurrent race: another request canceled it first.
+        subscription.refresh_from_db()
+        return Response({
+            "status": subscription.status,
+            "subscription_id": str(subscription.id),
+            "already_processed": True,
+        })

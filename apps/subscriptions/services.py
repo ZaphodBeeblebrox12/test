@@ -5,6 +5,8 @@ import uuid
 from typing import Optional, Dict, Any
 
 from django.utils import timezone
+
+from apps.events.models import record_event
 from django.conf import settings
 from django.db import transaction
 from django.core.exceptions import PermissionDenied
@@ -169,6 +171,10 @@ def purchase_plan(user, plan, request=None):
     """Create a subscription for the user (handles both regular and trial plans)."""
     from datetime import timedelta
 
+    if not plan.is_trial:
+        raise PermissionDenied(
+            "Paid plans must be purchased through the payment flow.")
+
     # Check trial usage if it's a trial plan
     if plan.is_trial:
         if has_user_used_trial(user, plan):
@@ -178,12 +184,13 @@ def purchase_plan(user, plan, request=None):
         if not get_geo_price_for_trial(plan, country):
             raise PermissionDenied("This trial is not available in your region.")
 
-    # Determine expiry
+    # Determine expiry (PAID plans never reach this -- they are routed to the
+    # payment flow by purchase_plan_view; see the guard there.)
     if plan.is_trial:
         expires_at = timezone.now() + timedelta(days=plan.trial_duration_days)
     else:
-        # For paid plans, you would integrate with payment provider here
-        expires_at = timezone.now() + timedelta(days=30)  # Default monthly
+        raise PermissionDenied(
+            "Paid plans must be purchased through the payment flow.")
 
     # Get pricing country/region for record keeping
     pricing_country = get_pricing_country(request) if request else None
@@ -226,6 +233,15 @@ def purchase_plan(user, plan, request=None):
         new_status=subscription.status,
         notes=f"{'Trial' if plan.is_trial else 'Subscription'} started"
     )
+    if plan.is_trial:
+        record_event(
+            "trial.started",
+            dedupe_key=f"trial.started:{subscription.pk}",
+            user_id=user.id,
+            object_ref=f"subscription:{subscription.pk}",
+            payload={"subscription_id": str(subscription.pk),
+                     "trial_duration_days": plan.trial_duration_days},
+        )
 
     return subscription
 
@@ -418,3 +434,172 @@ def expire_trial(subscription: Subscription):
         user=subscription.user,
         metadata={"trial_ended": True}
     )
+
+# ---------------------------------------------------------------------------
+# P2: subscription lifecycle — expiry enforcement + user cancellation
+#
+# Both operations use an ATOMIC CONDITIONAL UPDATE as the single claim:
+#   UPDATE subscription SET status=..., is_active=False
+#     WHERE id=<pk> AND is_active AND status='active' [AND expires_at <= now]
+# Exactly one concurrent caller wins (rows-affected == 1); everyone else sees
+# 0 and writes nothing.  History + reconcile enqueue therefore happen at most
+# once per subscription.  Instance .save() is deliberately NOT used: it cannot
+# provide this guarantee, and the queryset UPDATE intentionally bypasses the
+# post_save signal (reconcile is enqueued EXPLICITLY below, outbox-style).
+# ---------------------------------------------------------------------------
+
+
+def expire_subscription(subscription, now=None):
+    """Expire ONE subscription whose expires_at has passed.
+
+    Returns True if this call performed the expiry, False otherwise
+    (not expired yet, or already expired/canceled by an earlier run).
+    Idempotent and safe under concurrent/repeated execution.
+    """
+    from apps.jobs.enqueue import enqueue_reconcile
+
+    now = now or timezone.now()
+    claimed = Subscription.objects.filter(
+        pk=subscription.pk,
+        is_active=True,
+        status=Subscription.Status.ACTIVE,
+        expires_at__isnull=False,
+        expires_at__lte=now,
+    ).update(status=Subscription.Status.EXPIRED, is_active=False)
+    if not claimed:
+        return False
+    # Claim won: write history + schedule reconciliation exactly once.
+    with transaction.atomic():
+        SubscriptionHistory.objects.create(
+            subscription_id=subscription.pk,
+            user_id=subscription.user_id,
+            event_type=SubscriptionHistory.EventType.EXPIRED,
+            previous_status=Subscription.Status.ACTIVE,
+            new_status=Subscription.Status.EXPIRED,
+            notes="Subscription expired (expires_at reached).",
+        )
+    record_event(
+        "subscription.expired",
+        dedupe_key=f"subscription.expired:{subscription.pk}",
+        user_id=subscription.user_id,
+        object_ref=f"subscription:{subscription.pk}",
+        payload={"subscription_id": str(subscription.pk), "expires_at": subscription.expires_at.isoformat() if subscription.expires_at else None},
+    )
+    # Entitlement source-of-truth is now inactive -> revoke downstream access.
+    enqueue_reconcile(subscription.user_id, reason="subscription_expired")
+    return True
+
+
+def expire_due_subscriptions(now=None):
+    """Expire every active subscription whose expires_at has passed.
+
+    Sweeper entry point for the durable-jobs worker (kind 'subscription_expiry').
+    Returns the number of subscriptions expired by THIS run.  Safe to run
+    repeatedly and from multiple workers: per-row conditional claims prevent
+    double expiry, and a replacement subscription (later expires_at) is never
+    touched because the filter is per-row on its own expires_at.
+    """
+    now = now or timezone.now()
+    due = Subscription.objects.filter(
+        is_active=True,
+        status=Subscription.Status.ACTIVE,
+        expires_at__isnull=False,
+        expires_at__lte=now,
+    ).order_by("pk")
+    count = 0
+    for sub in due.iterator():
+        if expire_subscription(sub, now=now):
+            count += 1
+    return count
+
+
+def cancel_subscription(subscription, now=None, actor="user"):
+    """Cancel an ACTIVE subscription: access ends IMMEDIATELY.
+
+    Chosen semantics (no provider subscriptions/renewals exist yet):
+      - status  -> CANCELED, is_active -> False, canceled_at -> now
+      - access ends NOW (not at expires_at): nothing in the system would
+        later flip is_active, so deferred cancellation would silently keep
+        granting entitlement past the user's request.
+      - exactly one SubscriptionHistory(CANCELED) per subscription
+      - Telegram reconciliation is enqueued to revoke downstream access
+      - idempotent: repeating the call on an already canceled/expired
+        subscription is a no-op returning False.
+    """
+    from apps.jobs.enqueue import enqueue_reconcile
+
+    now = now or timezone.now()
+    claimed = Subscription.objects.filter(
+        pk=subscription.pk,
+        is_active=True,
+        status=Subscription.Status.ACTIVE,
+    ).update(status=Subscription.Status.CANCELED,
+             is_active=False,
+             canceled_at=now)
+    if not claimed:
+        return False
+    with transaction.atomic():
+        SubscriptionHistory.objects.create(
+            subscription_id=subscription.pk,
+            user_id=subscription.user_id,
+            event_type=SubscriptionHistory.EventType.CANCELED,
+            previous_status=Subscription.Status.ACTIVE,
+            new_status=Subscription.Status.CANCELED,
+            notes=f"Subscription canceled by {actor}.",
+        )
+    record_event(
+        "subscription.canceled",
+        dedupe_key=f"subscription.canceled:{subscription.pk}:{actor}",
+        user_id=subscription.user_id,
+        object_ref=f"subscription:{subscription.pk}",
+        payload={"subscription_id": str(subscription.pk), "actor": actor},
+    )
+    enqueue_reconcile(subscription.user_id, reason="subscription_canceled")
+    return True
+
+
+def extend_subscription(subscription, days, actor="admin"):
+    """Extend an ACTIVE subscription's entitlement by `days`, from TODAY.
+
+    Fills the small operational gap left by cancel/expire/grant.  No new
+    payment is created and no PaymentIntent is touched -- this is an admin
+    entitlement extension, not a purchase.  Uses the same atomic conditional
+    claim as expire/cancel so it is idempotent and race-safe.  Records the
+    extension with the EXISTING SubscriptionHistory.EventType.RENEWED
+    ("Renewed"), which is the semantically correct event for extending an
+    entitlement period without a new payment (the audit model has no separate
+    "extended" event, and inventing one would break future reporting).
+
+    Only ACTIVE subscriptions can be extended; canceled/expired rows are left
+    untouched (returns False).  The plan/price/payment snapshot is unchanged.
+    """
+    from apps.jobs.enqueue import enqueue_reconcile
+
+    new_expiry = timezone.now() + timezone.timedelta(days=days)
+    claimed = Subscription.objects.filter(
+        pk=subscription.pk,
+        is_active=True,
+        status=Subscription.Status.ACTIVE,
+    ).update(expires_at=new_expiry)
+    if not claimed:
+        return False
+    with transaction.atomic():
+        SubscriptionHistory.objects.create(
+            subscription_id=subscription.pk,
+            user_id=subscription.user_id,
+            event_type=SubscriptionHistory.EventType.RENEWED,
+            previous_status=Subscription.Status.ACTIVE,
+            new_status=Subscription.Status.ACTIVE,
+            notes=f"Subscription extended by {days} day(s) by {actor}.",
+        )
+    # Entitlement unchanged (still active) but reconcile is cheap/idempotent;
+    # enqueue so any access drift is healed.
+    record_event(
+        "renewal.completed",
+        dedupe_key=f"renewal.completed:{subscription.pk}:{subscription.expires_at.isoformat()}",
+        user_id=subscription.user_id,
+        object_ref=f"subscription:{subscription.pk}",
+        payload={"subscription_id": str(subscription.pk), "days": days},
+    )
+    enqueue_reconcile(subscription.user_id, reason="subscription_extended")
+    return True

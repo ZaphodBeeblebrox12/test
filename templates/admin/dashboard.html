@@ -1,0 +1,50 @@
+{% load i18n %}
+{% if subscriptions or payments or telegram or jobs %}
+<div style="margin:0 0 24px; padding:18px 20px; background:#f6f8f9; border:1px solid #d5dce1; border-radius:4px;">
+  <h2 style="margin:0 0 4px; font-size:15px; color:#2b3a42;">Operational overview</h2>
+  <p style="margin:0 0 14px; font-size:12px; color:#6a7a84;">Live counts from existing data. Links open the filtered changelist.</p>
+
+  {% if subscriptions %}
+  <div style="margin-bottom:16px;">
+    <h3 style="margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#417690;">Subscriptions</h3>
+    <div style="display:flex; gap:18px; flex-wrap:wrap; font-size:13px;">
+      <span><strong>{{ subscriptions.active }}</strong> active</span>
+      <span><a href="{{ subscriptions.links.expiring_soon }}"><strong style="color:#b26a00;">{{ subscriptions.expiring_soon }}</strong> expiring in 7d</a></span>
+      <span><strong style="color:#b33;">{{ subscriptions.recently_expired }}</strong> expired (7d)</span>
+      <span><strong style="color:#b33;">{{ subscriptions.recently_canceled }}</strong> canceled (7d)</span>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if payments %}
+  <div style="margin-bottom:16px;">
+    <h3 style="margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#417690;">Payments</h3>
+    <div style="display:flex; gap:18px; flex-wrap:wrap; font-size:13px;">
+      <span><a href="{{ payments.links.pending }}"><strong style="color:#b26a00;">{{ payments.pending }}</strong> pending</a></span>
+      <span><a href="{{ payments.links.failed }}"><strong style="color:#b33;">{{ payments.failed }}</strong> failed</a></span>
+      <span><strong style="color:#2e7d32;">{{ payments.recent_success }}</strong> succeeded (7d)</span>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if telegram %}
+  <div style="margin-bottom:16px;">
+    <h3 style="margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#417690;">Telegram / access</h3>
+    <div style="display:flex; gap:18px; flex-wrap:wrap; font-size:13px;">
+      <span><a href="{{ telegram.links.failed }}"><strong style="color:#b33;">{{ telegram.recent_failed }}</strong> failed ops (7d)</a></span>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if jobs %}
+  <div style="margin-bottom:16px;">
+    <h3 style="margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#417690;">Jobs</h3>
+    <div style="display:flex; gap:18px; flex-wrap:wrap; font-size:13px;">
+      <span><strong>{{ jobs.pending }}</strong> pending</span>
+      <span><a href="{{ jobs.links.failed }}"><strong style="color:#b33;">{{ jobs.failed }}</strong> failed (7d)</a></span>
+      <span><strong style="color:#b26a00;">{{ jobs.stalled }}</strong> stalled (3+ attempts)</span>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endif %}

@@ -18,4 +18,4 @@ def update_maxmind_database_task():
     except Exception as e:
         logger.exception(f"MaxMind database update error: {e}")
         # Optional: retry once after a delay
-        raise self.retry(exc=e, countdown=3600)
+        logger.warning("maxmind update failed; will retry on next scheduled run: %s", e)

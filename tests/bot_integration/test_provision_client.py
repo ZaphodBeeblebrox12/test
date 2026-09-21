@@ -1,4 +1,11 @@
-"""Django side of provision contract v1: client behavior + reconcile transport."""
+"""Django side of Provision Contract v1: client behavior + reconcile transport.
+
+Rewritten against the CURRENT client API (ProvisionResult with
+ok/retryable/error_code; X-Bot-* HMAC signing; /provision/v1/access grant &
+revoke). The previous generation of this file imported exception classes and
+used grant/revoke signatures that no longer exist in
+apps.bot_integration.services.provision_client.
+"""
 import hashlib
 import hmac
 import json
@@ -7,179 +14,218 @@ from unittest import mock
 import pytest
 import requests
 
-# Subscription activation enqueues reconcile via Celery; under test there is no
-# broker. Mirror the existing project convention (see apps/bot_integration/
-# tests/test_reconcile.py): run reconcile synchronously in-process.
-import apps.bot_integration.signals as _sig
-from apps.bot_integration import reconcile as _reconcile_mod
-_sig.reconcile_user_access_task = type(
-    "T", (), {"delay": staticmethod(
-        lambda uid: _reconcile_mod.reconcile_user_access(uid))})
-
+from apps.bot_integration.models import (
+    BotAccessAudit, PlanChannelMapping, TelegramAccount, UserChannelAssignment)
 from apps.bot_integration.services import provision_client
 from apps.bot_integration.services.provision_client import (
-    ProvisionNonRetryableError, ProvisionRetryableError)
+    BotOffline, ProvisionClient, ProvisionResult)
+from apps.subscriptions.models import Plan, Subscription
 
-URL = "http://bot:8000/provision/v1/access"
+pytestmark = pytest.mark.django_db
+
+BASE = "http://bridge:8010"
+TG = 123456789
+CH = "-100111222333"
 
 
-@pytest.fixture
-def _cfg(settings):
-    settings.PROVISION_BOT_URL = "http://bot:8000"
-    settings.PROVISION_SHARED_SECRET = "s3cret"
-
-
-def _resp(status, payload):
+def _resp(status_code, payload):
     r = mock.Mock()
-    r.status_code = status
+    r.status_code = status_code
     r.json = lambda: payload
-    r.text = json.dumps(payload)
     return r
 
 
-@pytest.mark.usefixtures("_cfg")
-class TestProvisionClient:
-    def _post_args(self, mp):
-        (call,) = mp.call_args_list
-        kwargs = call.kwargs or call[1]
-        return kwargs
+@pytest.fixture
+def provision_settings(settings):
+    settings.PROVISION_BOT_URL = BASE
+    settings.PROVISION_SHARED_SECRET = "test-secret"
+    return settings
 
-    def test_request_construction_and_schema(self):
-        with mock.patch("requests.post") as mp:
-            mp.return_value = _resp(200, {"request_id": "x", "status": "applied"})
-            provision_client.grant_access(123456789, "-100111222333", user_id=7)
-        kwargs = self._post_args(mp)
-        assert kwargs["timeout"] == (5, 15)
-        headers = kwargs["headers"]
+
+def _capture_post():
+    """Patch requests.post at the client module; returns (result_of_call, mock)."""
+    mp = mock.patch(
+        "apps.bot_integration.services.provision_client.requests.post")
+    return mp
+
+
+@pytest.mark.usefixtures("provision_settings")
+class TestProvisionClient:
+    def test_grant_payload_url_timeout_and_headers(self):
+        with _capture_post() as mp:
+            mp.return_value = _resp(200, {"status": "applied"})
+            res = ProvisionClient().grant(TG, CH, idempotency_key="op-1")
+        assert res.ok and res.status == "applied"
+        url = mp.call_args[0][0]
+        assert url == BASE + "/provision/v1/access"
+        kwargs = mp.call_args[1]
+        assert kwargs["timeout"] == 10.0  # default PROVISION_TIMEOUT
+        for h in ("X-Bot-Instance", "X-Bot-Timestamp", "X-Bot-Nonce",
+                  "X-Bot-Signature", "Content-Type"):
+            assert h in kwargs["headers"]
         body = json.loads(kwargs["data"].decode())
         assert body["operation"] == "grant"
-        assert body["telegram_user_id"] == 123456789
-        assert body["channel_id"] == "-100111222333"
-        assert body["idempotency_key"] == "7:-100111222333:grant"
-        assert set(body) == {"request_id", "idempotency_key", "operation",
-                             "telegram_user_id", "channel_id"}
-        assert "X-Request-Id" in headers and "X-Provision-Signature" in headers
+        assert body["telegram_user_id"] == TG
+        assert body["channel_id"] == CH
+        assert body["idempotency_key"] == "op-1"
+        assert "request_id" in body
 
-    def test_hmac_signature_correct(self):
-        with mock.patch("requests.post") as mp:
-            mp.return_value = _resp(200, {"request_id": "x", "status": "applied"})
-            provision_client.revoke_access(123, "-100999888777")
-        body = json.loads(self._post_args(mp)["data"].decode())
-        rid = body["request_id"]
-        expected = hmac.new(b"s3cret", rid.encode() + kwargs_data(mp),
-                            hashlib.sha256).hexdigest()
-        assert self._post_args(mp)["headers"]["X-Provision-Signature"] == expected
-
-    def test_timeout_is_retryable(self):
-        with mock.patch("requests.post",
-                        side_effect=requests.ConnectTimeout("boom")):
-            with pytest.raises(ProvisionRetryableError):
-                provision_client.grant_access(123, "-100111222333")
-
-    def test_200_applied_and_already_applied(self):
-        with mock.patch("requests.post") as mp:
+    def test_default_idempotency_key_format(self):
+        with _capture_post() as mp:
             mp.return_value = _resp(200, {"status": "applied"})
-            assert provision_client.grant_access(1, "-1001") == "applied"
+            ProvisionClient().grant(TG, CH)
+        body = json.loads(mp.call_args[1]["data"].decode())
+        assert body["idempotency_key"] == f"grant:{TG}:{CH}"
+
+    def test_revoke_payload(self):
+        with _capture_post() as mp:
+            mp.return_value = _resp(200, {"status": "applied"})
+            ProvisionClient().revoke(TG, CH)
+        body = json.loads(mp.call_args[1]["data"].decode())
+        assert body["operation"] == "revoke"
+        assert body["idempotency_key"] == f"revoke:{TG}:{CH}"
+
+    def test_signature_is_hmac_sha256_over_timestamp_nonce_body(self):
+        with _capture_post() as mp:
+            mp.return_value = _resp(200, {"status": "applied"})
+            ProvisionClient().grant(TG, CH)
+        headers = mp.call_args[1]["headers"]
+        body = mp.call_args[1]["data"]
+        ts, nonce = headers["X-Bot-Timestamp"], headers["X-Bot-Nonce"]
+        mac = hmac.new(b"test-secret", digestmod=hashlib.sha256)
+        mac.update(f"{ts}.{nonce}.".encode())
+        mac.update(body)
+        assert hmac.compare_digest(mac.hexdigest(), headers["X-Bot-Signature"])
+
+    def test_transport_error_is_retryable(self):
+        with _capture_post() as mp:
+            mp.side_effect = requests.ConnectTimeout("boom")
+            res = ProvisionClient().grant(TG, CH)
+        assert not res.ok and res.retryable
+        assert res.error_code == "transport_error"
+
+    def test_already_applied_is_ok(self):
+        with _capture_post() as mp:
             mp.return_value = _resp(200, {"status": "already_applied"})
-            assert provision_client.revoke_access(1, "-1001") == "already_applied"
+            res = ProvisionClient().grant(TG, CH)
+        assert res.ok and res.status == "already_applied"
 
-    def test_retryable_error(self):
-        with mock.patch("requests.post") as mp:
-            mp.return_value = _resp(503, {"status": "failed",
-                                          "error_code": "rate_limited",
-                                          "retryable": True})
-            with pytest.raises(ProvisionRetryableError) as ei:
-                provision_client.grant_access(1, "-1001")
-            assert ei.value.error_code == "rate_limited"
-
-    def test_non_retryable_error(self):
-        with mock.patch("requests.post") as mp:
-            mp.return_value = _resp(422, {"status": "failed",
-                                          "error_code": "user_blocked",
+    def test_4xx_honors_retryable_flag(self):
+        with _capture_post() as mp:
+            mp.return_value = _resp(403, {"status": "failed",
+                                          "error_code": "control_channel",
                                           "retryable": False})
-            with pytest.raises(ProvisionNonRetryableError) as ei:
-                provision_client.revoke_access(1, "-1001")
-            assert ei.value.error_code == "user_blocked"
+            res = ProvisionClient().grant(TG, CH)
+        assert not res.ok and not res.retryable
+        assert res.error_code == "control_channel"
 
-    def test_malformed_bot_response(self):
-        r = mock.Mock(); r.status_code = 200
-        r.json = lambda: (_ for _ in ()).throw(ValueError("no json"))
-        with mock.patch("requests.post", return_value=r):
-            with pytest.raises(ProvisionNonRetryableError) as ei:
-                provision_client.grant_access(1, "-1001")
-            assert ei.value.error_code == "malformed_response"
+    def test_5xx_defaults_retryable(self):
+        with _capture_post() as mp:
+            mp.return_value = _resp(500, {"status": "failed",
+                                          "error_code": "internal"})
+            res = ProvisionClient().grant(TG, CH)
+        assert not res.ok and res.retryable
+
+    def test_malformed_response_is_retryable(self):
+        bad = mock.Mock()
+        bad.status_code = 200
+        bad.json = mock.Mock(side_effect=ValueError("not json"))
+        with _capture_post() as mp:
+            mp.return_value = bad
+            res = ProvisionClient().grant(TG, CH)
+        assert not res.ok and res.retryable
+        assert res.error_code == "malformed_response"
+
+    def test_bot_offline_result_when_nothing_configured(self, settings):
+        settings.PROVISION_BOT_URL = ""
+        res = ProvisionClient().grant(TG, CH)
+        assert not res.ok and res.retryable
+        assert res.error_code == "bot_offline"
+
+    def test_bot_offline_exception_public(self, settings):
+        settings.PROVISION_BOT_URL = ""
+        with pytest.raises(BotOffline):
+            ProvisionClient()._resolve()
 
 
-def kwargs_data(mp):
-    (call,) = mp.call_args_list
-    return call.kwargs.get("data") or call[1]["data"]
+@pytest.fixture
+def entitled_user(db, django_user_model, provision_settings):
+    user = django_user_model.objects.create_user(username="member")
+    plan = Plan.objects.create(name="Pro", tier="pro", display_order=1)
+    PlanChannelMapping.objects.create(plan=plan, platform="telegram",
+                                      external_id="-1001")
+    Subscription.objects.create(user=user, plan=plan, status="active",
+                                is_active=True)
+    TelegramAccount.objects.create(user=user, telegram_user_id=TG,
+                                   chat_id=TG, is_active=True)
+    return user
 
 
-@pytest.mark.usefixtures("_cfg")
-@pytest.mark.django_db
+def _ok():
+    return ProvisionResult(ok=True, status="applied", source="fallback")
+
+
+def _client_double(grant=None, revoke=None):
+    instance = mock.Mock()
+    instance.grant = mock.Mock(return_value=grant or _ok())
+    instance.revoke = mock.Mock(return_value=revoke or _ok())
+    return mock.patch("apps.bot_integration.reconcile.ProvisionClient",
+                      return_value=instance), instance
+
+
+@pytest.mark.usefixtures("provision_settings")
 class TestReconcileProvisionTransport:
-    """reconcile routes through the contract client when configured."""
+    def test_active_subscription_grants_assignment(self, entitled_user):
+        patcher, client = _client_double()
+        with patcher:
+            provision_client.__name__  # touch import
+            from apps.bot_integration import reconcile
+            reconcile.reconcile_user_access(entitled_user.id)
+        assert client.grant.call_count == 1
+        a = UserChannelAssignment.objects.get(
+            user_id=entitled_user.id, platform="telegram", external_id="-1001")
+        assert a.is_active
+        assert BotAccessAudit.objects.filter(
+            user_id=entitled_user.id, action="grant", status="success").exists()
 
-    def _setup(self):
-        from django.contrib.auth import get_user_model
-        from apps.accounts.models import UserPreference
-        from apps.bot_integration.models import (
-            BotConfig, TelegramAccount, PlanChannelMapping, BotAccessAudit,
-            UserChannelAssignment)
-        from apps.subscriptions.models import Plan, PlanPrice
-        U = get_user_model()
-        u = U.objects.create(username="pv", email="pv@x.com")
-        UserPreference.objects.get_or_create(user=u)
-        BotConfig.objects.create(telegram_bot_token="t",
-                                 telegram_control_channel_id="-100CTRL")
-        plan = Plan.objects.create(name="PV", display_order=1, tier="pro")
-        PlanPrice.objects.create(plan=plan, interval="monthly", price_cents=100)
-        PlanChannelMapping.objects.create(plan=plan, platform="telegram",
-                                          external_id="-100TARGET")
-        TelegramAccount.objects.create(user=u, telegram_user_id=555,
-                                       chat_id=555, is_active=True)
-        return u, plan
+    def test_inactive_subscription_revokes_assignment(self, entitled_user):
+        from apps.bot_integration import reconcile
+        patcher, client = _client_double()
+        with patcher:
+            reconcile.reconcile_user_access(entitled_user.id)
+        Subscription.objects.filter(user_id=entitled_user.id).update(
+            is_active=False, status="canceled")
+        with patcher:
+            reconcile.reconcile_user_access(entitled_user.id)
+        a = UserChannelAssignment.objects.get(user_id=entitled_user.id,
+                                              platform="telegram")
+        assert not a.is_active and a.revoked_at is not None
+        assert BotAccessAudit.objects.filter(
+            user_id=entitled_user.id, action="revoke", status="success").exists()
 
-    def test_grant_via_provision_client(self):
-        from apps.subscriptions.models import Subscription
-        from apps.bot_integration.models import BotAccessAudit, UserChannelAssignment
-        u, plan = self._setup()
-        with mock.patch("apps.bot_integration.reconcile.provision_client.grant_access",
-                        return_value="applied") as g:
-            Subscription.objects.create(user=u, plan=plan, status="active",
-                                        is_active=True)
-            g.assert_called_once()
-            assert g.call_args.kwargs.get("user_id") == u.id or                 g.call_args[1].get("user_id") == u.id
-        assert UserChannelAssignment.objects.filter(
-            user=u, external_id="-100TARGET", is_active=True).exists()
-        assert BotAccessAudit.objects.filter(user=u, action="grant",
-                                             status="success").exists()
-
-    def test_revoke_via_provision_client(self):
-        from apps.subscriptions.models import Subscription
-        from apps.bot_integration.models import BotAccessAudit, UserChannelAssignment
-        u, plan = self._setup()
-        with mock.patch("apps.bot_integration.reconcile.provision_client.grant_access",
-                        return_value="applied"):
-            sub = Subscription.objects.create(user=u, plan=plan, status="active",
-                                              is_active=True)
-        with mock.patch("apps.bot_integration.reconcile.provision_client.revoke_access",
-                        return_value="applied") as rv:
-            sub.status = "expired"; sub.is_active = False; sub.save()
-            rv.assert_called_once()
+    def test_control_channel_guard_blocks_grant(self, entitled_user,
+                                                settings):
+        settings.PROVISION_CONTROL_CHANNEL_ID = "-1001"
+        patcher, client = _client_double()
+        from apps.bot_integration import reconcile
+        with patcher:
+            reconcile.reconcile_user_access(entitled_user.id)
+        assert client.grant.call_count == 0
         assert not UserChannelAssignment.objects.filter(
-            user=u, external_id="-100TARGET", is_active=True).exists()
-        assert BotAccessAudit.objects.filter(user=u, action="revoke",
-                                             status="success").exists()
+            user_id=entitled_user.id).exists()
+        assert BotAccessAudit.objects.filter(
+            user_id=entitled_user.id, action="grant", status="failed").exists()
 
-    def test_control_channel_mapping_rejected(self):
-        from django.core.exceptions import ValidationError
-        from apps.bot_integration.models import BotConfig, PlanChannelMapping
-        from apps.subscriptions.models import Plan
-        plan = Plan.objects.create(name="CC", display_order=2, tier="pro")
-        BotConfig.objects.create(telegram_bot_token="t",
-                                 telegram_control_channel_id="-100CTRL")
-        pcm = PlanChannelMapping(plan=plan, platform="telegram",
-                                 external_id="-100CTRL")
-        with pytest.raises(ValidationError):
-            pcm.full_clean()
+    def test_failed_grant_records_audit_without_assignment(self, entitled_user):
+        fail = ProvisionResult(ok=False, status="failed", retryable=False,
+                               error_code="user_unreachable",
+                               error_message="bot blocked")
+        patcher, client = _client_double(grant=fail)
+        from apps.bot_integration import reconcile
+        with patcher:
+            reconcile.reconcile_user_access(entitled_user.id)
+        assert not UserChannelAssignment.objects.filter(
+            user_id=entitled_user.id).exists()
+        audit = BotAccessAudit.objects.get(user_id=entitled_user.id,
+                                           action="grant")
+        assert audit.status == "failed" and "user_unreachable" in audit.error_message

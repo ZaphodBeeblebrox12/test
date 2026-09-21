@@ -5,3 +5,8 @@ django-allauth==0.57.0
 Pillow>=10.0.0
 whitenoise>=6.5.0
 python-telegram-bot>=20.0
+requests>=2.31.0
+geoip2>=4.7.0
+maxminddb>=2.2.0
+stripe>=8.0.0        # P1: hosted Stripe Checkout
+razorpay>=1.4.0      # P1: hosted Razorpay Checkout.js

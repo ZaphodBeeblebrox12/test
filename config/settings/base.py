@@ -28,7 +28,7 @@ ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 
 # Application definition
 DJANGO_APPS = [
-    "django.contrib.admin",
+    "apps.admin_config.DashboardAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -58,6 +58,13 @@ LOCAL_APPS = [
     "apps.growth",
     "apps.bot_integration",
     "apps.jobs",
+    "apps.events",
+    "apps.emailing",
+    "apps.campaigns",
+    "apps.automation",
+    "apps.promotions",
+    "apps.analytics",
+    "apps.advanced_growth",
     "apps.public_views",
 ]
 
@@ -288,3 +295,14 @@ PROVISION_TIMEOUT = float(os.environ.get("PROVISION_TIMEOUT", "10"))
 
 # Periodic access sweep is enqueued by the jobs worker (apps.jobs);
 # see apps/jobs/handlers.py::schedule_periodic / the "sweep" job kind.
+
+
+# --- Payment providers (P1 hosted checkout) ---------------------------------
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
+RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
+# Base URL used to build provider success/cancel redirects.
+SITE_BASE_URL = os.environ.get("SITE_BASE_URL", "http://127.0.0.1:8000")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")

@@ -142,6 +142,16 @@ class TelegramWebhookVerifyFlowTests(TestCase):
     """/start verify_<token> -> TelegramAccount -> reconcile (E2E-ish, mocked)."""
 
     def setUp(self):
+        # Pin the shared secret so the webhook's HMAC verification and the
+        # test's signed_headers() use the SAME value regardless of which
+        # settings module runs the suite (the webhook reads
+        # settings.PROVISION_SHARED_SECRET, which is env-driven outside
+        # config.settings.test_provision).  No production change; this only
+        # aligns the test fixture with the real verification mechanism.
+        from django.test import override_settings
+        override = override_settings(PROVISION_SHARED_SECRET=TEST_SECRET)
+        override.enable()
+        self.addCleanup(override.disable)
         make_config("inderjeetbot")
         self.user = make_user("hook1")
         self.token = TelegramVerificationToken.create_token(self.user)

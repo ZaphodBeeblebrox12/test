@@ -27,6 +27,8 @@ from ..models import (
     ReferralRewardLedger,
 )
 
+logger = logging.getLogger(__name__)
+
 class UserRewardBalance:
     """
     Central helper for querying a user's total reward balance.

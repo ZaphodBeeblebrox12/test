@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% block content %}
+<h2>Checkout — {{ plan.name }}</h2>
+<p>Total: {{ amount }} {{ currency }}</p>
+{% if canceled %}<p><strong>Payment canceled.</strong> You can try again below.</p>{% endif %}
+{% if intent.provider == "razorpay" %}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<button id="rzp-pay">Pay with Razorpay</button>
+<script>
+document.getElementById('rzp-pay').onclick = function () {
+  new Razorpay({
+    key: "{{ razorpay_key_id }}", order_id: "{{ razorpay_order_id }}",
+    amount: "{{ amount }}", currency: "{{ currency }}", name: "{{ plan.name }}",
+    handler: function () { window.location = "{% url 'confirm-page' intent.id %}"; }
+  }).open();
+};
+</script>
+{% else %}
+{% if stripe_checkout_url %}
+<script>window.location = "{{ stripe_checkout_url }}";</script>
+<p><a href="{{ stripe_checkout_url }}">Continue to secure payment</a></p>
+{% else %}<p>Checkout unavailable. <a href="{% url 'checkout-page' intent.id %}">Retry</a>.</p>{% endif %}
+{% endif %}
+{% endblock %}

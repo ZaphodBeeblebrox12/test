@@ -27,6 +27,8 @@ from ..models import (
     ReferralReward,
 )
 
+logger = logging.getLogger(__name__)
+
 # ============================================================================
 # REFERRAL SERVICE (Purchase Completion)
 # ============================================================================
@@ -286,8 +288,12 @@ class ReferralService:
             logger.debug(f"No pending referral found for user {user.id}")
             return None
         except Exception as e:
+            # AUDIT FIX: never swallow a reward-creation failure.  Re-raise so
+            # the caller's transaction rolls back -- a purchase must not leave
+            # a referral COMPLETED but rewardless (which the idempotent guard
+            # would then make unrecoverable).
             logger.error(f"Error completing referral for user {user.id}: {e}")
-            return None
+            raise
 
     @classmethod
     def get_referral_stats(cls, user: User) -> dict:

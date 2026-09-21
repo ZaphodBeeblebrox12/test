@@ -291,6 +291,10 @@ class Subscription(models.Model):
         related_name="subscriptions",
         verbose_name="resolved geo price"
     )
+    # G4: promotional provenance (base -> discount -> final actually purchased).
+    base_price_cents = models.PositiveIntegerField(default=0)
+    discount_cents = models.PositiveIntegerField(default=0)
+    coupon_code = models.CharField(max_length=50, blank=True, default="")
     price_cents = models.PositiveIntegerField(null=True, blank=True)
     price_currency = models.CharField(max_length=3, null=True, blank=True)
     status = models.CharField(

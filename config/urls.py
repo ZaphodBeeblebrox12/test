@@ -38,6 +38,7 @@ urlpatterns = [
     # Subscriptions API
     path("api/subscriptions/", include("apps.subscriptions.urls")),
     
+    path("api/analytics/", include("apps.analytics.urls")),
     path("api/", include("apps.api.urls")),
     path("api/notifications/", include("apps.notifications.urls")),
     path("", include("apps.core.urls")),

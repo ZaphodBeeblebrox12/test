@@ -15,6 +15,8 @@ urlpatterns = [
     # ========== GEO PRICING ENDPOINTS ==========
     path("plans/geo/", views.plan_list_geo, name="plan-list-geo"),
     path("plans/<uuid:plan_id>/geo/", views.plan_detail_geo, name="plan-detail-geo"),
+    path("purchase/", views.purchase_plan_view, name="purchase-plan"),
+    path("cancel/", views.CancelSubscriptionView.as_view(), name="cancel-subscription"),
 
     # ========== GIFT SUBSCRIPTIONS ==========
     path("gifts/create/", views.create_gift, name="create-gift"),

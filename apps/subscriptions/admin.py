@@ -2,14 +2,24 @@
 Admin configuration for subscriptions with unified Plan + Geo Pricing management
 and Trial Plan support.
 """
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.urls import reverse
+
+from apps.jobs.enqueue import enqueue_reconcile
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from django import forms
 from django.core.exceptions import ValidationError
 
+from apps.bot_integration.models import UserChannelAssignment
 from .models import (
     Plan, PlanPrice, Subscription, SubscriptionHistory,
     UpgradeHistory, GiftSubscription, GeoPlanPrice, UserTrialUsage
+)
+from .services import (
+    cancel_subscription,
+    expire_subscription,
+    extend_subscription,
 )
 
 
@@ -241,6 +251,38 @@ class GeoPlanPriceInline(admin.TabularInline):
 # =============================================================================
 # MAIN PLAN ADMIN (Unified Interface with Trial Support)
 # =============================================================================
+
+class SubscriptionHistoryInline(admin.TabularInline):
+    """Read-only chronological history on the Subscription detail page.
+
+    SUMMARY + entry point (not a database dump): capped at the most recent 15
+    events, newest first.  Fully read-only; no add/change/delete."""
+
+    model = SubscriptionHistory
+    extra = 0
+    can_delete = False
+    fields = ["event_badge", "previous_status", "new_status", "notes", "created_at"]
+    readonly_fields = fields
+
+    def get_queryset(self, request):
+        # SUMMARY: cap at the most recent 15 events, newest first, so the
+        # page stays usable for long-lived subscriptions.
+        return super().get_queryset(request).order_by("-created_at")[:15]
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def event_badge(self, obj):
+        color = {
+            SubscriptionHistory.EventType.CREATED: "#2e7d32",
+            SubscriptionHistory.EventType.CANCELED: "#b71c1c",
+            SubscriptionHistory.EventType.EXPIRED: "#e65100",
+            SubscriptionHistory.EventType.RENEWED: "#1565c0",
+        }.get(obj.event_type, "#555")
+        return format_html(
+            '<span style="color:{};font-weight:600">{}</span>', color, obj.event_type)
+    event_badge.short_description = "Event"
+
 
 @admin.register(Plan)
 class PlanAdmin(admin.ModelAdmin):
@@ -523,40 +565,236 @@ class SubscriptionAdmin(admin.ModelAdmin):
         "provider_subscription_id",
     ]
     list_select_related = ["user", "plan", "plan_price"]
+    autocomplete_fields = ["user", "plan"]
     readonly_fields = ["created_at", "updated_at"]
-    date_hierarchy = "created_at"
 
+    # P3c: investigation inlines (history + telegram access), both read-only.
+    inlines = [SubscriptionHistoryInline]
+
+    # P3c: clear investigation layout.  All snapshot/lifecycle fields are
+    # read-only (P3a); this only groups them for the operator.  "Snapshot"
+    # vs "current plan configuration" is kept distinct.
     fieldsets = (
-        ("User & Plan", {
-            "fields": ("user", "plan", "plan_price")
+        ("Identity", {
+            "fields": (("user_link", "plan_link", "id"),),
         }),
-        ("Status", {
-            "fields": ("status", "is_active")
+        ("Lifecycle", {
+            "fields": (("status_badge", "is_active"),
+                       ("started_at", "expires_at", "canceled_at")),
         }),
-        ("Dates", {
-            "fields": ("started_at", "expires_at", "canceled_at")
+        ("Pricing snapshot (as purchased — does not change with plan config)", {
+            "fields": (("price_cents", "price_currency"),
+                       ("plan_price", "geo_plan_price"),
+                       ("pricing_country", "pricing_region"),
+                       ("payment_provider", "provider_subscription_id")),
         }),
-        ("Payment Provider", {
-            "fields": ("payment_provider", "provider_subscription_id"),
-            "classes": ("collapse",)
+        ("Source", {
+            "fields": (("is_trial", "is_gift", "is_admin_grant"),
+                       ("gift_link",), ("granted_by", "gift_from")),
         }),
-        ("Geo Pricing", {
-            "fields": ("pricing_country", "pricing_region"),
-            "classes": ("collapse",)
+        ("Investigate", {
+            "fields": (("payments_link", "access_link"),
+                       ("access_state",), ("jobs_link",),),
         }),
-        ("Gift / Admin Grant / Trial", {
-            "fields": (
-                "is_gift", "gift_from", "gift_message",
-                "is_admin_grant", "granted_by", "grant_reason",
-                "is_trial",
-            ),
-            "classes": ("collapse",)
-        }),
-        ("Metadata", {
-            "fields": ("created_at", "updated_at"),
-            "classes": ("collapse",)
+        ("Audit", {
+            "fields": (("created_at", "updated_at"),),
         }),
     )
+
+    # --- P3b: safe lifecycle actions (orchestrate services; no duplication). -
+    actions = [
+        "cancel_subscriptions",
+        "expire_subscriptions",
+        "extend_subscriptions",
+        "reconcile_subscriptions",
+    ]
+
+    def _op_counts(self, results):
+        ok = sum(1 for r in results if r is True)
+        skipped = sum(1 for r in results if r is False)
+        failed = sum(1 for r in results if r == "error")
+        return ok, skipped, failed
+
+    @admin.action(description="Cancel selected subscriptions")
+    def cancel_subscriptions(self, request, queryset):
+        """Orchestrates services.cancel_subscription. Idempotent; skips
+        non-active rows.  Never mutates state directly."""
+        results = []
+        for sub in queryset.select_related("user"):
+            try:
+                results.append(cancel_subscription(sub, actor=request.user.username))
+            except Exception:
+                results.append("error")
+        ok, skipped, failed = self._op_counts(results)
+        self.message_user(
+            request,
+            f"{ok} subscription(s) canceled. "
+            + (f"{skipped} skipped (not active). " if skipped else "")
+            + (f"{failed} failed." if failed else ""),
+            messages.SUCCESS if not failed else messages.WARNING,
+        )
+
+    @admin.action(description="Expire selected subscriptions")
+    def expire_subscriptions(self, request, queryset):
+        """Orchestrates services.expire_subscription (atomic claim). Only
+        ACTIVE rows whose expires_at has passed are expired."""
+        results = []
+        for sub in queryset:
+            try:
+                results.append(expire_subscription(sub))
+            except Exception:
+                results.append("error")
+        ok, skipped, failed = self._op_counts(results)
+        self.message_user(
+            request,
+            f"{ok} subscription(s) expired. "
+            + (f"{skipped} skipped (not active or not yet due). " if skipped else "")
+            + (f"{failed} failed." if failed else ""),
+            messages.SUCCESS if not failed else messages.WARNING,
+        )
+
+    @admin.action(description="Extend selected subscriptions (+30 days)")
+    def extend_subscriptions(self, request, queryset):
+        """Orchestrates services.extend_subscription (+30 days). Only ACTIVE
+        rows; snapshot/plan/payment are unchanged. Idempotent."""
+        results = []
+        for sub in queryset:
+            try:
+                results.append(extend_subscription(
+                    sub, days=30, actor=request.user.username))
+            except Exception:
+                results.append("error")
+        ok, skipped, failed = self._op_counts(results)
+        self.message_user(
+            request,
+            f"{ok} subscription(s) extended by 30 days. "
+            + (f"{skipped} skipped (not active). " if skipped else "")
+            + (f"{failed} failed." if failed else ""),
+            messages.SUCCESS if not failed else messages.WARNING,
+        )
+
+    @admin.action(description="Reconcile Telegram access for selected")
+    def reconcile_subscriptions(self, request, queryset):
+        """Enqueues durable reconcile jobs (per user). Never calls Telegram
+        synchronously. enqueue_reconcile dedupes by reconcile:{user_id}."""
+        user_ids = set(queryset.values_list("user_id", flat=True))
+        for uid in user_ids:
+            enqueue_reconcile(uid, reason="admin_reconcile")
+        self.message_user(
+            request,
+            f"Reconciliation queued for {len(user_ids)} user(s).",
+            messages.SUCCESS,
+        )
+
+    # --- P3a: lifecycle & financial fields are READ-ONLY. ------------------
+    # Entitlement/status/payment-snapshot are owned by the P1/P2 services
+    # (verify->claim activation, expiry, cancellation), which also write
+    # SubscriptionHistory and enqueue Telegram reconciliation.  Ordinary
+    # Admin editing must NOT bypass that contract.  Lifecycle changes happen
+    # only through controlled admin actions (future P3b), never raw edits.
+    # admin-grant is preserved via its dedicated flow, not by editing these.
+    SUBSCRIPTION_READONLY = [
+        "user", "plan", "plan_price", "geo_plan_price", "status", "is_active",
+        "started_at", "canceled_at", "expires_at", "payment_provider",
+        "provider_subscription_id", "price_cents", "price_currency",
+        "pricing_country", "pricing_region", "is_gift", "gift_from",
+        "is_admin_grant", "granted_by",
+    ]
+
+    def access_state(self, obj):
+        """Read-only Telegram access summary for this subscription's user.
+
+        UserChannelAssignment has a USER FK (not Subscription), so this is
+        computed for the single parent object -- not a per-row inline.  One
+        query for the detail page; never edits entitlement state."""
+        if not obj or not obj.user_id:
+            return "\u2014"
+        rows = list(UserChannelAssignment.objects.filter(user_id=obj.user_id)[:10])
+        if not rows:
+            return "No channel assignments for this user."
+        parts = []
+        for r in rows:
+            state = "active" if r.is_active else f"revoked {r.revoked_at or ''}".strip()
+            parts.append(f"{r.platform} {r.external_id} \u2014 {state}")
+        return format_html("<br>".join(parts))
+    access_state.short_description = "Telegram access (user)"
+
+    def status_badge(self, obj):
+        color = {
+            Subscription.Status.ACTIVE: "#2e7d32",
+            Subscription.Status.CANCELED: "#b71c1c",
+            Subscription.Status.EXPIRED: "#e65100",
+            Subscription.Status.PENDING: "#6a1b9a",
+        }.get(obj.status, "#555")
+        return format_html(
+            '<span style="color:{};font-weight:700">{}</span>', color, obj.status)
+    status_badge.short_description = "Status"
+
+    # --- P3c: investigation navigation (no fabricated relationships). ------
+    # PaymentIntent has NO Subscription FK, and GiftSubscription has NO
+    # Subscription FK, so these are clearly-labeled navigation links to the
+    # *filtered changelists* -- not a claim of a direct "the payment" link.
+
+    def user_link(self, obj):
+        if not obj.user_id:
+            return "—"
+        url = reverse("admin:accounts_user_change", args=[obj.user_id])
+        return format_html('<a href="{}">{}</a>', url, obj.user)
+    user_link.short_description = "User"
+
+    def plan_link(self, obj):
+        if not obj.plan_id:
+            return "—"
+        url = reverse("admin:subscriptions_plan_change", args=[obj.plan_id])
+        return format_html('<a href="{}">{}</a>', url, obj.plan)
+    plan_link.short_description = "Plan"
+
+    def payments_link(self, obj):
+        if not obj.user_id:
+            return "—"
+        base = reverse("admin:payments_paymentintent_changelist")
+        return format_html(
+            '<a href="{}?user__id__exact={}">View payment intents for this user</a>',
+            base, obj.user_id)
+    payments_link.short_description = "Payment intents"
+
+    def access_link(self, obj):
+        if not obj.user_id:
+            return "—"
+        base = reverse("admin:bot_integration_userchannelassignment_changelist")
+        return format_html(
+            '<a href="{}?user__id__exact={}">View Telegram assignments</a>',
+            base, obj.user_id)
+    access_link.short_description = "Telegram access"
+
+    def jobs_link(self, obj):
+        if not obj.user_id:
+            return "—"
+        base = reverse("admin:jobs_job_changelist")
+        return format_html(
+            '<a href="{}?payload__icontains={}">View jobs for this user</a>',
+            base, str(obj.user_id))
+    jobs_link.short_description = "Jobs"
+
+    def gift_link(self, obj):
+        if not obj.is_gift:
+            return "—"
+        base = reverse("admin:subscriptions_giftsubscription_changelist")
+        return format_html('<a href="{}">View gifts for this plan</a>', base)
+    gift_link.short_description = "Gift"
+
+    def get_readonly_fields(self, request, obj=None):
+        base = list(super().get_readonly_fields(request, obj))
+        for f in self.SUBSCRIPTION_READONLY:
+            if f not in base:
+                base.append(f)
+        return base
+
+    def has_delete_permission(self, request, obj=None):
+        # Subscriptions are financial/entitlement history; never delete.
+        return False
+    date_hierarchy = "created_at"
+
 
     def source_display(self, obj: Subscription) -> str:
         if obj.is_trial:
@@ -659,7 +897,17 @@ class UpgradeHistoryAdmin(admin.ModelAdmin):
     ]
     search_fields = ["user__username", "from_plan__name", "to_plan__name"]
     list_select_related = ["user", "from_plan", "to_plan"]
-    readonly_fields = ["created_at"]
+    # Financial/audit record: fully read-only, never add/delete.
+    readonly_fields = [f.name for f in UpgradeHistory._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
     date_hierarchy = "created_at"
 
     def amount_due_dollars(self, obj: UpgradeHistory) -> str:

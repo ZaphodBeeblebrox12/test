@@ -436,3 +436,51 @@ class ReferralRewardLedger(models.Model):
 
     def __str__(self) -> str:
         return f"{self.transaction_type} {abs(self.amount_cents)/100:.2f} - {self.description[:50]}"
+
+
+# ---- G0/G1: marketing consent, preference, suppression ---------------------
+
+class MarketingPreference(models.Model):
+    """Per-user marketing preference.  Transactional is ALWAYS allowed and is
+    not gated by this -- it only governs MARKETING communication."""
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                related_name="marketing_preference")
+    marketing_opt_in = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user}: marketing={'on' if self.marketing_opt_in else 'off'}"
+
+
+class Suppression(models.Model):
+    """Global suppression (bounce, complaint, or unsubscribe).  Blocks ALL
+    marketing to the email regardless of per-user preference."""
+    class Reason(models.TextChoices):
+        UNSUBSCRIBE = "unsubscribe", "Unsubscribe"
+        BOUNCE = "bounce", "Bounce"
+        COMPLAINT = "complaint", "Complaint"
+
+    email = models.EmailField(db_index=True)
+    reason = models.CharField(max_length=20, choices=Reason.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("email", "reason")]
+
+    def __str__(self):
+        return f"{self.email}:{self.reason}"
+
+
+def can_send_marketing(user, email):
+    """Foundation gate for future campaign/lifecycle code.
+
+    Marketing requires: user opted in AND email not globally suppressed.
+    Transactional is always permitted and is NOT checked here.
+    """
+    from django.core.exceptions import ObjectDoesNotExist
+    if Suppression.objects.filter(email=email).exists():
+        return False
+    try:
+        return user.marketing_preference.marketing_opt_in
+    except ObjectDoesNotExist:
+        return False  # default opt-out

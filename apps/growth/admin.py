@@ -5,6 +5,8 @@ from django.contrib import admin
 from django.utils.html import format_html
 
 from .models import (
+    MarketingPreference,
+    Suppression,
     GiftInvite,
     PendingGiftClaim,
     ReferralCode,
@@ -155,3 +157,24 @@ class ReferralRewardLedgerAdmin(admin.ModelAdmin):
     def reward_short(self, obj):
         return f"{str(obj.reward.id)[:8]}..."
     reward_short.short_description = 'Reward'
+
+@admin.register(MarketingPreference)
+class MarketingPreferenceAdmin(admin.ModelAdmin):
+    list_display = ["user", "marketing_opt_in", "updated_at"]
+    search_fields = ["user__username"]
+    list_filter = ["marketing_opt_in"]
+
+
+@admin.register(Suppression)
+class SuppressionAdmin(admin.ModelAdmin):
+    """Global suppression: read-only, no delete (compliance evidence)."""
+    list_display = ["email", "reason", "created_at"]
+    list_filter = ["reason"]
+    search_fields = ["email"]
+    readonly_fields = [f.name for f in Suppression._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
