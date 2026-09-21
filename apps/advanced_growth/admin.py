@@ -87,17 +87,6 @@ class ExperimentConversionAdmin(ReadOnlyMixin, admin.ModelAdmin):
     list_display = ["assignment", "created_at"]
 
 
-@admin.register(Channel)
-class ChannelAdmin(admin.ModelAdmin):
-    list_display = ["kind", "name"]
-
-
-@admin.register(CampaignAction)
-class CampaignActionAdmin(admin.ModelAdmin):
-    list_display = ["campaign", "channel", "state"]
-    list_filter = ["channel", "state"]
-
-
 @admin.register(TelegramMarketingDelivery)
 class TelegramMarketingDeliveryAdmin(ReadOnlyMixin, admin.ModelAdmin):
     list_display = ["user", "state", "idempotency_key", "created_at"]
