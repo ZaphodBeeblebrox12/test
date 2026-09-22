@@ -1,0 +1,42 @@
+{% extends "emails/base_email.html" %}
+{% block preheader %}Your {{ plan_name }} payment of {{ amount_display }} could not be completed.{% endblock %}
+{% block header_tagline %}Payment update{% endblock %}
+{% block content %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td class="px" style="padding:34px 32px 6px 32px; border-top:4px solid #dc2626; border-radius:8px 8px 0 0;">
+      <div style="font-family:-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:20px; font-weight:700; color:#111827; letter-spacing:-0.3px;">Payment failed</div>
+      <div style="font-family:-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:13px; color:#6b7280; padding-top:3px;">No money was charged</div>
+    </td>
+  </tr>
+  <tr>
+    <td class="px" style="padding:18px 32px 8px 32px;">
+      <p style="margin:0; font-family:-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:14px; line-height:22px; color:#374151;">
+        Hi {{ username }}, we could not complete your payment for <strong>{{ plan_name }}</strong>.
+        You have <strong>not been charged</strong>. You can retry safely at any time.
+      </p>
+    </td>
+  </tr>
+  <tr>
+    <td class="px" style="padding:14px 32px 6px 32px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#fef2f2; border:1px solid #fee2e2; border-radius:6px;">
+        <tr><td style="padding:10px 20px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            {% include "emails/partials/detail_row.html" with label="Plan" value=plan_name %}
+            {% include "emails/partials/detail_row.html" with label="Amount" value=amount_display %}
+            {% if date_display %}{% include "emails/partials/detail_row.html" with label="Attempted" value=date_display %}{% endif %}
+          </table>
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td class="px" style="padding:16px 32px 30px 32px;">
+      {% include "emails/partials/button.html" with url=dashboard_url label="Retry payment" %}
+      <p style="margin:10px 0 0 0; text-align:center; font-family:-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:12px; line-height:18px; color:#9ca3af;">
+        If you keep seeing this, try a different payment method or contact support.
+      </p>
+    </td>
+  </tr>
+</table>
+{% endblock %}

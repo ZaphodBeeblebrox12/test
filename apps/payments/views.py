@@ -15,6 +15,7 @@ from apps.subscriptions.services import resolve_plan_price, get_pricing_country,
 
 from . import providers
 from .models import PaymentIntent
+from .notifications import notify_payment_failed
 from .services import activate_paid_subscription
 
 from apps.growth.services.referrals import ReferralService
@@ -155,20 +156,25 @@ def payment_confirm(request):
         return Response({"status": "pending",
                          "payment_intent_id": str(payment_intent.id)})
     if verified is False:
-        PaymentIntent.objects.filter(
+        # Claim PENDING->FAILED exactly once; notify the customer once. The
+        # conditional update is the idempotency guard: retries/re-polls of
+        # this endpoint cannot duplicate the notification.
+        marked = PaymentIntent.objects.filter(
             pk=payment_intent.pk,
             status=PaymentIntent.Status.PENDING).update(
                 status=PaymentIntent.Status.FAILED)
-        from apps.events.models import record_event
-        record_event(
-            "payment.failed",
-            dedupe_key=f"payment.failed:{payment_intent.pk}",
-            user_id=payment_intent.user_id,
-            object_ref=f"payment:{payment_intent.pk}",
-            payload={"payment_intent_id": str(payment_intent.pk),
-                     "amount": payment_intent.amount,
-                     "currency": payment_intent.currency},
-        )
+        if marked:
+            from apps.events.models import record_event
+            record_event(
+                "payment.failed",
+                dedupe_key=f"payment.failed:{payment_intent.pk}",
+                user_id=payment_intent.user_id,
+                object_ref=f"payment:{payment_intent.pk}",
+                payload={"payment_intent_id": str(payment_intent.pk),
+                         "amount": payment_intent.amount,
+                         "currency": payment_intent.currency},
+            )
+            transaction.on_commit(lambda: notify_payment_failed(payment_intent))
         return Response({"status": "failed",
                          "payment_intent_id": str(payment_intent.id)})
 
@@ -253,10 +259,13 @@ def _confirm_response(request, pk):
             if subscription is not None:
                 result["status"] = "success"
         elif verified is False:
-            PaymentIntent.objects.filter(
+            # Claim PENDING->FAILED exactly once; notify the customer once.
+            marked = PaymentIntent.objects.filter(
                 pk=intent.pk,
                 status=PaymentIntent.Status.PENDING).update(
                     status=PaymentIntent.Status.FAILED)
+            if marked:
+                transaction.on_commit(lambda: notify_payment_failed(intent))
             result["status"] = "failed"
     return render(request, "payments/confirm.html", result)
 
@@ -278,3 +287,64 @@ def payment_status(request, payment_intent_id):
         "created_at": payment_intent.created_at,
         "updated_at": payment_intent.updated_at
     })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def payment_history(request):
+    """Read-only billing history for the caller (GET /history/).
+
+    PaymentIntent is the source of truth — no shadow table. Each entry
+    carries its own refund rows and refund/chargeback state; the "resulting
+    subscription" block is derived from the caller's currently active
+    subscription for the same plan (safe derivation; nothing is written).
+    """
+    intents = (PaymentIntent.objects
+               .filter(user=request.user)
+               .select_related("plan", "applied_referral_discount")
+               .prefetch_related("refunds")
+               .order_by("-created_at")[:50])
+    active_by_plan = {
+        s.plan_id: s for s in Subscription.objects.filter(
+            user=request.user, status=Subscription.Status.ACTIVE, is_active=True)
+    }
+    data = []
+    for intent in intents:
+        subscription = active_by_plan.get(intent.plan_id)
+        data.append({
+            "id": str(intent.id),
+            "created_at": intent.created_at,
+            "plan": {"id": str(intent.plan_id), "name": intent.plan.name},
+            "base_amount_cents": intent.base_amount_cents,
+            "amount": intent.amount,
+            "currency": intent.currency,
+            "status": intent.status,
+            "provider": intent.provider,
+            "applied_coupon_code": intent.applied_coupon_code,
+            "coupon_discount_cents": intent.coupon_discount_cents,
+            "has_referral_discount": intent.applied_referral_discount_id is not None,
+            "provider_reference": intent.provider_reference,
+            "provider_payment_id": intent.provider_payment_id,
+            "refunds": [{
+                "id": str(r.id),
+                "amount_cents": r.amount_cents,
+                "currency": r.currency,
+                "refunded_at": r.refunded_at,
+                "source": r.source,
+                "provider_refund_id": r.provider_refund_id,
+            } for r in intent.refunds.all()],
+            "refunded_cents": intent.refunded_cents,
+            "is_partially_refunded": intent.is_partially_refunded,
+            "is_fully_refunded": intent.is_fully_refunded,
+            "refunded_at": intent.refunded_at,
+            "chargeback": intent.chargeback,
+            "chargeback_confirmed": intent.chargeback_confirmed,
+            "chargeback_reference": intent.chargeback_reference,
+            "chargeback_at": intent.chargeback_at,
+            "subscription": ({
+                "id": str(subscription.id),
+                "status": subscription.status,
+                "expires_at": subscription.expires_at,
+            } if subscription else None),
+        })
+    return Response({"payments": data})

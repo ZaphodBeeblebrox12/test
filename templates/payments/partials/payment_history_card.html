@@ -1,0 +1,44 @@
+<!-- Payment History card (billing). Read-only — PaymentIntent is the
+     source of truth. Rendered inside the customer dashboard grid. -->
+<div class="col-md-6 mb-4">
+    <div class="card h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-receipt"></i> Payment History</span>
+        </div>
+        <div class="card-body">
+            {% if recent_payments %}
+            <ul class="list-group list-group-flush">
+                {% for p in recent_payments %}
+                <li class="list-group-item px-0">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>{{ p.plan_name }}</strong>
+                            <div class="small text-muted">
+                                {{ p.date|date:"M d, Y" }}
+                                {% if p.coupon %}&middot; Coupon {{ p.coupon }}
+                                    {% if p.coupon_discount_display %}(−{{ p.coupon_discount_display }}){% endif %}
+                                {% endif %}
+                                {% if p.refund_label %}&middot; <span class="text-warning">{{ p.refund_label }}</span>{% endif %}
+                                {% if p.chargeback_label %}&middot; <span class="text-danger">{{ p.chargeback_label }}</span>{% endif %}
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <span class="fw-bold">{{ p.amount_display }}</span>
+                            {% if p.status_key == "success" %}
+                                <span class="badge bg-success d-block mt-1">Paid</span>
+                            {% elif p.status_key == "failed" %}
+                                <span class="badge bg-danger d-block mt-1">Failed</span>
+                            {% else %}
+                                <span class="badge bg-secondary d-block mt-1">{{ p.status }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-muted text-center mb-0">No payments yet.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>

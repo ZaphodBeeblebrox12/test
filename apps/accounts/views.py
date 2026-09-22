@@ -124,6 +124,40 @@ class DashboardView(View):
 
         # ===== END OF REPLACED SECTION =====
 
+        # Billing: recent payment history for the dashboard card. Read-only;
+        # PaymentIntent is the source of truth (no shadow table).
+        from apps.payments.models import PaymentIntent as _PaymentIntent
+        recent_payments = []
+        for _p in (_PaymentIntent.objects.filter(user=user)
+                   .select_related("plan")
+                   .prefetch_related("refunds")
+                   .order_by("-created_at")[:10]):
+            if _p.is_fully_refunded:
+                _refund_label = "Fully refunded"
+            elif _p.is_partially_refunded:
+                _refund_label = "Partially refunded"
+            else:
+                _refund_label = ""
+            if _p.chargeback_confirmed:
+                _chargeback_label = "Chargeback confirmed"
+            elif _p.chargeback:
+                _chargeback_label = "Disputed"
+            else:
+                _chargeback_label = ""
+            recent_payments.append({
+                "date": _p.created_at,
+                "plan_name": _p.plan.name,
+                "amount_display": f"{_p.currency} {_p.amount_dollars:.2f}",
+                "status": _p.get_status_display(),
+                "status_key": _p.status,
+                "coupon": _p.applied_coupon_code or "",
+                "coupon_discount_display": (
+                    f"{_p.currency} {_p.coupon_discount_cents / 100:.2f}"
+                    if _p.coupon_discount_cents else ""),
+                "refund_label": _refund_label,
+                "chargeback_label": _chargeback_label,
+            })
+
         context = {
             "user": user,
             "telegram_connected": bool(user.telegram_id and user.telegram_verified),
@@ -137,8 +171,9 @@ class DashboardView(View):
             # New geo‑aware variables
             "available_plans_geo": plans_with_pricing,
             "user_country": country,
+            "recent_payments": recent_payments,
         }
-        
+
         # ===== REFERRAL SYSTEM INTEGRATION =====
         from apps.growth.services.rewards import ReferralRewardService, UserRewardBalance
         from apps.growth.services.referrals import ReferralService
@@ -181,7 +216,7 @@ You'll get discounts and exclusive access, and I'll get extra subscription days 
             reward_cents = int(example_price * float(referral_settings.default_reward_percentage) / 100)
             context['estimated_reward_example'] = f"{reward_cents / 100:.0f}"
             context['example_plan_price'] = "50"
-            
+
             # Backward compatibility
             context['next_reward_estimate'] = {
                 "amount": f"{reward_cents / 100:.0f}",
@@ -230,7 +265,7 @@ You'll get discounts and exclusive access, and I'll get extra subscription days 
                 "extra_days": extra_days
             }
         # ===== END REFERRAL INTEGRATION =====
-        
+
         return render(request, "accounts/dashboard.html", context)
 
 

@@ -1,0 +1,8 @@
+Hello {{ username }},
+
+Your recent payment for {{ plan_name }} ({{ amount }}) could not be completed.
+You have not been charged.
+
+You can retry the payment anytime from your dashboard.
+
+— TradeAdmin

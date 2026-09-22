@@ -1,10 +1,9 @@
 """
-Minimal PaymentIntent model for simple payment flow.
+Payment models: PaymentIntent (financial snapshot), Refund, WebhookEvent.
 """
 import uuid
 
 from django.db import models
-from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.models import User
@@ -72,8 +71,9 @@ class PaymentIntent(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
-    # NEW: track which referral's discount was applied to this payment
+
+    # Snapshot of the regional price used for this payment (null when a
+    # global PlanPrice applied).
     geo_plan_price = models.ForeignKey(
         "subscriptions.GeoPlanPrice",
         null=True,
@@ -101,6 +101,45 @@ class PaymentIntent(models.Model):
         help_text=_("Referral whose discount was applied to this payment")
     )
 
+    # ── Billing additions: refund / chargeback state ──────────────────────
+    # These record what happened AFTER a successful charge. The original
+    # payment record (amount, status=SUCCESS, snapshots) is NEVER rewritten
+    # by a refund or dispute: a successful payment remains a successful
+    # payment, with refund/chargeback facts recorded separately.
+    provider_payment_id = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text=_("Provider payment/charge id (pi_.. / pay_..) used to link refund/dispute webhooks to this intent."),
+    )
+    refunded_cents = models.PositiveIntegerField(
+        default=0,
+        help_text=_("Cumulative refunded amount in minor units (cents/paise)."),
+    )
+    refunded_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=_("Timestamp of the most recent refund."),
+    )
+    chargeback = models.BooleanField(
+        default=False,
+        help_text=_("A dispute/chargeback has been opened on this payment."),
+    )
+    chargeback_confirmed = models.BooleanField(
+        default=False,
+        help_text=_("Dispute confirmed against us (funds withdrawn or dispute lost)."),
+    )
+    chargeback_reference = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text=_("Provider dispute id (dp_..)."),
+    )
+    chargeback_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
     class Meta:
         verbose_name = _("payment intent")
         verbose_name_plural = _("payment intents")
@@ -113,13 +152,76 @@ class PaymentIntent(models.Model):
     def amount_dollars(self) -> float:
         return self.amount / 100
 
+    @property
+    def is_partially_refunded(self) -> bool:
+        return 0 < self.refunded_cents < self.amount
+
+    @property
+    def is_fully_refunded(self) -> bool:
+        return self.amount > 0 and self.refunded_cents >= self.amount
+
+
+class Refund(models.Model):
+    """One refunded amount against a PaymentIntent.
+
+    Why a table instead of a counter-only field: webhook deliveries and
+    durable-job retries must be idempotent PER REFUND (not per payment),
+    partial refunds accumulate over time, and each provider has its own
+    refund identifier. A bare counter cannot be updated idempotently under
+    retries; a row keyed by the provider's refund id can. PaymentIntent
+    keeps its original SUCCESS state — a refund never rewrites the payment.
+    """
+
+    class Source(models.TextChoices):
+        WEBHOOK = "webhook", _("Webhook")
+        MANUAL = "manual", _("Manual (admin)")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    payment_intent = models.ForeignKey(
+        PaymentIntent,
+        on_delete=models.CASCADE,
+        related_name="refunds",
+        help_text=_("The payment this refund applies to."),
+    )
+    provider = models.CharField(max_length=20, choices=PaymentIntent.Provider.choices)
+    provider_refund_id = models.CharField(
+        max_length=255,
+        help_text=_("Provider refund id (rf_.. / rfd_..); 'manual:<uuid>' for admin-recorded refunds."),
+    )
+    amount_cents = models.PositiveIntegerField(
+        help_text=_("Refunded amount in minor units (cents/paise)."),
+    )
+    currency = models.CharField(max_length=3, default="USD")
+    source = models.CharField(max_length=20, choices=Source.choices, default=Source.WEBHOOK)
+    refunded_at = models.DateTimeField(help_text=_("When the provider processed the refund."))
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _("refund")
+        verbose_name_plural = _("refunds")
+        ordering = ["-refunded_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider", "provider_refund_id"],
+                name="uniq_provider_refund",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.provider}:{self.provider_refund_id} ({self.currency} {self.amount_cents / 100:.2f})"
+
+    @property
+    def amount_dollars(self) -> float:
+        return self.amount_cents / 100
+
 
 class WebhookEvent(models.Model):
     """Durable record of a received provider webhook (P4).
 
-    Receive (HTTP) is separated from process (durable job).  The
+    Receive (HTTP) is separated from process (durable job). The
     (provider, provider_event_id) pair is unique so duplicated deliveries are
-    stored once and processed at most once.  Raw payload is kept minimal and
+    stored once and processed at most once. Raw payload is kept minimal and
     is never used as a trust source for business fields."""
 
     class Status(models.TextChoices):

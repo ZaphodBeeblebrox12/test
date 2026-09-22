@@ -1,0 +1,13 @@
+Hello {{ username }},
+
+Your payment for {{ plan_name }} was successful.
+
+Amount: {{ amount_display }}
+Date: {{ date_display }}
+Payment method: {{ provider_display }}
+Transaction ID: {{ provider_reference }}
+
+{% if expires_display %}Your subscription is active until {{ expires_display }}.{% endif %}
+View your subscription: {{ dashboard_url }}
+
+— {{ site_name|default:"TradeAdmin" }}

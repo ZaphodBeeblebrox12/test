@@ -1,0 +1,13 @@
+Hello {{ username }},
+
+Your payment of {{ amount }} for {{ plan_name }} was charged back / disputed
+through your payment provider, and the dispute was confirmed against the payment.
+
+As a result:
+- Your subscription has been cancelled.
+- Paid access, including Telegram channel access, has been revoked.
+
+If you believe this is a mistake or would like to restore access, please
+contact support.
+
+— TradeAdmin

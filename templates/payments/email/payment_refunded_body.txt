@@ -1,0 +1,10 @@
+Hello {{ username }},
+
+A refund of {{ refunded_amount }} has been issued against your {{ plan_name }}
+payment of {{ amount }}.
+
+{% if fully_refunded %}Because the payment was fully refunded, your subscription
+has been cancelled and paid access has been revoked.
+{% else %}This was a partial refund — your subscription remains active.
+{% endif %}
+— TradeAdmin

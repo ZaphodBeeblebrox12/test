@@ -19,6 +19,10 @@ class Event(models.Model):
         # payments
         PURCHASE_COMPLETED = "purchase.completed", "Purchase completed"
         PAYMENT_FAILED = "payment.failed", "Payment failed"
+        PAYMENT_REFUNDED = "payment.refunded", "Payment refunded"
+        PAYMENT_DISPUTED = "payment.disputed", "Payment disputed"
+        PAYMENT_CHARGEBACK = "payment.chargeback", "Payment charged back"
+        PAYMENT_DISPUTE_WON = "payment.dispute_won", "Payment dispute won"
         RENEWAL_COMPLETED = "renewal.completed", "Renewal completed"
         # subscriptions
         SUBSCRIPTION_ACTIVATED = "subscription.activated", "Subscription activated"
