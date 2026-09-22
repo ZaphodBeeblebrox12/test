@@ -1,0 +1,7 @@
+Hi {{ username }},
+
+Your {{ plan_name }} subscription expires in {{ days }} days.
+
+Renew before it expires to keep uninterrupted access to all channels.
+
+— The Team

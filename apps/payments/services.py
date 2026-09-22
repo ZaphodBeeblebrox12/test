@@ -38,6 +38,32 @@ def activate_paid_subscription(payment_intent) -> tuple[bool, object]:
 
     interval_days = interval_days_for(payment_intent)
     with transaction.atomic():
+        # Renewal: an existing ACTIVE subscription for the same user+plan is
+        # EXTENDED in place (new expiry = now + interval), not duplicated.
+        # Claim first-come-first-served so concurrent activations for the
+        # same subscription extend at most once.
+        subscription = Subscription.objects.filter(
+            user_id=payment_intent.user_id,
+            plan=payment_intent.plan,
+            status=Subscription.Status.ACTIVE,
+            is_active=True).exclude(
+                expires_at__gt=timezone.now() + timedelta(days=interval_days)
+            ).order_by("expires_at").first()
+        if subscription is not None:
+            claimed_sub = Subscription.objects.filter(
+                pk=subscription.pk, status=Subscription.Status.ACTIVE,
+                is_active=True).update(
+                    expires_at=timezone.now() + timedelta(days=interval_days),
+                    price_cents=payment_intent.amount,
+                    price_currency=payment_intent.currency,
+                    payment_provider=payment_intent.provider)
+            if claimed_sub:
+                SubscriptionHistory.objects.create(
+                    subscription=subscription, user_id=payment_intent.user_id,
+                    event_type=SubscriptionHistory.EventType.RENEWED,
+                    new_plan_id=payment_intent.plan_id,
+                    new_status=Subscription.Status.ACTIVE)
+                return True, subscription
         subscription = Subscription.objects.create(
             user_id=payment_intent.user_id, plan=payment_intent.plan,
             plan_price=payment_intent.plan_price,

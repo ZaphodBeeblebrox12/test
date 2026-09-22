@@ -705,3 +705,35 @@ class GiftSubscription(models.Model):
 
     def __str__(self) -> str:
         return f"Gift from {self.from_user.username} - {self.plan.name}"
+
+
+class SubscriptionReminder(models.Model):
+    """Dedupe guard for transactional expiry reminders (Stage 3).
+
+    One row per subscription+kind. A row exists only after at least one
+    channel (Telegram / email) delivered — the periodic job deletes an
+    unclaimed-row when no channel could deliver so a later run retries.
+    TRANSACTIONAL, not marketing: no consent gate is or may be applied.
+    """
+
+    class Kind(models.TextChoices):
+        PRE_EXPIRY = "pre_expiry", _("Pre-expiry")
+        POST_EXPIRY = "post_expiry", _("Post-expiry")
+
+    subscription = models.ForeignKey(
+        Subscription, on_delete=models.CASCADE, related_name="reminders")
+    kind = models.CharField(max_length=16, choices=Kind.choices)
+    sent_at = models.DateTimeField(auto_now_add=True)
+    telegram_message_id = models.BigIntegerField(null=True, blank=True)
+    email_sent = models.BooleanField(default=False)
+    email_recipient = models.EmailField(blank=True, default="")
+
+    class Meta:
+        verbose_name = _("subscription reminder")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["subscription", "kind"], name="uniq_reminder_per_kind"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.subscription_id}:{self.kind}"

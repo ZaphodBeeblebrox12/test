@@ -1,0 +1,7 @@
+Hi {{ username }},
+
+Your {{ plan_name }} access has ended.
+
+Renew anytime to restore access to all channels.
+
+— The Team

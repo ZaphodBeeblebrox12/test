@@ -15,7 +15,8 @@ from ipware import get_client_ip
 from apps.accounts.models import User
 from .models import (
     Plan, PlanPrice, Subscription, SubscriptionHistory,
-    UpgradeHistory, GiftSubscription, GeoPlanPrice, UserTrialUsage
+    UpgradeHistory, GiftSubscription, GeoPlanPrice, UserTrialUsage,
+    SubscriptionReminder,
 )
 
 COUNTRY_TO_REGION = {
@@ -511,6 +512,120 @@ def expire_due_subscriptions(now=None):
         if expire_subscription(sub, now=now):
             count += 1
     return count
+
+
+PRE_EXPIRY_DAYS = 3
+
+
+def _plan_label(subscription) -> str:
+    plan = getattr(subscription, "plan", None)
+    for attr in ("display_name", "name", "title"):
+        value = getattr(plan, attr, None)
+        if value:
+            return str(value)
+    return "your plan"
+
+
+def _send_reminder_once(subscription, kind: str) -> bool:
+    """Claim (get_or_create) then deliver on both channels. Returns True when
+    at least one channel delivered; row is removed otherwise so a later run
+    retries. Never raises."""
+    _, created = SubscriptionReminder.objects.get_or_create(
+        subscription=subscription, kind=kind)
+    if not created:
+        return False  # already delivered for this subscription+kind
+
+    from apps.bot_integration import transactional as tg_tx
+    from apps.bot_integration.transactional import TransactionalTelegramService
+
+    username = getattr(subscription.user, "username", None) or "trader"
+    plan_label = _plan_label(subscription)
+    if kind == SubscriptionReminder.Kind.PRE_EXPIRY:
+        tg_text = tg_tx.render_expiry_reminder(
+            username, plan_label, PRE_EXPIRY_DAYS)
+        email_tpl, subject = (
+            "subscriptions/email/reminder_pre_expiry",
+            f"Your {plan_label} subscription expires in {PRE_EXPIRY_DAYS} days")
+    else:
+        tg_text = tg_tx.render_access_removed(
+            username, plan_label)
+        email_tpl, subject = (
+            "subscriptions/email/reminder_post_expiry",
+            f"Your {plan_label} access has ended")
+
+    delivered = False
+    tg_message_id = None
+    try:
+        tg = TransactionalTelegramService.send_text(subscription.user, tg_text)
+        if tg.sent:
+            delivered = True
+            tg_message_id = tg.message_id
+    except Exception:  # channel failure must never break the sweep
+        pass
+
+    email_sent = False
+    email_recipient = ""
+    try:
+        recipient = getattr(subscription.user, "email", None)
+        if recipient:
+            from apps.notifications.services import NotificationService
+            NotificationService.send_email(
+                to_email=recipient, template=email_tpl, subject=subject,
+                context={"username": username, "plan_name": plan_label,
+                         "days": PRE_EXPIRY_DAYS})
+            email_sent = True
+            delivered = True
+            email_recipient = recipient
+    except Exception:
+        pass
+
+    if delivered:
+        SubscriptionReminder.objects.filter(
+            subscription=subscription, kind=kind).update(
+                telegram_message_id=tg_message_id, email_sent=email_sent,
+                email_recipient=email_recipient)
+        return True
+    # No channel could deliver: release the claim so a later run retries.
+    SubscriptionReminder.objects.filter(
+        subscription=subscription, kind=kind).delete()
+    return False
+
+
+def send_expiry_reminders(now=None) -> int:
+    """Periodic sweeper (kind 'expiry_reminders').
+
+    PRE_EXPIRY : ACTIVE subscriptions expiring in the [3d, 4d) window that
+                 have no pre-expiry reminder yet.
+    POST_EXPIRY: EXPIRED subscriptions with no post-expiry reminder yet
+                 (the expiry job has already run; reconcile revokes access).
+
+    Dedupe: one reminder per subscription+kind (DB unique constraint plus
+    get_or_create claim). Renewal before expiry moves expires_at out of the
+    window, so a renewed subscription naturally never gets a stale reminder.
+    Idempotent, safe to run repeatedly and from multiple workers.
+    TRANSACTIONAL — never marketing; no consent gate.
+    """
+    now = now or timezone.now()
+    from datetime import timedelta
+    win_start = now + timedelta(days=PRE_EXPIRY_DAYS)
+    win_end = now + timedelta(days=PRE_EXPIRY_DAYS + 1)
+    pre = Subscription.objects.filter(
+        status=Subscription.Status.ACTIVE, is_active=True,
+        expires_at__gte=win_start, expires_at__lt=win_end,
+    ).exclude(reminders__kind=SubscriptionReminder.Kind.PRE_EXPIRY
+              ).order_by("pk")
+    post = Subscription.objects.filter(
+        status=Subscription.Status.EXPIRED, is_active=False,
+    ).exclude(reminders__kind=SubscriptionReminder.Kind.POST_EXPIRY
+              ).order_by("pk")
+    sent = 0
+    for sub in pre.iterator():
+        if _send_reminder_once(sub, SubscriptionReminder.Kind.PRE_EXPIRY):
+            sent += 1
+    for sub in post.iterator():
+        if _send_reminder_once(sub, SubscriptionReminder.Kind.POST_EXPIRY):
+            sent += 1
+    return sent
 
 
 def cancel_subscription(subscription, now=None, actor="user"):

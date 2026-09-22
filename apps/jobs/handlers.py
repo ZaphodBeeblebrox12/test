@@ -55,6 +55,12 @@ def _process_webhook_event(payload, job):
     process_webhook_event(payload, job)
 
 
+def _expiry_reminders(payload, job):
+    """Durable job: transactional pre/post-expiry reminders (dedupe-guarded)."""
+    from apps.subscriptions.services import send_expiry_reminders
+    return send_expiry_reminders()
+
+
 def _subscription_expiry(payload, job):
     """Durable job: expire all active subscriptions past expires_at.
 
@@ -69,6 +75,7 @@ def _subscription_expiry(payload, job):
 def register_builtin_handlers():
     HANDLERS.setdefault("sweep", _sweep)
     HANDLERS.setdefault("subscription_expiry", _subscription_expiry)
+    HANDLERS.setdefault("expiry_reminders", _expiry_reminders)
     HANDLERS.setdefault("process_webhook_event", _process_webhook_event)
     HANDLERS.setdefault("campaign_send", _campaign_send)
     HANDLERS.setdefault("automation_fire", _automation_fire)
@@ -81,3 +88,4 @@ def schedule_periodic():
     enqueue_generic("update_maxmind", {}, idempotency_key="sched:update_maxmind")
     enqueue_generic("referral_unlock", {}, idempotency_key="sched:referral_unlock")
     enqueue_generic("subscription_expiry", {}, idempotency_key="sched:subscription_expiry")
+    enqueue_generic("expiry_reminders", {}, idempotency_key="sched:expiry_reminders")

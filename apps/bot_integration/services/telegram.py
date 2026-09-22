@@ -6,6 +6,15 @@ from functools import wraps
 from typing import Optional, Dict, Any
 from django.utils import timezone
 
+from .telegram_transport import (
+    ERR_CONFIG,
+    ERR_MISSING_CHAT_ID,
+    OUTCOME_INDETERMINATE,
+    OUTCOME_REJECTED,
+    TelegramMessageResult,
+    TelegramMessageTransport,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,10 +67,50 @@ class TelegramBotService:
             logger.exception(f"Telegram API error: {e}")
             return {"ok": False, "error": str(e)}
 
+    # ------------------------------------------------------------------
+    # Reusable message transport (Stage 1)
+    #
+    # Shared by marketing and transactional/system messaging alike. This
+    # path applies NO marketing-consent gate and performs NO provisioning /
+    # entitlement operations - business layers decide the message class and
+    # apply any consent check ABOVE it.
+    #
+    # Semantics:
+    #   outcome == "accepted"       -> provider accepted; message_id captured
+    #   outcome == "rejected"       -> definite provider rejection
+    #   outcome == "indeterminate"  -> timeout/network/unparseable response;
+    #                                  the request MAY have been processed,
+    #                                  so NEVER report as SENT
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def send_message_result(cls, chat_id, text: str) -> TelegramMessageResult:
+        """Send a text message and return the rich TelegramMessageResult."""
+        try:
+            token = cls._get_token() or ""
+        except Exception as exc:  # config/DB unavailable -> indeterminate
+            logger.warning("Telegram bot config unavailable: %s", type(exc).__name__)
+            token = ""
+        if not token:
+            return TelegramMessageResult(
+                outcome=OUTCOME_INDETERMINATE,
+                error_code=ERR_CONFIG,
+                error_message="Telegram bot token is not configured",
+            )
+        if chat_id is None or isinstance(chat_id, bool) or str(chat_id).strip() == "":
+            return TelegramMessageResult(
+                outcome=OUTCOME_REJECTED,
+                error_code=ERR_MISSING_CHAT_ID,
+                error_message="chat_id is required and was not provided",
+            )
+        transport = TelegramMessageTransport(token=token)
+        return transport.send_message(chat_id=chat_id, text=text)
+
     @classmethod
     def send_message(cls, chat_id: int, text: str) -> bool:
-        result = cls._api_request("sendMessage", {"chat_id": chat_id, "text": text})
-        return result.get("ok", False)
+        # Backward-compatible bool wrapper (unchanged contract for existing
+        # callers: only a definite provider acceptance returns True).
+        return cls.send_message_result(chat_id, text).ok
 
     @classmethod
     def create_one_time_invite_link(cls, channel_id: str, expire_seconds: int = 86400) -> Optional[str]:
