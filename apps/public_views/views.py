@@ -11,6 +11,7 @@ from django.views.generic import TemplateView
 from apps.subscriptions.models import Plan, PlanPrice, GeoPlanPrice
 from apps.subscriptions.services import (
     get_pricing_country,
+    get_region_for_country,
     format_price,
 )
 
@@ -68,7 +69,11 @@ class LandingPageView(TemplateView):
                 selected_plan = tier_plans.first()
 
                 pricing = self._get_all_interval_pricing(selected_plan, country)
-                if not pricing:
+                # A paid tier needs at least one resolvable interval price to
+                # render its card. The FREE tier has no prices by design —
+                # its card renders with pricing=None (template guards handle
+                # the missing tabs/price blocks; the CTA is "Get Started Free").
+                if not pricing and tier != 'free':
                     continue
 
                 trial = Plan.objects.filter(
@@ -91,8 +96,9 @@ class LandingPageView(TemplateView):
                     'plan': selected_plan,
                     'tier': tier,
                     'pricing': pricing,
-                    'currency_symbol': pricing.get('currency_symbol', '₹'),
-                    'is_geo': pricing.get('is_geo', False),
+                    'currency_symbol': (pricing.get('currency_symbol', '₹')
+                                        if pricing else '₹'),
+                    'is_geo': (pricing.get('is_geo', False) if pricing else False),
                     'trial': trial_info,
                     'trial_price_display': trial_price_display,
                     'features': features,
@@ -159,10 +165,39 @@ class LandingPageView(TemplateView):
             logger.warning(f"Could not resolve pricing for {plan.name}: {e}")
             return None
 
+    def _price_dict(self, price_cents: int, currency: str,
+                    geo_pricing: bool, interval: str) -> Dict[str, Any]:
+        """Shared shape for a resolved interval price."""
+        if interval == 'yearly':
+            monthly_equiv = int(price_cents / 12)
+        elif interval == 'quarterly':
+            monthly_equiv = int(price_cents / 3)
+        else:
+            monthly_equiv = price_cents
+
+        return {
+            'price_cents': price_cents,
+            'price_monthly': int(monthly_equiv / 100),
+            'price_total': int(price_cents / 100),
+            'currency': currency,
+            'display': format_price(price_cents, currency),
+            'display_monthly': format_price(monthly_equiv, currency),
+            'geo_pricing': geo_pricing,
+        }
+
     def _get_price_for_interval(self, plan: Plan, country: Optional[str], interval: str) -> Optional[Dict[str, Any]]:
-        """Get price for specific interval."""
+        """Get price for specific interval.
+
+        Resolution chain mirrors subscriptions.services.resolve_plan_price
+        (the purchase path) exactly — the landing page must never resolve a
+        different price than the one the user will actually be charged:
+          1. country-specific GeoPlanPrice
+          2. region-level GeoPlanPrice (country__isnull=True)  [was missing]
+          3. global base PlanPrice
+        Previously step 2 was absent, so region-priced plans resolved no
+        price at all and their tier card was silently dropped from the page.
+        """
         try:
-            # Try GeoPlanPrice first
             if country:
                 geo_price = GeoPlanPrice.objects.filter(
                     plan=plan,
@@ -170,28 +205,23 @@ class LandingPageView(TemplateView):
                     country=country,
                     is_active=True
                 ).first()
-
                 if geo_price:
-                    price_cents = geo_price.price_cents
-                    # Calculate monthly equivalent
-                    if interval == 'yearly':
-                        monthly_equiv = int(price_cents / 12)
-                    elif interval == 'quarterly':
-                        monthly_equiv = int(price_cents / 3)
-                    else:
-                        monthly_equiv = price_cents
+                    return self._price_dict(geo_price.price_cents,
+                                            geo_price.currency, True, interval)
 
-                    return {
-                        'price_cents': price_cents,
-                        'price_monthly': int(monthly_equiv / 100),
-                        'price_total': int(price_cents / 100),
-                        'currency': geo_price.currency,
-                        'display': format_price(price_cents, geo_price.currency),
-                        'display_monthly': format_price(monthly_equiv, geo_price.currency),
-                        'geo_pricing': True,
-                    }
+                region = get_region_for_country(country)
+                if region:
+                    geo_price = GeoPlanPrice.objects.filter(
+                        plan=plan,
+                        interval=interval,
+                        region=region,
+                        country__isnull=True,
+                        is_active=True
+                    ).first()
+                    if geo_price:
+                        return self._price_dict(geo_price.price_cents,
+                                                geo_price.currency, True, interval)
 
-            # Fallback to PlanPrice
             plan_price = PlanPrice.objects.filter(
                 plan=plan,
                 interval=interval,
@@ -199,23 +229,8 @@ class LandingPageView(TemplateView):
             ).first()
 
             if plan_price:
-                price_cents = plan_price.price_cents
-                if interval == 'yearly':
-                    monthly_equiv = int(price_cents / 12)
-                elif interval == 'quarterly':
-                    monthly_equiv = int(price_cents / 3)
-                else:
-                    monthly_equiv = price_cents
-
-                return {
-                    'price_cents': price_cents,
-                    'price_monthly': int(monthly_equiv / 100),
-                    'price_total': int(price_cents / 100),
-                    'currency': plan_price.currency,
-                    'display': format_price(price_cents, plan_price.currency),
-                    'display_monthly': format_price(monthly_equiv, plan_price.currency),
-                    'geo_pricing': False,
-                }
+                return self._price_dict(plan_price.price_cents,
+                                        plan_price.currency, False, interval)
 
             return None
 
@@ -224,20 +239,33 @@ class LandingPageView(TemplateView):
             return None
 
     def _get_trial_price(self, trial: Plan, country: Optional[str]) -> Optional[Dict[str, Any]]:
-        """Get trial price."""
-        try:
-            geo_price = GeoPlanPrice.objects.filter(
-                plan=trial,
-                country=country,
-                is_active=True
-            ).first()
+        """Get trial price.
 
-            if not geo_price and not country:
+        NOTE: purchase_plan() requires a COUNTRY-SPECIFIC geo price for
+        trials (get_geo_price_for_trial matches country only). The
+        country__isnull fallback below can therefore display a trial price
+        that purchase rejects for region-priced trials — keep trials
+        country-priced, or relax get_geo_price_for_trial to mirror the
+        region chain above.
+        """
+        try:
+            if country:
                 geo_price = GeoPlanPrice.objects.filter(
                     plan=trial,
-                    country__isnull=True,
+                    country=country,
                     is_active=True
                 ).first()
+                if geo_price:
+                    return {
+                        'price_cents': geo_price.price_cents,
+                        'display': format_price(geo_price.price_cents, geo_price.currency),
+                    }
+
+            geo_price = GeoPlanPrice.objects.filter(
+                plan=trial,
+                country__isnull=True,
+                is_active=True
+            ).first()
 
             if geo_price:
                 return {
