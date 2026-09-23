@@ -4,6 +4,7 @@
     <div class="card h-100">
         <div class="card-header d-flex justify-content-between align-items-center">
             <span><i class="bi bi-receipt"></i> Payment History</span>
+            <a href="{% url 'manage-subscription' %}" class="btn btn-sm btn-link">Manage subscription</a>
         </div>
         <div class="card-body">
             {% if recent_payments %}
@@ -20,6 +21,7 @@
                                 {% endif %}
                                 {% if p.refund_label %}&middot; <span class="text-warning">{{ p.refund_label }}</span>{% endif %}
                                 {% if p.chargeback_label %}&middot; <span class="text-danger">{{ p.chargeback_label }}</span>{% endif %}
+                                {% if p.status_key == "success" %}&middot; <a href="/receipt/{{ p.pk }}/" class="small">Receipt</a>{% endif %}
                             </div>
                         </div>
                         <div class="text-end">

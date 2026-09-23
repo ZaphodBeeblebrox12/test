@@ -289,6 +289,60 @@ def payment_status(request, payment_intent_id):
     })
 
 
+@login_required
+def payment_receipt(request, pk):
+    """Print-friendly receipt for one of the caller's own payments."""
+    intent = get_object_or_404(PaymentIntent, pk=pk, user=request.user)
+    subscription = Subscription.objects.filter(
+        user=request.user, plan=intent.plan,
+        status=Subscription.Status.ACTIVE, is_active=True).first()
+    return render(request, "payments/receipt.html", {
+        "intent": intent, "subscription": subscription,
+        "refunds": list(intent.refunds.all()),
+        "site_name": getattr(settings, "SITE_NAME", "TradeAdmin"),
+    })
+
+
+@login_required
+def manage_subscription_page(request):
+    """Self-service hub: status, included channels, receipts, renew CTA."""
+    from apps.bot_integration.models import (
+        PlanChannelMapping, UserChannelAssignment)
+    subscription = (Subscription.objects
+                    .filter(user=request.user, status=Subscription.Status.ACTIVE,
+                            is_active=True)
+                    .select_related("plan", "plan_price")
+                    .order_by("-expires_at").first())
+    channels = []
+    if subscription is not None:
+        assigned = set(UserChannelAssignment.objects.filter(
+            user=request.user, is_active=True).values_list("platform", "external_id"))
+        for m in (PlanChannelMapping.objects
+                  .filter(plan=subscription.plan)
+                  .order_by("platform", "name")):
+            channels.append({
+                "name": m.name or m.external_id,
+                "platform": m.platform,
+                "granted": (m.platform, m.external_id) in assigned,
+            })
+    intents = (PaymentIntent.objects.filter(user=request.user)
+               .select_related("plan").order_by("-created_at")[:10])
+    receipts = [{"pk": str(i.pk), "plan_name": i.plan.name,
+                 "amount_display": f"{i.currency} {i.amount_dollars:.2f}",
+                 "date": i.created_at, "status": i.status,
+                 "url": f"/receipt/{i.pk}/"} for i in intents]
+    tg = getattr(request.user, "telegram_account", None)
+    from apps.bot_integration.services.channel_sync import get_telegram_access_state
+    access_state = get_telegram_access_state(request.user)
+    return render(request, "payments/manage_subscription.html", {
+        "subscription": subscription, "channels": channels,
+        "receipts": receipts, "access_state": access_state,
+        "telegram_linked": bool(tg and tg.is_active),
+        "connect_url": "/bot/telegram/connect/",
+        "renew_url": "/dashboard/",
+    })
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def payment_history(request):
@@ -341,6 +395,7 @@ def payment_history(request):
             "chargeback_confirmed": intent.chargeback_confirmed,
             "chargeback_reference": intent.chargeback_reference,
             "chargeback_at": intent.chargeback_at,
+            "receipt_url": f"/receipt/{intent.id}/" if intent.status == "success" else "",
             "subscription": ({
                 "id": str(subscription.id),
                 "status": subscription.status,
@@ -348,3 +403,166 @@ def payment_history(request):
             } if subscription else None),
         })
     return Response({"payments": data})
+
+
+# ───────────────────── Phase 3: Operator's Cockpit (staff only) ────────────
+from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib.auth import get_user_model
+from django.db.models import Sum
+from django.views.decorators.http import require_POST
+
+
+def _ops_alert(staff_users, title, message):
+    """Dedup'd in-app alert to every staff member."""
+    from apps.notifications.models import Notification
+    for u in staff_users:
+        Notification.objects.get_or_create(
+            user=u, notification_type=Notification.NotificationType.SYSTEM,
+            title=title, defaults={"message": message, "link": "/staff/ops/"})
+
+
+@staff_member_required
+def ops_dashboard(request):
+    from datetime import timedelta
+    from django.core.cache import cache
+    from apps.jobs.models import Job, PeriodicJob
+    User = get_user_model()
+    now = timezone.now()
+    staff_users = list(User.objects.filter(is_staff=True))
+
+    pending = Job.objects.filter(status=Job.Status.PENDING)
+    pending_count = pending.count()
+    oldest_pending = pending.order_by("run_at").first()
+    last_done = (Job.objects
+                 .filter(status__in=[Job.Status.SUCCEEDED, Job.Status.FAILED])
+                 .order_by("-finished_at").first())
+    webhooks = {prov: WebhookEvent.objects.filter(provider=prov)
+                .order_by("-received_at").first()
+                for prov in ("stripe", "razorpay")}
+    periodic = PeriodicJob.objects.all()
+    scheduler_alive = cache.get("jobs:scheduler:heartbeat") is not None
+
+    # breach alerts (dedup'd; cleared by resolving the underlying condition)
+    if pending_count > 20:
+        _ops_alert(staff_users, f"Ops: {pending_count} pending jobs",
+                   "Job queue is backing up - check that runjobs/scheduler is running.")
+    if oldest_pending and oldest_pending.run_at < now - timedelta(minutes=10):
+        _ops_alert(staff_users, "Ops: oldest pending job is stuck",
+                   f"Oldest pending job is older than 10 minutes (run_at={oldest_pending.run_at}).")
+
+    # Worklist 1: paid but missing channel access.
+    # Reuses reconcile's SINGLE entitlement definition (compute_target_access)
+    # - never a parallel copy of "should have access" logic.
+    from apps.bot_integration.models import UserChannelAssignment
+    try:
+        from apps.bot_integration.access import compute_target_access
+    except Exception:
+        compute_target_access = None
+    paid_no_access = []
+    for sub in (Subscription.objects
+                .filter(status=Subscription.Status.ACTIVE, is_active=True)
+                .select_related("user", "plan"))[:200]:
+        if compute_target_access is not None:
+            want = set(getattr(compute_target_access(sub.user),
+                               "telegram_ids", None) or [])
+        else:
+            from apps.bot_integration.models import PlanChannelMapping
+            want = set(PlanChannelMapping.objects.filter(
+                plan=sub.plan, platform="telegram",
+            ).values_list("external_id", flat=True))
+        if not want:
+            continue
+        have = set(UserChannelAssignment.objects.filter(
+            user=sub.user, platform="telegram", is_active=True,
+        ).values_list("external_id", flat=True))
+        missing = want - have
+        if missing:
+            paid_no_access.append({"user": sub.user, "missing": sorted(missing),
+                                   "expires": sub.expires_at})
+    # Worklist 2: stuck grants (failed grant audits, 24h)
+    from apps.bot_integration.models import BotAccessAudit
+    stuck = (BotAccessAudit.objects
+             .filter(action="grant", status="failed",
+                     created_at__gte=now - timedelta(hours=24))
+             .select_related("user").order_by("-created_at")[:50])
+    # Worklist 3: failed payments, 7 days
+    failed_payments = (PaymentIntent.objects
+                       .filter(status=PaymentIntent.Status.FAILED,
+                               created_at__gte=now - timedelta(days=7))
+                       .select_related("user", "plan")
+                       .order_by("-created_at")[:50])
+    # Worklist 4: expiring within 7 days
+    expiring = (Subscription.objects
+                .filter(status=Subscription.Status.ACTIVE, is_active=True,
+                        expires_at__lte=now + timedelta(days=7))
+                .select_related("user", "plan")
+                .order_by("expires_at")[:50])
+    # Revenue summary
+    success = PaymentIntent.objects.filter(status=PaymentIntent.Status.SUCCESS)
+    today_rev = success.filter(created_at__date=now.date()).aggregate(s=Sum("amount"))["s"] or 0
+    month_rev = success.filter(created_at__year=now.year,
+                               created_at__month=now.month).aggregate(s=Sum("amount"))["s"] or 0
+    refunded = success.aggregate(s=Sum("refunded_cents"))["s"] or 0
+    chargebacks = success.filter(chargeback_confirmed=True).count()
+
+    return render(request, "payments/ops.html", {
+        "pending_count": pending_count,
+        "oldest_pending": oldest_pending,
+        "last_done": last_done,
+        "webhooks": webhooks, "periodic": periodic,
+        "scheduler_alive": scheduler_alive,
+        "paid_no_access": paid_no_access, "stuck": stuck,
+        "failed_payments": failed_payments, "expiring": expiring,
+        "today_rev": today_rev / 100, "month_rev": month_rev / 100,
+        "refunded": refunded / 100, "chargebacks": chargebacks,
+        "now": now,
+    })
+
+
+@staff_member_required
+@require_POST
+def ops_reconcile_user(request, user_id):
+    from apps.jobs.enqueue import enqueue_reconcile
+    enqueue_reconcile(user_id, reason="ops_manual")
+    return redirect("ops-dashboard")
+
+
+@staff_member_required
+def ops_payments_csv(request):
+    import csv
+    from django.http import HttpResponse
+    resp = HttpResponse(content_type="text/csv")
+    resp["Content-Disposition"] = 'attachment; filename="payments.csv"'
+    w = csv.writer(resp)
+    w.writerow(["date", "user", "email", "plan", "amount_cents", "currency",
+                "provider", "status", "refunded_cents", "chargeback",
+                "provider_reference"])
+    for pi in (PaymentIntent.objects.select_related("user", "plan")
+               .order_by("-created_at")[:10000]):
+        w.writerow([pi.created_at.isoformat(), pi.user.username, pi.user.email,
+                    pi.plan.name, pi.amount, pi.currency, pi.provider, pi.status,
+                    pi.refunded_cents, pi.chargeback_confirmed,
+                    pi.provider_reference])
+    return resp
+
+
+@staff_member_required
+def ops_user_detail(request, pk):
+    from apps.audit.models import AuditLog
+    from apps.notifications.models import Notification
+    from apps.subscriptions.models import SubscriptionHistory
+    from apps.bot_integration.models import (
+        DiscordAccount, TelegramAccount, UserChannelAssignment)
+    User = get_user_model()
+    user = get_object_or_404(User, pk=pk)
+    return render(request, "payments/user360.html", {
+        "u": user,
+        "subscriptions": Subscription.objects.filter(user=user).select_related("plan"),
+        "history": SubscriptionHistory.objects.filter(user=user).order_by("-created_at")[:20],
+        "intents": PaymentIntent.objects.filter(user=user).select_related("plan").order_by("-created_at")[:20],
+        "tg": getattr(user, "telegram_account", None),
+        "dc": getattr(user, "discord_account", None),
+        "assignments": UserChannelAssignment.objects.filter(user=user).order_by("-assigned_at")[:20],
+        "audit": AuditLog.objects.filter(user=user).order_by("-created_at")[:30],
+        "notes": Notification.objects.filter(user=user).order_by("-created_at")[:10],
+    })

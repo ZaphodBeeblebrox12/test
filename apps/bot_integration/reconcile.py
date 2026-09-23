@@ -85,6 +85,27 @@ def _control_channel_guard(channel_id):
     return None
 
 
+
+
+def _tg_notify_grant(account, channel_id, ok, error_message=""):
+    """Customer-facing DM on grant success/failure (best-effort, never raises)."""
+    try:
+        from .services.telegram import TelegramBotService
+        name = (PlanChannelMapping.objects
+                .filter(platform="telegram", external_id=str(channel_id))
+                .values_list("name", flat=True).first()) or str(channel_id)
+        if ok:
+            text = "\u2705 You're in! You now have access to {}.".format(name)
+        else:
+            text = ("\u26a0\ufe0f We couldn't add you to {} ({}). "
+                    "Self-check: open the bot and press Start, then make sure your "
+                    "Telegram privacy settings allow being added to channels. "
+                    "If it still fails, contact support from the website.").format(
+                        name, error_message or "provider error")
+        TelegramBotService.send_message(account.chat_id, text)
+    except Exception:
+        logger.exception("grant notification failed")
+
 def _tg_grant(user_id, account, target, channel_id):
     tg_id = getattr(account, "telegram_user_id", None)
     if not tg_id:
@@ -101,9 +122,12 @@ def _tg_grant(user_id, account, target, channel_id):
             user_id=user_id, platform="telegram", external_id=channel_id,
             defaults={"is_active": True})
         _audit(user_id, "grant", "telegram", channel_id, True, "")
+        _tg_notify_grant(account, channel_id, True)
     else:
         _audit(user_id, "grant", "telegram", channel_id, False,
                f"{result.error_code}: {result.error_message}"[:500])
+        _tg_notify_grant(account, channel_id, False,
+                         result.error_message or result.error_code or "")
 
 
 def _tg_revoke(user_id, account, channel_id):

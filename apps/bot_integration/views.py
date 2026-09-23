@@ -15,6 +15,8 @@ from .models import (
     DiscordAccount, BotAccessAudit
 )
 from .services.telegram import TelegramBotService
+from .services.profile_sync import sync_telegram_profile_for_user
+from .services.channel_sync import sync_channel_memberships_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,8 @@ def unlink_telegram(request):
             target=str(old_chat_id),
             status='success'
         )
+        from apps.jobs.enqueue import enqueue_reconcile
+        enqueue_reconcile(request.user.id, reason="telegram_unlink")
         messages.success(request, "Telegram account unlinked.")
     except TelegramAccount.DoesNotExist:
         pass
@@ -112,6 +116,11 @@ def telegram_webhook(request):
 
     parts = text.split()
     if len(parts) != 2 or not parts[1].startswith('verify_'):
+        TelegramBotService.send_message(
+            chat_id,
+            "\U0001f44b Hi! To link your account: open the website, go to"
+            " Dashboard and press Connect Telegram. Already paid? Connecting"
+            " grants your channel access automatically.")
         return JsonResponse({"ok": True})
 
     token_str = parts[1][7:]  # remove 'verify_'
@@ -133,7 +142,9 @@ def telegram_webhook(request):
                 defaults={
                     'chat_id': chat_id,
                     'telegram_user_id': telegram_user_id,
-                    'is_active': True
+                    'is_active': True,
+                    'username': from_user.get('username') or '',
+                    'first_name': from_user.get('first_name') or '',
                 }
             )
             token.delete()
@@ -147,6 +158,9 @@ def telegram_webhook(request):
             )
 
             enqueue_reconcile(user.id, reason="telegram_link")
+            # Best-effort avatar enrichment AFTER the transaction commits.
+            _tx.on_commit(lambda: sync_telegram_profile_for_user(user.id))
+            _tx.on_commit(lambda: sync_channel_memberships_for_user(user.id))
 
         TelegramBotService.send_message(chat_id, "✅ Your account is now linked! We'll sync your subscription access shortly.")
 
@@ -360,3 +374,12 @@ def bot_heartbeat(request):
     state.last_seen = timezone.now()
     state.save(update_fields=[*updates.keys(), "last_seen", "updated_at"])
     return JsonResponse({"ok": True, "instance_id": state.instance_id})
+
+
+@login_required
+def sync_telegram_channels(request):
+    """On-demand membership snapshot refresh; returns to the dashboard."""
+    sync_channel_memberships_for_user(request.user.id)
+    messages.success(request, 'Channel membership refreshed.')
+    return redirect('profile')
+

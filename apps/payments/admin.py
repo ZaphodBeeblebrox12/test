@@ -48,7 +48,24 @@ class PaymentIntentAdmin(admin.ModelAdmin):
     # never mark paid/failed or edit amount/provider/snapshots by hand.
     readonly_fields = [f.name for f in PaymentIntent._meta.fields]
     inlines = [RefundInline]
-    actions = ["mark_charged_back", "record_manual_refund"]
+    @admin.action(description="Export selected payments as CSV")
+    def export_csv(self, request, queryset):
+        import csv
+        from django.http import HttpResponse
+        resp = HttpResponse(content_type="text/csv")
+        resp["Content-Disposition"] = 'attachment; filename="payment_intents.csv"'
+        w = csv.writer(resp)
+        w.writerow(["date", "user", "plan", "amount_cents", "currency",
+                    "provider", "status", "refunded_cents", "chargeback",
+                    "provider_reference"])
+        for pi in queryset.select_related("user", "plan"):
+            w.writerow([pi.created_at.isoformat(), pi.user.username, pi.plan.name,
+                        pi.amount, pi.currency, pi.provider, pi.status,
+                        pi.refunded_cents, pi.chargeback_confirmed,
+                        pi.provider_reference])
+        return resp
+
+    actions = ["mark_charged_back", "record_manual_refund", "export_csv"]
 
     def has_delete_permission(self, request, obj=None):
         # Financial evidence; never delete.

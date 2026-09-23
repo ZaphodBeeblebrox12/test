@@ -1,0 +1,47 @@
+<!DOCTYPE html><html><head><meta charset='utf-8'><title>User 360</title><style>
+body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#f4f6f8;margin:0;padding:28px 16px;color:#1f2937}
+.wrap{max-width:960px;margin:0 auto}
+h1{font-size:20px}h2{font-size:14px;margin:22px 0 8px;text-transform:uppercase;letter-spacing:.4px;color:#6b7280}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:18px 22px;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:7px 0;border-bottom:1px solid #eef0f3;text-align:left}th{color:#9ca3af;font-weight:500;font-size:11px;text-transform:uppercase}
+a{color:#2563eb;text-decoration:none}
+.kpis{display:flex;gap:14px;flex-wrap:wrap}
+.kpi{flex:1;min-width:130px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 18px}
+.kpi .v{font-size:22px;font-weight:700}.kpi .l{font-size:11px;color:#6b7280;margin-top:2px}
+.ok{color:#16a34a}.bad{color:#dc2626}.mut{color:#9ca3af}
+.btn{display:inline-block;background:#2563eb;color:#fff;border:0;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;text-decoration:none}
+.warn{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:13px}
+form{display:inline}
+</style></head><body><div class='wrap'>
+<h1>{{ u.username }} <span style='font-size:12px;color:#9ca3af'>&middot; {{ u.email }} &middot; <a href="{% url 'ops-dashboard' %}">&larr; ops</a></span></h1>
+
+<div class='kpis'>
+<div class='kpi'><div class='v' style='font-size:15px'>{% if tg %}&#9993;&#65039; {{ tg.display_name|default:tg.chat_id }}{% else %}&#10060; not linked{% endif %}</div><div class='l'>Telegram {% if tg and tg.is_active %}&#10004; active{% endif %}</div></div>
+<div class='kpi'><div class='v' style='font-size:15px'>{% if dc %}&#10004; {{ dc.username|default:dc.discord_user_id }}{% else %}&mdash;{% endif %}</div><div class='l'>Discord</div></div>
+<div class='kpi'><div class='v' style='font-size:15px'>{{ subscriptions|length }}</div><div class='l'>Subscriptions</div></div>
+</div>
+
+<h2>Subscriptions</h2><div class='card'><table><tr><th>Plan</th><th>Status</th><th>Started</th><th>Expires</th></tr>
+{% for s in subscriptions %}<tr><td>{{ s.plan.name }}</td><td>{{ s.status }}</td><td>{{ s.started_at|date:"M d, Y" }}</td><td>{{ s.expires_at|date:"M d, Y" }}</td></tr>
+{% empty %}<tr><td colspan='4' class='mut'>none</td></tr>{% endfor %}</table></div>
+
+<h2>Payments</h2><div class='card'><table><tr><th>Date</th><th>Plan</th><th>Amount</th><th>Status</th><th>Flags</th></tr>
+{% for pi in intents %}<tr><td>{{ pi.created_at|date:"M d, Y" }}</td><td>{{ pi.plan.name }}</td>
+<td>{{ pi.currency }} {{ pi.amount_dollars|floatformat:2 }}</td><td>{{ pi.status }}</td>
+<td>{% if pi.is_fully_refunded %}<span class='bad'>refunded</span>{% endif %}{% if pi.chargeback_confirmed %}<span class='bad'>chargeback</span>{% endif %}</td></tr>
+{% empty %}<tr><td colspan='5' class='mut'>none</td></tr>{% endfor %}</table></div>
+
+<h2>Channel assignments</h2><div class='card'><table><tr><th>Platform</th><th>Channel</th><th>Active</th></tr>
+{% for a in assignments %}<tr><td>{{ a.platform }}</td><td>{{ a.external_id }}</td><td>{{ a.is_active }}</td></tr>
+{% empty %}<tr><td colspan='3' class='mut'>none</td></tr>{% endfor %}</table></div>
+
+<h2>Recent audit (30)</h2><div class='card'><table><tr><th>When</th><th>Action</th><th>Object</th></tr>
+{% for a in audit %}<tr><td>{{ a.created_at|timesince }} ago</td><td>{{ a.action }}</td><td>{{ a.object_type }} {{ a.object_id }}</td></tr>
+{% empty %}<tr><td colspan='3' class='mut'>none</td></tr>{% endfor %}</table></div>
+
+<h2>Notifications (10)</h2><div class='card'><table><tr><th>When</th><th>Type</th><th>Title</th></tr>
+{% for n in notes %}<tr><td>{{ n.created_at|timesince }} ago</td><td>{{ n.notification_type }}</td><td>{{ n.title }}</td></tr>
+{% empty %}<tr><td colspan='3' class='mut'>none</td></tr>{% endfor %}</table></div>
+
+</div></body></html>

@@ -124,6 +124,14 @@ class DashboardView(View):
 
         # ===== END OF REPLACED SECTION =====
 
+        # Telegram: channel display data (free = observed, paid = entitlement).
+        from apps.bot_integration.services.channel_sync import (
+            build_channel_display, get_telegram_access_state)
+        telegram_channels = build_channel_display(user)
+        telegram_access_state = get_telegram_access_state(user)
+        telegram_channel_count = sum(
+            1 for c in telegram_channels["free"] if c["is_member"])
+
         # Billing: recent payment history for the dashboard card. Read-only;
         # PaymentIntent is the source of truth (no shadow table).
         from apps.payments.models import PaymentIntent as _PaymentIntent
@@ -145,6 +153,7 @@ class DashboardView(View):
             else:
                 _chargeback_label = ""
             recent_payments.append({
+                "pk": _p.pk,
                 "date": _p.created_at,
                 "plan_name": _p.plan.name,
                 "amount_display": f"{_p.currency} {_p.amount_dollars:.2f}",
@@ -160,7 +169,11 @@ class DashboardView(View):
 
         context = {
             "user": user,
-            "telegram_connected": bool(user.telegram_id and user.telegram_verified),
+            "telegram_connected": bool(
+                getattr(user, "telegram_account", None) and user.telegram_account.is_active),
+            "show_connect_banner": telegram_access_state["state"] in ("not_linked", "needs_action"),
+            "telegram_access_state": telegram_access_state,
+            "telegram_account": getattr(user, "telegram_account", None),
             "recent_activity": recent_activity,
             "recent_notifications": recent_notifications,
             "unread_count": unread_count,
@@ -172,6 +185,8 @@ class DashboardView(View):
             "available_plans_geo": plans_with_pricing,
             "user_country": country,
             "recent_payments": recent_payments,
+            "telegram_channel_count": telegram_channel_count,
+            "telegram_channels": telegram_channels,
         }
 
         # ===== REFERRAL SYSTEM INTEGRATION =====

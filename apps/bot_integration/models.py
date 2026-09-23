@@ -73,12 +73,23 @@ class TelegramAccount(models.Model):
     is_active = models.BooleanField(default=True)
     last_synced_at = models.DateTimeField(null=True, blank=True)
 
+    # Profile enrichment (captured at verification; avatar fetched post-commit
+    # by services/profile_sync.py - best-effort, never blocks verification).
+    username = models.CharField(max_length=64, blank=True, default="")
+    first_name = models.CharField(max_length=64, blank=True, default="")
+    avatar = models.ImageField(upload_to="telegram_avatars/", null=True, blank=True)
+
     class Meta:
         verbose_name = "Telegram Account"
         verbose_name_plural = "Telegram Accounts"
 
     def __str__(self):
         return f"{self.user.username} -> {self.chat_id}"
+
+    @property
+    def display_name(self):
+        # Best available human-readable name for UI display.
+        return self.username or self.first_name or f"User {self.chat_id}"
 
 
 class DiscordAccount(models.Model):
@@ -236,6 +247,49 @@ class TelegramVerificationToken(models.Model):
         verbose_name_plural = "Telegram Verification Tokens"
 
 # ─── Provision v1 hardening: control channel can never be a subscriber target ───
+
+class CommunityChannel(models.Model):
+    """Free / bot-administered channel registry for membership DISPLAY."""
+    PLATFORM_CHOICES = [('telegram', 'Telegram'), ('discord', 'Discord')]
+    platform = models.CharField(max_length=10, choices=PLATFORM_CHOICES,
+                                default='telegram')
+    external_id = models.CharField(max_length=255,
+        help_text='Telegram chat id or @username')
+    name = models.CharField(max_length=255, blank=True)
+    invite_url = models.URLField(blank=True,
+        help_text='Optional public invite for non-members')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('platform', 'external_id')
+        verbose_name = 'Community Channel'
+        verbose_name_plural = 'Community Channels'
+
+    def __str__(self):
+        return f'{self.name or self.external_id} ({self.platform})'
+
+
+class ChannelMembershipSnapshot(models.Model):
+    """Observed membership (display only; never drives access control)."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='channel_membership_snapshots')
+    channel = models.ForeignKey(
+        CommunityChannel, on_delete=models.CASCADE,
+        related_name='membership_snapshots')
+    is_member = models.BooleanField(default=False)
+    checked_at = models.DateTimeField()
+
+    class Meta:
+        unique_together = ('user', 'channel')
+        verbose_name = 'Channel Membership Snapshot'
+        verbose_name_plural = 'Channel Membership Snapshots'
+
+    def __str__(self):
+        return f'{self.user} - {self.channel}: member={self.is_member}'
+
+
 from django.conf import settings as _provision_settings
 from django.core.exceptions import ValidationError
 

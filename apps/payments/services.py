@@ -30,6 +30,32 @@ def interval_days_for(payment_intent):
     return {"monthly": 30, "quarterly": 90, "yearly": 365}.get(interval, 30)
 
 
+def _notify_connect_telegram_once(payment_intent):
+    """In-app nudge: paid but Telegram not linked -> connect to get access."""
+    try:
+        from apps.bot_integration.models import TelegramAccount
+        if TelegramAccount.objects.filter(
+                user_id=payment_intent.user_id, is_active=True).exists():
+            return
+        from apps.notifications.models import Notification
+        from django.conf import settings
+        from django.urls import reverse
+        base = (getattr(settings, "SITE_BASE_URL", "") or "").rstrip("/")
+        Notification.objects.get_or_create(
+            user_id=payment_intent.user_id,
+            notification_type=Notification.NotificationType.TELEGRAM,
+            title="One more step: connect Telegram",
+            defaults={
+                "message": (
+                    f"Your {payment_intent.plan.name} subscription is active. "
+                    "Connect your Telegram account to unlock your channel access."),
+                "link": base + reverse("bot_integration:telegram_connect"),
+            },
+        )
+    except Exception:
+        logger.exception("connect-telegram notification failed")
+
+
 def _notify_payment_succeeded(payment_intent, subscription):
     """Receipt email exactly once per activated payment; must never break
     activation (webhook or browser path)."""
@@ -84,6 +110,7 @@ def activate_paid_subscription(payment_intent) -> tuple[bool, object]:
                     new_plan_id=payment_intent.plan_id,
                     new_status=Subscription.Status.ACTIVE)
                 _notify_payment_succeeded(payment_intent, subscription)
+                _notify_connect_telegram_once(payment_intent)
                 return True, subscription
         subscription = Subscription.objects.create(
             user_id=payment_intent.user_id, plan=payment_intent.plan,
@@ -120,6 +147,7 @@ def activate_paid_subscription(payment_intent) -> tuple[bool, object]:
             plan_duration_days=interval_days,
         )
     _notify_payment_succeeded(payment_intent, subscription)
+    _notify_connect_telegram_once(payment_intent)
     from apps.events.models import record_event
     record_event(
         "purchase.completed",

@@ -112,3 +112,47 @@ class ProvisioningOperation(models.Model):
 
     def __str__(self):
         return f"{self.operation}:{self.operation_id} [{self.state}]"
+
+
+class PeriodicJob(models.Model):
+    """Admin-managed lightweight periodic job executed by the in-Django
+    scheduler (one cache-locked thread spawned at app startup).
+
+    Suitable for light housekeeping (membership syncs, digests). NOT for
+    heavy processing - use durable Jobs / workers for that.
+    """
+
+    class Status(models.TextChoices):
+        OK = 'ok', 'OK'
+        ERROR = 'error', 'Error'
+
+    name = models.CharField(max_length=100, unique=True,
+        help_text='Handler key, e.g. sync_channel_memberships')
+    enabled = models.BooleanField(default=True)
+    interval_minutes = models.PositiveIntegerField(default=60)
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    last_status = models.CharField(max_length=10, choices=Status.choices,
+                                   blank=True, default='')
+    last_error = models.TextField(blank=True, default='')
+    max_calls_per_run = models.PositiveIntegerField(default=10,
+        help_text='Max getChatMember API calls consumed per run (rate budget).')
+    state = models.JSONField(blank=True, default=dict,
+        help_text='Scheduler sweep cursor (dict).')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Periodic job'
+        verbose_name_plural = 'Periodic jobs'
+
+    def __str__(self):
+        state = 'on' if self.enabled else 'off'
+        return f'{self.name} every {self.interval_minutes}m ({state})'
+
+    def is_due(self):
+        if not self.enabled:
+            return False
+        if self.last_run_at is None:
+            return True
+        return timezone.now() >= self.last_run_at + timezone.timedelta(
+            minutes=self.interval_minutes)
+

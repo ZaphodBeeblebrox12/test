@@ -1,7 +1,7 @@
 """Durable jobs admin: operational / read-mostly."""
 from django.contrib import admin
 
-from .models import Job
+from .models import Job, PeriodicJob
 
 
 @admin.register(Job)
@@ -28,3 +28,13 @@ class JobAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         # Jobs are enqueued by code, not created by hand.
         return False
+
+
+@admin.register(PeriodicJob)
+class PeriodicJobAdmin(admin.ModelAdmin):
+    list_display = ['name', 'enabled', 'interval_minutes', 'max_calls_per_run',
+                    'last_run_at', 'last_status']
+    list_filter = ['enabled', 'last_status']
+    search_fields = ['name']
+    readonly_fields = ['last_run_at', 'last_status', 'last_error', 'state', 'created_at']
+

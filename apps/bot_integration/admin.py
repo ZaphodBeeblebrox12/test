@@ -5,7 +5,8 @@ from django.contrib import messages
 from django.utils.html import format_html
 from .models import (
     BotConfig, TelegramAccount, DiscordAccount, PlanChannelMapping,
-    UserChannelAssignment, BotAccessAudit, TelegramVerificationToken
+    UserChannelAssignment, BotAccessAudit, TelegramVerificationToken,
+    CommunityChannel, ChannelMembershipSnapshot
 )
 from .services.telegram import TelegramBotService
 
@@ -164,6 +165,27 @@ class BotAccessAuditAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
+        return False
+
+
+
+
+
+@admin.register(CommunityChannel)
+class CommunityChannelAdmin(admin.ModelAdmin):
+    list_display = ['name', 'platform', 'external_id', 'is_active', 'created_at']
+    list_filter = ['platform', 'is_active']
+    search_fields = ['name', 'external_id']
+
+
+@admin.register(ChannelMembershipSnapshot)
+class ChannelMembershipSnapshotAdmin(admin.ModelAdmin):
+    list_display = ['user', 'channel', 'is_member', 'checked_at']
+    list_filter = ['is_member', 'channel']
+    search_fields = ['user__username', 'channel__name']
+    readonly_fields = ['user', 'channel', 'is_member', 'checked_at']
+
+    def has_add_permission(self, request):
         return False
 
 

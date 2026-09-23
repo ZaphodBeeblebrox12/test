@@ -1,0 +1,75 @@
+<!DOCTYPE html><html><head><meta charset='utf-8'><title>Ops</title><style>
+body{font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#f4f6f8;margin:0;padding:28px 16px;color:#1f2937}
+.wrap{max-width:960px;margin:0 auto}
+h1{font-size:20px}h2{font-size:14px;margin:22px 0 8px;text-transform:uppercase;letter-spacing:.4px;color:#6b7280}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:18px 22px;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:7px 0;border-bottom:1px solid #eef0f3;text-align:left}th{color:#9ca3af;font-weight:500;font-size:11px;text-transform:uppercase}
+a{color:#2563eb;text-decoration:none}
+.kpis{display:flex;gap:14px;flex-wrap:wrap}
+.kpi{flex:1;min-width:130px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 18px}
+.kpi .v{font-size:22px;font-weight:700}.kpi .l{font-size:11px;color:#6b7280;margin-top:2px}
+.ok{color:#16a34a}.bad{color:#dc2626}.mut{color:#9ca3af}
+.btn{display:inline-block;background:#2563eb;color:#fff;border:0;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;text-decoration:none}
+.warn{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:13px}
+form{display:inline}
+</style></head><body><div class='wrap'>
+<h1>Operations <span style='font-size:12px;color:#9ca3af'>&middot; <a href='/admin/'>&larr; admin</a></span></h1>
+
+{% if pending_count > 20 or not scheduler_alive %}
+<div class='warn'>&#9888;&#65039; {% if not scheduler_alive %}Scheduler heartbeat missing - is the server running?{% else %}Job queue backing up ({{ pending_count }} pending).{% endif %} Staff have been notified in-app.</div>
+{% endif %}
+
+<div class='kpis'>
+<div class='kpi'><div class='v'>{{ today_rev|floatformat:2 }}</div><div class='l'>Revenue today (USD)</div></div>
+<div class='kpi'><div class='v'>{{ month_rev|floatformat:2 }}</div><div class='l'>Revenue this month</div></div>
+<div class='kpi'><div class='v {{ pending_count|yesno:"bad,ok" }}'>{{ pending_count }}</div><div class='l'>Pending jobs {% if oldest_pending %}(oldest {{ oldest_pending.run_at|timesince }} ago){% endif %}</div></div>
+<div class='kpi'><div class='v'>{{ chargebacks }}</div><div class='l'>Chargebacks (all time)</div></div>
+<div class='kpi'><div class='v'>{{ refunded|floatformat:2 }}</div><div class='l'>Refunded (cents summed /100)</div></div>
+</div>
+<p style='font-size:12px'>Scheduler: {% if scheduler_alive %}<span class='ok'>alive</span>{% else %}<span class='bad'>no heartbeat</span>{% endif %}
+&middot; Last job finished: {% if last_done %}{{ last_done.finished_at|timesince }} ago{% else %}never{% endif %}
+&middot; Webhooks: {% for p,w in webhooks.items %}{{ p }}: {% if w %}{{ w.received_at|timesince }} ago{% else %}none{% endif %}{% if not forloop.last %} &middot; {% endif %}{% endfor %}
+&middot; <a href='/admin/jobs/job/?status__exact=pending'>Jobs admin</a> &middot; <a href="{% url 'ops-payments-csv' %}">Export payments CSV</a></p>
+
+<h2>&#128176; Paid but no channel access ({{ paid_no_access|length }})</h2>
+<div class='card'>{% if paid_no_access %}
+<table><tr><th>User</th><th>Missing channels</th><th>Expires</th><th></th></tr>
+{% for row in paid_no_access %}
+<tr><td><a href="{% url 'ops-user-detail' row.user.pk %}">{{ row.user.username }}</a></td>
+<td>{{ row.missing|join:", " }}</td><td>{{ row.expires|date:"M d" }}</td>
+<td><form method='post' action="{% url 'ops-reconcile-user' row.user.pk %}">{% csrf_token %}<button class='btn'>Re-run reconcile</button></form></td></tr>
+{% endfor %}</table>
+{% else %}<p class='ok' style='margin:0'>Everyone entitled is in. ✅</p>{% endif %}</div>
+
+<h2>&#9888;&#65039; Stuck grants (24h) &middot; <a style='text-transform:none' href='/admin/bot_integration/botaccessaudit/?status__exact=failed'>view all in admin</a></h2>
+<div class='card'>{% if stuck %}
+<table><tr><th>When</th><th>User</th><th>Channel</th><th>Error</th><th></th></tr>
+{% for s in stuck %}
+<tr><td>{{ s.created_at|timesince }} ago</td><td><a href="{% url 'ops-user-detail' s.user.pk %}">{{ s.user.username }}</a></td>
+<td>{{ s.target }}</td><td class='bad'>{{ s.error_message|truncatechars:40 }}</td>
+<td><form method='post' action="{% url 'ops-reconcile-user' s.user.pk %}">{% csrf_token %}<button class='btn'>Retry</button></form></td></tr>
+{% endfor %}</table>
+{% else %}<p class='ok' style='margin:0'>No failed grants in 24h. ✅</p>{% endif %}</div>
+
+<h2>&#10060; Failed payments (7d) &middot; <a style='text-transform:none' href='/admin/payments/paymentintent/?status__exact=failed'>view in admin</a></h2>
+<div class='card'><p style='margin:0;font-size:14px'>{{ failed_payments|length }} failed attempt{{ failed_payments|length|pluralize }} in the last 7 days. Customers were not charged; they can retry from the dashboard.</p></div>
+
+<h2>&#9200; Expiring within 7 days ({{ expiring|length }})</h2>
+<div class='card'>{% if expiring %}
+<table><tr><th>User</th><th>Plan</th><th>Expires</th></tr>
+{% for s in expiring %}
+<tr><td><a href="{% url 'ops-user-detail' s.user.pk %}">{{ s.user.username }}</a></td><td>{{ s.plan.name }}</td>
+<td {% if s.expires_at < now %}class='bad'{% endif %}>{{ s.expires_at|date:"M d, Y" }}</td></tr>
+{% endfor %}</table>
+<p class='mut' style='font-size:11px;margin:8px 0 0'>Reminders and expiry are handled by the existing periodic jobs - this list is observability only.</p>
+{% else %}<p class='ok' style='margin:0'>Nothing expiring this week. ✅</p>{% endif %}</div>
+
+<h2>Periodic jobs</h2>
+<div class='card'><table><tr><th>Name</th><th>Every</th><th>Last run</th><th>Status</th></tr>
+{% for j in periodic %}<tr><td>{{ j.name }}</td><td>{{ j.interval_minutes }}m</td>
+<td>{% if j.last_run_at %}{{ j.last_run_at|timesince }} ago{% else %}never{% endif %}</td>
+<td class='{% if j.last_status == 'ok' %}ok{% elif j.last_status == 'error' %}bad{% else %}mut{% endif %}'>{{ j.last_status|default:"-" }}</td></tr>
+{% endfor %}</table></div>
+
+</div></body></html>

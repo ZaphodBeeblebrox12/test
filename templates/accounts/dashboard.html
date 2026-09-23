@@ -6,6 +6,19 @@
 
 {% block content %}
 <div class="row">
+    {% if show_connect_banner %}
+    <div class="col-12">
+        <div class="alert alert-warning d-flex justify-content-between align-items-center mb-4">
+            {% if telegram_access_state.state == 'needs_action' %}
+            <span><i class="bi bi-exclamation-triangle-fill"></i> <strong>Telegram access needs action:</strong> {{ telegram_access_state.detail }}</span>
+            <a href="{{ telegram_access_state.cta_url }}" class="btn btn-sm btn-danger">{{ telegram_access_state.cta_label }}</a>
+            {% else %}
+            <span><i class="bi bi-telegram"></i> <strong>One more step:</strong> {{ telegram_access_state.detail }}</span>
+            <a href="{% url 'bot_integration:telegram_connect' %}" class="btn btn-sm btn-primary">Connect Telegram</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
     <!-- Welcome Card -->
     <div class="col-12 mb-4">
         <div class="card">
@@ -46,25 +59,61 @@
     <!-- Telegram Status -->
     <div class="col-md-4 mb-4">
         <div class="card h-100">
-            <div class="card-header">
-                <i class="bi bi-telegram"></i> Telegram Connection
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-telegram"></i> Telegram</span>
+                {% if telegram_connected %}<span class="badge bg-success">Connected</span>{% endif %}
             </div>
             <div class="card-body">
                 {% if telegram_connected %}
-                <div class="text-center">
-                    <span class="status-badge status-connected mb-3">
-                        <i class="bi bi-check-circle-fill"></i> Connected
-                    </span>
-                    {% if user.telegram_username %}
-                    <p class="text-muted">@{{ user.telegram_username }}</p>
+                <div class="d-flex align-items-center mb-3">
+                    {% if telegram_account.avatar %}
+                    <img src="{{ telegram_account.avatar.url }}" alt="Telegram avatar" class="rounded-circle me-3" width="48" height="48" style="object-fit:cover;">
+                    {% else %}
+                    <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center me-3" style="width:48px;height:48px;font-weight:600;font-size:18px;">{{ telegram_account.display_name|slice:":1"|upper }}</div>
                     {% endif %}
+                    <div class="overflow-hidden">
+                        <div class="fw-bold text-truncate">{{ telegram_account.display_name }}</div>
+                        {% if telegram_account.username %}<div class="text-muted small text-truncate">@{{ telegram_account.username }}</div>{% endif %}
+                        <div class="text-muted small">ID {{ telegram_account.chat_id }}</div>
+                    </div>
                 </div>
+                <div class="d-flex justify-content-between small text-muted mb-3">
+                    <span>Linked {{ telegram_account.linked_at|date:"M d, Y" }}</span>
+                    {% if telegram_channel_count %}<span>{{ telegram_channel_count }} channel{{ telegram_channel_count|pluralize }}</span>{% endif %}
+                </div>
+                {% if telegram_channels.free or telegram_channels.paid %}
+                <div class="list-group list-group-flush small mb-2">
+                    {% for ch in telegram_channels.free %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center px-0 py-1">
+                        <span class="text-truncate"><i class="bi bi-hash"></i> {{ ch.name }}</span>
+                        {% if ch.is_member %}
+                        <span class="badge bg-success">Member</span>
+                        {% elif ch.invite_url %}
+                        <a href="{{ ch.invite_url }}" target="_blank" rel="noopener" class="badge text-bg-primary text-decoration-none">Join</a>
+                        {% else %}
+                        <span class="badge bg-secondary">Not a member</span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                    {% for ch in telegram_channels.paid %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center px-0 py-1">
+                        <span class="text-truncate"><i class="bi bi-star-fill text-warning"></i> {{ ch.name }}</span>
+                        {% if ch.entitled %}
+                        <span class="badge bg-success">{% if ch.assigned %}Member{% else %}Included{% endif %}</span>
+                        {% else %}
+                        <span class="badge bg-secondary"><i class="bi bi-lock-fill"></i> {{ ch.plan_name }}</span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <a href="{% url 'bot_integration:telegram_unlink' %}" class="btn btn-sm btn-outline-danger w-100">Disconnect</a>
                 {% else %}
                 <div class="text-center">
                     <span class="status-badge status-disconnected mb-3">
                         <i class="bi bi-x-circle-fill"></i> Not Connected
                     </span>
-                    <p class="text-muted small">Connect your Telegram account for notifications</p>
+                    <p class="text-muted small">Connect your Telegram account for notifications and channel access</p>
                     <a href="{% url 'bot_integration:telegram_connect' %}" class="btn btn-sm btn-outline-primary">
                         Connect Now
                     </a>

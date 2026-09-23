@@ -164,6 +164,15 @@ class TelegramBotService:
         return cls._api_request("getMe")
 
     @classmethod
+    def get_user_profile_photos(cls, user_id: int, limit: int = 1):
+        return cls._api_request("getUserProfilePhotos",
+                                {"user_id": user_id, "limit": limit})
+
+    @classmethod
+    def get_file(cls, file_id: str):
+        return cls._api_request("getFile", {"file_id": file_id})
+
+    @classmethod
     def set_webhook(cls, url=None):
         config = cls._get_config()
         webhook_url = url or config.telegram_webhook_url
