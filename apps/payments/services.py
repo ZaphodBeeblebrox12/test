@@ -148,6 +148,8 @@ def activate_paid_subscription(payment_intent) -> tuple[bool, object]:
         )
     _notify_payment_succeeded(payment_intent, subscription)
     _notify_connect_telegram_once(payment_intent)
+    if getattr(payment_intent, "is_upgrade", False):
+        _finalize_upgrade(payment_intent, subscription)
     from apps.events.models import record_event
     record_event(
         "purchase.completed",
@@ -253,6 +255,85 @@ def apply_refund_policy(payment_intent):
         return None
     cancel_subscription(subscription, actor="refund")
     return subscription
+
+
+# ─────────────────────── self-serve upgrade ────────────────────────────────
+
+class UpgradeError(Exception):
+    pass
+
+
+INTERVAL_DAYS = {"monthly": 30, "quarterly": 90, "yearly": 365}
+
+
+def compute_upgrade_quote(user, target_plan, request):
+    """Prorated upgrade quote. Raises UpgradeError on ineligibility.
+
+    credit = current snapshot price x (remaining days / current interval),
+    amount_due = target price - credit (floor 0). Documented formula.
+    """
+    subscription = (Subscription.objects
+                    .filter(user=user, status=Subscription.Status.ACTIVE,
+                            is_active=True)
+                    .select_related("plan", "plan_price").first())
+    if subscription is None:
+        raise UpgradeError("No active subscription to upgrade.")
+    if target_plan.pk == subscription.plan_id:
+        raise UpgradeError("You are already on this plan.")
+    if target_plan.display_order <= subscription.plan.display_order:
+        raise UpgradeError("Upgrades are to a higher-tier plan only.")
+
+    from apps.subscriptions.services import resolve_plan_price, split_resolved_price
+    resolved = resolve_plan_price(target_plan, "monthly", request)
+    fk = split_resolved_price(resolved)
+
+    now = timezone.now()
+    remaining_days = 0
+    if subscription.expires_at:
+        remaining_days = max((subscription.expires_at - now).days, 0)
+    interval = (subscription.plan_price.interval
+                if subscription.plan_price else "monthly")
+    interval_days = INTERVAL_DAYS.get(interval, 30)
+    from_price = subscription.price_cents or 0
+    credit = from_price * min(remaining_days, interval_days) // interval_days
+    amount_due = max(resolved.price_cents - credit, 0)
+    return {
+        "subscription": subscription,
+        "resolved_price": resolved,
+        "fk": fk,
+        "from_price_cents": from_price,
+        "prorated_credit_cents": credit,
+        "amount_due_cents": amount_due,
+        "remaining_days": remaining_days,
+        "interval_days": interval_days,
+        "currency": fk["price_currency"],
+    }
+
+
+def _finalize_upgrade(payment_intent, subscription):
+    """Post-activation: complete the pending UpgradeHistory + write the
+    upgraded lifecycle event. Old subscription is auto-canceled by
+    Subscription.save deactivation. Never raises."""
+    try:
+        from apps.subscriptions.models import UpgradeHistory
+        uh = (UpgradeHistory.objects
+              .filter(user_id=payment_intent.user_id,
+                      to_plan=payment_intent.plan, is_successful=False)
+              .order_by("-created_at").first())
+        if uh is None:
+            return
+        uh.to_subscription = subscription
+        uh.is_successful = True
+        uh.save(update_fields=["to_subscription", "is_successful"])
+        SubscriptionHistory.objects.create(
+            subscription=subscription, user_id=payment_intent.user_id,
+            event_type=SubscriptionHistory.EventType.UPGRADED,
+            previous_plan_id=uh.from_plan_id,
+            new_plan_id=payment_intent.plan_id,
+            new_status=Subscription.Status.ACTIVE,
+            notes="Self-serve upgrade with proration.")
+    except Exception:
+        logger.exception("upgrade finalization failed")
 
 
 # ─────────────────────── chargebacks / disputes ────────────────────────────

@@ -17,7 +17,8 @@ a{color:#2563eb;text-decoration:none}.btn{display:inline-block;background:#2563e
 {% if subscription %}
 <div class='card'><h2>{{ subscription.plan.name }} <span class='badge b-ok'>Active</span></h2>
 <p style='font-size:14px;margin:6px 0'>Renews by repurchase &middot; expires <strong>{{ subscription.expires_at|date:"M d, Y" }}</strong></p>
-<a class='btn' href='{{ renew_url }}'>Renew / Extend</a></div>
+<a class='btn' href='{{ renew_url }}'>Renew / Extend</a>
+&nbsp;<a class='btn' style='background:#7c3aed' href='/upgrade/'>Upgrade plan</a></div>
 {% else %}
 <div class='card'><h2>No active subscription <span class='badge b-off'>Expired</span></h2>
 <a class='btn' href='{{ renew_url }}'>View plans</a></div>

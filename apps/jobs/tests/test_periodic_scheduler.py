@@ -49,6 +49,8 @@ class PeriodicJobTests(TestCase):
 
 class SchedulerRunDueTests(TestCase):
     def setUp(self):
+        # Isolate from other migration-seeded jobs (winback/welcome).
+        PeriodicJob.objects.exclude(name="sync_channel_memberships").delete()
         self.job = _job(last_run_at=None)
 
     def test_due_job_executes_with_job_arg_and_marks_ok(self):

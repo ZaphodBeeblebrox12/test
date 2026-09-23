@@ -1,0 +1,36 @@
+{% extends "emails/base_email.html" %}
+{% block preheader %}{{ percent_off }}% off if you come back this week.{% endblock %}
+{% block header_tagline %}We miss you{% endblock %}
+{% block content %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td class="px" style="padding:34px 32px 6px 32px; border-top:4px solid #2563eb; border-radius:8px 8px 0 0;">
+      <div style="font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:20px;font-weight:700;color:#111827;">Come back — {{ percent_off }}% off</div>
+      <div style="font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13px;color:#6b7280;padding-top:3px;">One-time code, valid until {{ valid_until|date:"M d, Y" }}</div>
+    </td>
+  </tr>
+  <tr>
+    <td class="px" style="padding:18px 32px 8px 32px;">
+      <p style="margin:0;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:22px;color:#374151;">
+        Hi {{ username }}, your subscription recently expired. Here's a
+        <strong>{{ percent_off }}% discount code</strong> to pick up right where you left off:
+      </p>
+    </td>
+  </tr>
+  <tr>
+    <td class="px" style="padding:14px 32px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr><td align="center" style="background:#eff6ff;border:1px dashed #93c5fd;border-radius:6px;padding:16px;">
+          <span style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:22px;font-weight:700;letter-spacing:2px;color:#1d4ed8;">{{ code }}</span>
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td class="px" style="padding:6px 32px 34px 32px;">
+      {% include "emails/partials/button.html" with url=dashboard_url label="Renew now" %}
+      <p style="margin:10px 0 0 0;text-align:center;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;color:#9ca3af;">Apply the code at checkout. Your channels and history are waiting.</p>
+    </td>
+  </tr>
+</table>
+{% endblock %}

@@ -83,8 +83,9 @@ class OpsAlertTests(TestCase):
 
     def test_queue_backlog_alerts_staff(self):
         Job.objects.create(kind="process_webhook_event", payload={},
-                           status=Job.Status.PENDING,
-                           run_at=timezone.now() - timezone.timedelta(minutes=30))
+                           status="pending",
+                           next_attempt_at=timezone.now()
+                           - timezone.timedelta(minutes=30))
         self.client.get("/staff/ops/")
         self.assertTrue(Notification.objects.filter(
             user=self.staff, notification_type=Notification.NotificationType.SYSTEM,

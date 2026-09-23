@@ -1,0 +1,13 @@
+Hello {{ username }},
+
+We noticed your subscription recently expired - and we'd love to have you back.
+
+Use this one-time discount code at checkout:
+
+    {{ code }}
+
+{{ percent_off }}% off any plan, valid until {{ valid_until|date:"M d, Y" }}.
+
+Your access (channels, alerts, history) picks up right where you left off.
+
+— TradeAdmin

@@ -25,6 +25,10 @@ POLL_SECONDS = 60
 PERIODIC_HANDLERS = {
     "sync_channel_memberships":
         "apps.bot_integration.services.channel_sync.sync_channel_memberships_window",
+    "win_back_expired":
+        "apps.growth.services.winback.run_win_back",
+    "welcome_sequence":
+        "apps.growth.services.welcomesequence.run_welcome_sequence",
 }
 
 

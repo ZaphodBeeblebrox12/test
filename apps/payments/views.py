@@ -1,9 +1,11 @@
 """Minimal payment views for simple payment flow."""
 import logging
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.shortcuts import get_object_or_404, render
+from django.utils import timezone
+from django.shortcuts import get_object_or_404, redirect, render
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -14,7 +16,7 @@ from apps.subscriptions.models import Plan, Subscription
 from apps.subscriptions.services import resolve_plan_price, get_pricing_country, split_resolved_price
 
 from . import providers
-from .models import PaymentIntent
+from .models import PaymentIntent, WebhookEvent
 from .notifications import notify_payment_failed
 from .services import activate_paid_subscription
 
@@ -430,12 +432,12 @@ def ops_dashboard(request):
     now = timezone.now()
     staff_users = list(User.objects.filter(is_staff=True))
 
-    pending = Job.objects.filter(status=Job.Status.PENDING)
+    pending = Job.objects.filter(status="pending")
     pending_count = pending.count()
-    oldest_pending = pending.order_by("run_at").first()
+    oldest_pending = pending.order_by("next_attempt_at").first()
     last_done = (Job.objects
-                 .filter(status__in=[Job.Status.SUCCEEDED, Job.Status.FAILED])
-                 .order_by("-finished_at").first())
+                 .filter(status__in=["succeeded", "failed"])
+                 .order_by("-updated_at").first())
     webhooks = {prov: WebhookEvent.objects.filter(provider=prov)
                 .order_by("-received_at").first()
                 for prov in ("stripe", "razorpay")}
@@ -446,9 +448,10 @@ def ops_dashboard(request):
     if pending_count > 20:
         _ops_alert(staff_users, f"Ops: {pending_count} pending jobs",
                    "Job queue is backing up - check that runjobs/scheduler is running.")
-    if oldest_pending and oldest_pending.run_at < now - timedelta(minutes=10):
+    if oldest_pending and oldest_pending.next_attempt_at < now - timedelta(minutes=10):
         _ops_alert(staff_users, "Ops: oldest pending job is stuck",
-                   f"Oldest pending job is older than 10 minutes (run_at={oldest_pending.run_at}).")
+                   f"Oldest pending job is older than 10 minutes "
+                   f"(next_attempt_at={oldest_pending.next_attempt_at}).")
 
     # Worklist 1: paid but missing channel access.
     # Reuses reconcile's SINGLE entitlement definition (compute_target_access)
@@ -566,3 +569,96 @@ def ops_user_detail(request, pk):
         "audit": AuditLog.objects.filter(user=user).order_by("-created_at")[:30],
         "notes": Notification.objects.filter(user=user).order_by("-created_at")[:10],
     })
+
+
+# ───────────────────── Self-serve upgrade (prorated) ───────────────────────
+from .services import UpgradeError, compute_upgrade_quote
+
+
+@login_required
+def upgrade_page(request):
+    """List higher-tier plans with proration math for the current sub."""
+    from apps.subscriptions.services import resolve_plan_price, format_price
+    subscription = Subscription.objects.filter(
+        user=request.user, status=Subscription.Status.ACTIVE,
+        is_active=True).select_related("plan").first()
+    options = []
+    if subscription is not None:
+        candidates = (Plan.objects
+                      .filter(is_active=True, is_trial=False,
+                              display_order__gt=subscription.plan.display_order)
+                      .order_by("display_order"))
+        for plan in candidates:
+            try:
+                quote = compute_upgrade_quote(request.user, plan, request)
+            except UpgradeError:
+                continue
+            except Exception:
+                logger.exception("upgrade quote failed for plan %s", plan.pk)
+                continue
+            options.append({
+                "plan": plan,
+                "price_display": format_price(quote["fk"]["price_cents"],
+                                              quote["currency"]),
+                "credit_display": format_price(quote["prorated_credit_cents"],
+                                               quote["currency"]),
+                "due_display": format_price(quote["amount_due_cents"],
+                                            quote["currency"]),
+                "remaining_days": quote["remaining_days"],
+            })
+    return render(request, "payments/upgrade.html", {
+        "subscription": subscription, "options": options,
+    })
+
+
+@login_required
+def upgrade_start(request):
+    """Create a prorated upgrade intent + pending UpgradeHistory, go to checkout."""
+    from apps.subscriptions.models import UpgradeHistory
+    from django.conf import settings as dj_settings
+    from apps.subscriptions.services import get_pricing_country
+
+    plan_id = request.POST.get("plan_id") or request.GET.get("plan_id")
+    plan = Plan.objects.filter(pk=plan_id, is_active=True, is_trial=False).first()
+    if plan is None:
+        return redirect("upgrade-page")
+    try:
+        quote = compute_upgrade_quote(request.user, plan, request)
+    except UpgradeError as exc:
+        messages.error(request, str(exc))
+        return redirect("upgrade-page")
+
+    subscription = quote["subscription"]
+    fk = quote["fk"]
+    country = get_pricing_country(request) or ""
+    intent = PaymentIntent.objects.create(
+        user=request.user, plan=plan, plan_price=fk["plan_price"],
+        geo_plan_price=fk["geo_plan_price"],
+        base_amount_cents=quote["resolved_price"].price_cents,
+        amount=quote["amount_due_cents"], currency=quote["currency"],
+        provider=get_provider_for_country(country),
+        status=PaymentIntent.Status.PENDING, country=country,
+        is_upgrade=True,
+    )
+    UpgradeHistory.objects.create(
+        user=request.user, from_subscription=subscription,
+        from_plan=subscription.plan, to_plan=plan,
+        from_price_cents=quote["from_price_cents"],
+        to_price_cents=quote["resolved_price"].price_cents,
+        prorated_credit_cents=quote["prorated_credit_cents"],
+        amount_due_cents=quote["amount_due_cents"],
+        pricing_country=country or None, is_successful=False,
+    )
+    base = dj_settings.SITE_BASE_URL
+    try:
+        checkout = providers.create_hosted_checkout(
+            intent,
+            success_url=f"{base}/confirm-page/{intent.id}/",
+            cancel_url=f"{base}/checkout/{intent.id}/?canceled=1")
+    except providers.ProviderError as exc:
+        intent.delete()
+        messages.error(request, f"Payment provider error: {exc}")
+        return redirect("upgrade-page")
+    intent.provider_reference = checkout.provider_reference
+    intent.save(update_fields=["provider_reference"])
+    return redirect(f"/checkout/{intent.id}/")

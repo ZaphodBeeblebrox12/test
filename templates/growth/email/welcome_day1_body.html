@@ -1,0 +1,17 @@
+{% extends "emails/base_email.html" %}
+{% block preheader %}Three quick things to get you set up{% endblock %}
+{% block header_tagline %}Getting started{% endblock %}
+{% block content %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr><td class="px" style="padding:34px 32px 6px 32px; border-top:4px solid #2563eb; border-radius:8px 8px 0 0;">
+    <div style="font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:20px; font-weight:700; color:#111827;">Welcome aboard</div>
+    <div style="font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:13px; color:#6b7280; padding-top:3px;">Three quick things to get you set up</div>
+  </td></tr>
+  <tr><td class="px" style="padding:18px 32px 8px 32px;">
+    <p style="margin:0; font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; font-size:14px; line-height:22px; color:#374151;">Hi {{ username }}, welcome! <strong>1.</strong> Connect Telegram for channel access and alerts. <strong>2.</strong> Pick a plan when you're ready. <strong>3.</strong> Questions? We're at /support/.</p>
+  </td></tr>
+  <tr><td class="px" style="padding:16px 32px 34px 32px;">
+    {% include "emails/partials/button.html" with url=dashboard_url label="Open dashboard" %}
+  </td></tr>
+</table>
+{% endblock %}

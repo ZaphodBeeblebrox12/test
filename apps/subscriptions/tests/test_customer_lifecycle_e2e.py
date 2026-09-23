@@ -141,7 +141,9 @@ class CustomerLifecycleE2E(TestCase):
             HTTP_X_RAZORPAY_SIGNATURE=rp_sig(body))
 
     def run_webhook_job(self):
-        ev = WebhookEvent.objects.latest("id")
+        # UUID PKs: latest("id") orders by random uuid, not time -
+        # pick the actually-newest event by receive time.
+        ev = WebhookEvent.objects.order_by("-received_at").first()
         job = self._job_for_event(ev)
         webhook_processor.process_webhook_event(job.payload, job)
 

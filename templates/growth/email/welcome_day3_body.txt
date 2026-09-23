@@ -1,0 +1,8 @@
+Hello {{ username }},
+
+Quick check-in: if you've been meaning to set up but got stuck, it takes two minutes:
+Dashboard -> Connect Telegram -> choose a plan.
+
+Or just reply to this email / visit https://yourdomain/support/ and we'll help personally.
+
+— TradeAdmin

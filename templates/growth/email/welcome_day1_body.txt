@@ -1,0 +1,9 @@
+Hello {{ username }},
+
+Welcome! Three quick things to get the most out of your account:
+
+1. Connect Telegram (Dashboard -> Connect Telegram) for channel access and alerts
+2. Pick a plan when you're ready - your Payment History and receipts live on the dashboard
+3. Questions? https://yourdomain/support/
+
+— TradeAdmin

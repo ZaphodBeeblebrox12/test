@@ -112,6 +112,10 @@ class PaymentIntent(models.Model):
         default="",
         help_text=_("Provider payment/charge id (pi_.. / pay_..) used to link refund/dispute webhooks to this intent."),
     )
+    is_upgrade = models.BooleanField(
+        default=False,
+        help_text=_("Prorated upgrade purchase; on activation writes UpgradeHistory + upgraded history."),
+    )
     refunded_cents = models.PositiveIntegerField(
         default=0,
         help_text=_("Cumulative refunded amount in minor units (cents/paise)."),
