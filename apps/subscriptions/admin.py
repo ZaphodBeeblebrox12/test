@@ -13,7 +13,7 @@ from django.core.exceptions import ValidationError
 
 from apps.bot_integration.models import UserChannelAssignment
 from .models import (
-    Plan, PlanPrice, Subscription, SubscriptionHistory,
+    Plan, PlanFeature, PlanPrice, Subscription, SubscriptionHistory,
     UpgradeHistory, GiftSubscription, GeoPlanPrice, UserTrialUsage
 )
 from .services import (
@@ -248,6 +248,19 @@ class GeoPlanPriceInline(admin.TabularInline):
         return formset
 
 
+class PlanFeatureInline(admin.TabularInline):
+    """Inline admin for landing-page feature bullets.
+
+    DB features REPLACE the hardcoded tier defaults entirely for a plan —
+    leave this empty to keep the hardcoded defaults for that plan."""
+    model = PlanFeature
+    extra = 1
+    fields = ["position", "text"]
+    ordering = ["position", "id"]
+    verbose_name = "Landing Page Feature"
+    verbose_name_plural = "Landing Page Features (empty = hardcoded tier defaults)"
+
+
 # =============================================================================
 # MAIN PLAN ADMIN (Unified Interface with Trial Support)
 # =============================================================================
@@ -307,7 +320,7 @@ class PlanAdmin(admin.ModelAdmin):
     search_fields = ["name", "description"]
     ordering = ["display_order", "tier"]
 
-    inlines = [PlanPriceInline, GeoPlanPriceInline]
+    inlines = [PlanPriceInline, GeoPlanPriceInline, PlanFeatureInline]
 
     fieldsets = (
         ("Plan Information", {

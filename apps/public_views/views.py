@@ -90,7 +90,10 @@ class LandingPageView(TemplateView):
                         trial_info = trial
                         trial_price_display = trial_price_data['display']
 
-                features = self._get_features_for_tier(tier)
+                # Feature bullets: DB-driven (PlanFeature) when the plan has
+                # any, otherwise the hardcoded tier defaults.
+                features = (self._get_plan_features(selected_plan)
+                            or self._get_features_for_tier(tier))
 
                 plans_data.append({
                     'plan': selected_plan,
@@ -279,6 +282,21 @@ class LandingPageView(TemplateView):
     def _get_currency_symbol(self, currency: str) -> str:
         symbols = {'USD': '$', 'EUR': '€', 'GBP': '£', 'INR': '₹', 'JPY': '¥'}
         return symbols.get(currency, '₹')
+
+    def _get_plan_features(self, plan: Plan) -> List[Dict[str, Any]]:
+        """DB-driven feature bullets (PlanFeature) in admin-controlled order.
+
+        Returns an empty list when the plan has no PlanFeature rows, so the
+        caller falls back to the hardcoded tier defaults from
+        _get_features_for_tier. DB features REPLACE the fallback entirely
+        (they are not merged).
+        """
+        try:
+            rows = plan.features.order_by("position", "id")
+            return [{"text": f.text, "disabled": False} for f in rows]
+        except Exception as e:
+            logger.warning(f"Could not load features for plan {plan.pk}: {e}")
+            return []
 
     def _get_features_for_tier(self, tier: str) -> List[Dict[str, Any]]:
         features_map = {

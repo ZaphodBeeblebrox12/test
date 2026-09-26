@@ -163,6 +163,41 @@ class PlanPrice(models.Model):
         return self.price_cents / 100
 
 
+class PlanFeature(models.Model):
+    """Landing-page feature bullet for a plan.
+
+    DB-driven replacement for the hardcoded per-tier feature lists in
+    LandingPageView._get_features_for_tier. A plan with NO PlanFeature rows
+    falls back to the hardcoded tier defaults (see _get_plan_features).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan = models.ForeignKey(
+        Plan,
+        on_delete=models.CASCADE,
+        related_name="features",
+        help_text=_("The plan this feature bullet belongs to")
+    )
+    text = models.CharField(
+        max_length=255,
+        help_text=_("Feature bullet text shown on the pricing card")
+    )
+    position = models.PositiveSmallIntegerField(
+        default=0,
+        help_text=_("Display order on the card (lower = shown first)")
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("plan feature")
+        verbose_name_plural = _("plan features")
+        ordering = ["position", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.plan.name}: {self.text}"
+
+
 class GeoPlanPrice(models.Model):
     """Geo-specific pricing for plans - OVERRIDES ONLY."""
 
