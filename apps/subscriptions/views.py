@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 @api_view(["GET"])
 def plan_list(request):
     """List all active plans with standard pricing."""
-    plans = Plan.objects.filter(is_active=True).order_by("display_order")
+    plans = Plan.objects.filter(is_active=True, is_hidden=False).order_by("display_order")
     serializer = PlanSerializer(plans, many=True)
     return Response({"plans": serializer.data})
 
@@ -53,7 +53,7 @@ def plan_list_geo(request):
     region = get_region_for_country(country) if country else None
     user = request.user if request.user.is_authenticated else None
 
-    plans = Plan.objects.filter(is_active=True).order_by("display_order")
+    plans = Plan.objects.filter(is_active=True, is_hidden=False).order_by("display_order")
     data = []
 
     for plan in plans:
@@ -116,7 +116,7 @@ def plan_detail_geo(request, plan_id):
     For trials: returns 404 if no geo price exists for user's region.
     """
     try:
-        plan = Plan.objects.get(id=plan_id, is_active=True)
+        plan = Plan.objects.get(id=plan_id, is_active=True, is_hidden=False)
     except Plan.DoesNotExist:
         return Response(
             {"error": "Plan not found"},
@@ -216,7 +216,7 @@ def purchase_plan_view(request):
         )
 
     try:
-        plan = Plan.objects.get(id=plan_id, is_active=True)
+        plan = Plan.objects.get(id=plan_id, is_active=True, is_hidden=False)
     except Plan.DoesNotExist:
         return Response(
             {"error": "Plan not found"},
@@ -349,7 +349,7 @@ def upgrade_history_list(request):
 @permission_classes([IsAuthenticated])
 def my_trial_usage(request):
     """Get current user's trial usage status for all trial plans."""
-    trial_plans = Plan.objects.filter(is_trial=True, is_active=True)
+    trial_plans = Plan.objects.filter(is_trial=True, is_active=True, is_hidden=False)
     usage_data = []
 
     for plan in trial_plans:

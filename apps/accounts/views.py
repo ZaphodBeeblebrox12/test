@@ -87,27 +87,43 @@ class DashboardView(View):
             subscription = None
             current_plan = None
 
+        # Plan features for the subscription card: DB-driven (PlanFeature,
+        # ordered by position) with the hardcoded tier list as fallback.
+        current_plan_features = []
+        if current_plan is not None:
+            current_plan_features = (
+                [{'text': f.text, 'disabled': False}
+                 for f in current_plan.features.order_by('position', 'id')]
+            )
+
         # ===== REPLACED: Get available plans with geo‑pricing =====
         country = get_pricing_country(request)
-        available_plans = Plan.objects.filter(is_active=True, is_trial=False).order_by('display_order')
+        available_plans = Plan.objects.filter(is_active=True, is_trial=False, is_hidden=False).order_by('display_order')
         plans_with_pricing = []
 
         for plan in available_plans:
+            price_display = None
+            is_geo = False
+            currency = None
+            price_cents = None
             try:
                 price_obj = resolve_plan_price(plan, 'monthly', request)
-                price_display = format_price(price_obj.price_cents, price_obj.currency)
-                is_geo = isinstance(price_obj, GeoPlanPrice)
-                currency = price_obj.currency
-                price_cents = price_obj.price_cents
+                if price_obj is not None:
+                    price_display = format_price(price_obj.price_cents, price_obj.currency)
+                    is_geo = isinstance(price_obj, GeoPlanPrice)
+                    currency = price_obj.currency
+                    price_cents = price_obj.price_cents
             except Exception:
                 # Fallback to base price
                 base_price = plan.prices.filter(interval='monthly', is_active=True).first()
-                if not base_price:
-                    continue
-                price_display = format_price(base_price.price_cents, base_price.currency)
-                is_geo = False
-                currency = base_price.currency
-                price_cents = base_price.price_cents
+                if base_price:
+                    price_display = format_price(base_price.price_cents, base_price.currency)
+                    is_geo = False
+                    currency = base_price.currency
+                    price_cents = base_price.price_cents
+            # Plans without any resolvable price are STILL listed so users
+            # can see the option; the template shows a "Request access" link
+            # (ticket-gated plans) instead of a price badge.
 
             plans_with_pricing.append({
                 'id': plan.id,
@@ -119,7 +135,8 @@ class DashboardView(View):
                 'currency': currency,
                 'price_cents': price_cents,
                 # Optionally include features for display
-                'features': _get_plan_features(plan.tier),
+                'features': [{'text': f.text, 'disabled': False} for f in plan.features.order_by('position', 'id')],
+                'description_html': plan.description_html,
             })
 
         # ===== END OF REPLACED SECTION =====
@@ -179,6 +196,8 @@ class DashboardView(View):
             "unread_count": unread_count,
             "subscription": subscription,
             "current_plan": current_plan,
+            'current_plan_features': current_plan_features,
+            'current_plan_description_html': (current_plan.description_html if current_plan is not None else ''),
             # Old variable kept for backward compatibility (list of Plan objects)
             "available_plans": available_plans,
             # New geo‑aware variables
@@ -591,12 +610,3 @@ class UserActivityAPIView(APIView):
 
 
 # ===== HELPER FUNCTION FOR PLAN FEATURES =====
-def _get_plan_features(tier):
-    """Return feature list for a given tier."""
-    features_map = {
-        'free': ['3 real-time trades/week', 'Entry alerts', 'Email support'],
-        'basic': ['5 trades/week', 'Stop & target alerts', 'Basic risk', 'Email', 'Chat'],
-        'pro': ['Unlimited trades', 'Advanced risk', 'SMS alerts', '24/7 support'],
-        'enterprise': ['All Pro features', '1-on-1 calls', 'API access', 'Custom'],
-    }
-    return features_map.get(tier, features_map['basic'])

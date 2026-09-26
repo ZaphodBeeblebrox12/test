@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Raise a Ticket{% endblock %}
+{% block page_title %}Raise a Ticket{% endblock %}
+{% block content %}
+<div class="card" style="max-width:640px">
+  <div class="card-body">
+    <form method="post" enctype="multipart/form-data" id="ticket-form">
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      <p>{{ form.category.label_tag }} {{ form.category }} {{ form.category.errors }}</p>
+      <div id="access-only-fields">
+        <p>{{ form.affiliate_link.label_tag }} {{ form.affiliate_link }} {{ form.affiliate_link.errors }}
+           <small class="form-text text-muted">{{ form.affiliate_link.help_text }}</small></p>
+      </div>
+      <p>{{ form.message.label_tag }} {{ form.message }} {{ form.message.errors }}</p>
+      <div id="attachment-fields">
+        <p>{{ form.attachments.label_tag }} {{ form.attachments }} {{ form.attachments.errors }}
+           <small class="form-text text-muted">{{ form.attachments.help_text }}</small></p>
+      </div>
+      <button type="submit" class="btn btn-primary">Submit ticket</button>
+    </form>
+  </div>
+</div>
+<script>
+(function () {
+  var cat = document.getElementById("id_category");
+  var accessOnly = document.getElementById("access-only-fields");
+  function toggle() {
+    var isAccess = cat.value === "access_request";
+    accessOnly.style.display = isAccess ? "" : "none";
+  }
+  if (cat) { cat.addEventListener("change", toggle); toggle(); }
+})();
+</script>
+{% endblock %}

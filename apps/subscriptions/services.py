@@ -172,6 +172,10 @@ def purchase_plan(user, plan, request=None):
     """Create a subscription for the user (handles both regular and trial plans)."""
     from datetime import timedelta
 
+    if plan.is_hidden:
+        raise PermissionDenied(
+            "This plan is granted by admin approval and cannot be purchased.")
+
     if not plan.is_trial:
         raise PermissionDenied(
             "Paid plans must be purchased through the payment flow.")
@@ -327,12 +331,15 @@ def grant_subscription_by_admin(
     user: User,
     plan: Plan,
     granted_by: User,
-    duration_days: int = 30,
+    duration_days: int | None = 30,
     reason: str = "",
     request = None
 ) -> Subscription:
     with transaction.atomic():
-        expires_at = timezone.now() + timezone.timedelta(days=duration_days)
+        if duration_days is None:
+            expires_at = None  # no expiry (approval-granted hidden plans)
+        else:
+            expires_at = timezone.now() + timezone.timedelta(days=duration_days)
         subscription = Subscription.objects.create(
             user=user,
             plan=plan,

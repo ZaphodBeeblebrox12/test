@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Ticket {{ ticket.short_id }}{% endblock %}
+{% block page_title %}Ticket {{ ticket.short_id }}{% endblock %}
+{% block content %}
+<p><strong>Category:</strong> {{ ticket.get_category_display }} &nbsp;
+   <strong>Status:</strong> {{ ticket.get_status_display }}</p>
+{% if ticket.affiliate_link %}
+<p><strong>Referral link used:</strong> {{ ticket.affiliate_link.name }}
+   (code {{ ticket.affiliate_link.referral_code }})</p>
+{% endif %}
+{% if ticket.plan %}
+<p><strong>Plan:</strong> {{ ticket.plan.name }}</p>
+{% endif %}
+<p><strong>Message:</strong><br>{{ ticket.message|linebreaksbr }}</p>
+{% if ticket.attachments.all %}
+<div class="row">
+  {% for a in ticket.attachments.all %}
+  <div class="col-md-3 mb-2">
+    <a href="{{ a.file.url }}" target="_blank">
+      <img src="{{ a.file.url }}" class="img-fluid img-thumbnail" alt="screenshot">
+    </a>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% if ticket.status == "pending" and user == ticket.user %}
+<form method="post" action="{% url 'support:withdraw_ticket' ticket.pk %}"
+      onsubmit="return confirm('Withdraw this ticket? You can open a new one afterwards.');">
+  {% csrf_token %}
+  <button type="submit" class="btn btn-outline-secondary btn-sm">Withdraw ticket</button>
+</form>
+{% endif %}
+{% if ticket.status == "rejected" and ticket.admin_notes %}
+<div class="alert alert-warning"><strong>Reason:</strong> {{ ticket.admin_notes }}</div>
+{% endif %}
+{% if ticket.status == "approved" and ticket.admin_notes %}
+<div class="alert alert-info"><strong>Note:</strong> {{ ticket.admin_notes }}</div>
+{% endif %}
+{% endblock %}

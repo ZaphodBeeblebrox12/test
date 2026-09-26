@@ -321,6 +321,9 @@
 
                 <div class="plan-header">
                     <div class="plan-name">{{ tier_data.plan.name }}</div>
+                    {% if tier_data.plan.description_html %}
+                    <div class="plan-description">{{ tier_data.plan.description_html|safe }}</div>
+                    {% endif %}
                     <div class="plan-description">{{ tier_data.plan.description|default:"" }}</div>
                 </div>
 

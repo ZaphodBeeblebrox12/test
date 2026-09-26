@@ -1,0 +1,17 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+{% block submit_buttons_bottom %}
+  {{ block.super }}
+  {% if original.status == "pending" %}
+  <div class="submit-row" style="margin-top:10px">
+    {% if original.category == "access_request" %}
+    <input type="submit" value="{% trans 'Approve & Grant Access' %}" name="_approve_grant"
+           class="default" style="background:#2e7d32">
+    {% else %}
+    <input type="submit" value="{% trans 'Mark Resolved' %}" name="_approve_grant"
+           class="default" style="background:#2e7d32">
+    {% endif %}
+    <input type="submit" value="{% trans 'Reject / Close' %}" name="_reject" style="background:#b71c1c">
+  </div>
+  {% endif %}
+{% endblock %}

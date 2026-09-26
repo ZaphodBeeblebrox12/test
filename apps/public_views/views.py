@@ -60,26 +60,21 @@ class LandingPageView(TemplateView):
                 tier_plans = Plan.objects.filter(
                     tier=tier,
                     is_active=True,
-                    is_trial=False
+                    is_trial=False,
+                    is_hidden=False
                 ).order_by('-display_order')
 
                 if not tier_plans.exists():
                     continue
 
-                selected_plan = tier_plans.first()
-
-                pricing = self._get_all_interval_pricing(selected_plan, country)
-                # A paid tier needs at least one resolvable interval price to
-                # render its card. The FREE tier has no prices by design —
-                # its card renders with pricing=None (template guards handle
-                # the missing tabs/price blocks; the CTA is "Get Started Free").
-                if not pricing and tier != 'free':
-                    continue
-
+                # EVERY plan in the tier gets its own card (ordered by
+                # display_order). The tier's trial offer attaches to the
+                # first card of the tier that actually renders.
                 trial = Plan.objects.filter(
                     tier=tier,
                     is_active=True,
-                    is_trial=True
+                    is_trial=True,
+                    is_hidden=False
                 ).first()
 
                 trial_info = None
@@ -90,22 +85,34 @@ class LandingPageView(TemplateView):
                         trial_info = trial
                         trial_price_display = trial_price_data['display']
 
-                # Feature bullets: DB-driven (PlanFeature) when the plan has
-                # any, otherwise the hardcoded tier defaults.
-                features = (self._get_plan_features(selected_plan)
-                            or self._get_features_for_tier(tier))
+                trial_attached = False
+                for selected_plan in tier_plans:
+                    pricing = self._get_all_interval_pricing(selected_plan, country)
+                    # A paid plan needs at least one resolvable interval price
+                    # to render its card. The FREE tier has no prices by
+                    # design — its card renders with pricing=None (template
+                    # guards handle the missing tabs/price blocks; the CTA is
+                    # "Get Started Free").
+                    if not pricing and tier != 'free':
+                        continue
 
-                plans_data.append({
-                    'plan': selected_plan,
-                    'tier': tier,
-                    'pricing': pricing,
-                    'currency_symbol': (pricing.get('currency_symbol', '₹')
-                                        if pricing else '₹'),
-                    'is_geo': (pricing.get('is_geo', False) if pricing else False),
-                    'trial': trial_info,
-                    'trial_price_display': trial_price_display,
-                    'features': features,
-                })
+                    # Feature bullets come from PlanFeature rows only
+                    # (admin-controlled); no hardcoded fallbacks.
+                    features = self._get_plan_features(selected_plan)
+
+                    plans_data.append({
+                        'plan': selected_plan,
+                        'tier': tier,
+                        'pricing': pricing,
+                        'currency_symbol': (pricing.get('currency_symbol', '₹')
+                                            if pricing else '₹'),
+                        'is_geo': (pricing.get('is_geo', False) if pricing else False),
+                        'trial': trial_info if not trial_attached else None,
+                        'trial_price_display': (trial_price_display
+                                                if not trial_attached else None),
+                        'features': features,
+                    })
+                    trial_attached = True
 
             return plans_data
 
@@ -288,7 +295,8 @@ class LandingPageView(TemplateView):
 
         Returns an empty list when the plan has no PlanFeature rows, so the
         caller falls back to the hardcoded tier defaults from
-        _get_features_for_tier. DB features REPLACE the fallback entirely
+        the hardcoded tier lists. DB features are the only source; plans without
+    PlanFeature rows render without bullets
         (they are not merged).
         """
         try:
@@ -298,42 +306,7 @@ class LandingPageView(TemplateView):
             logger.warning(f"Could not load features for plan {plan.pk}: {e}")
             return []
 
-    def _get_features_for_tier(self, tier: str) -> List[Dict[str, Any]]:
-        features_map = {
-            'free': [
-                {'text': '3 real-time trades per week', 'disabled': False},
-                {'text': 'Entry & target alerts', 'disabled': False},
-                {'text': 'Email notifications', 'disabled': False},
-                {'text': 'Basic risk guidance', 'disabled': True},
-                {'text': 'SMS alerts', 'disabled': True},
-                {'text': 'Trade history', 'disabled': True},
-            ],
-            'basic': [
-                {'text': '5 real-time trades per week', 'disabled': False},
-                {'text': 'Entry, stop & target alerts', 'disabled': False},
-                {'text': 'Basic risk management', 'disabled': False},
-                {'text': 'Email notifications', 'disabled': False},
-                {'text': '24/7 chat support', 'disabled': False},
-                {'text': 'Advanced analytics', 'disabled': True},
-            ],
-            'pro': [
-                {'text': 'Unlimited real-time trades', 'disabled': False},
-                {'text': 'Entry, updates & exit alerts', 'disabled': False},
-                {'text': 'Advanced risk management', 'disabled': False},
-                {'text': 'SMS + Email notifications', 'disabled': False},
-                {'text': '24/7 chat support', 'disabled': False},
-                {'text': 'Full trade history & review', 'disabled': False},
-            ],
-            'enterprise': [
-                {'text': 'Everything in Pro, plus:', 'disabled': False},
-                {'text': '1-on-1 monthly strategy call', 'disabled': False},
-                {'text': 'Priority trade alerts (faster)', 'disabled': False},
-                {'text': 'Custom risk parameters', 'disabled': False},
-                {'text': 'API access', 'disabled': False},
-                {'text': 'White-label exports', 'disabled': False},
-            ],
-        }
-        return features_map.get(tier, features_map['basic'])
+
 
 
 # Removed CustomLoginView and CustomSignupView – use allauth's views instead.

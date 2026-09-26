@@ -10,6 +10,8 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.models import User
 
+from .sanitize import clean_html
+
 
 class Plan(models.Model):
     """Subscription plan definition."""
@@ -36,6 +38,11 @@ class Plan(models.Model):
         blank=True,
         help_text=_("Plan description shown to users")
     )
+    description_html = models.TextField(
+        blank=True,
+        default="",
+        help_text=_("Optional rich HTML shown on the landing page and dashboard card above the feature bullets. Sanitized on save: safe tags only (p, br, ul, ol, li, b, strong, i, em, u, s, a, blockquote, code, h4-h6); scripts and styling are stripped.")
+    )
     max_projects = models.PositiveIntegerField(
         default=0,
         help_text=_("Maximum number of projects allowed")
@@ -55,6 +62,29 @@ class Plan(models.Model):
     display_order = models.PositiveSmallIntegerField(
         default=0,
         help_text=_("Order for display in plan lists (higher = shown first)")
+    )
+
+    is_hidden = models.BooleanField(
+        default=False,
+        help_text=_("Hidden plans never appear on the landing page, dashboard, or purchase API. Access is granted by admin/ticket approval only.")
+    )
+    grant_duration_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=_("For approval-granted (hidden) plans: subscription length in days after approval. Leave empty for no expiry.")
+    )
+    notice_channel = models.CharField(
+        max_length=10,
+        choices=[("telegram", _("Telegram")), ("email", _("Email")), ("both", _("Both"))],
+        default="telegram",
+        help_text=_("Where approval/rejection notices are sent for access-request tickets on this plan")
+    )
+    ticket_approvers = models.ManyToManyField(
+        "accounts.User",
+        blank=True,
+        related_name="approvable_plans",
+        limit_choices_to={"is_staff": True},
+        help_text=_("Staff allowed to approve/reject access tickets for this plan. Empty = any staff. Superusers can always approve.")
     )
 
     # TRIAL FIELDS
@@ -87,6 +117,7 @@ class Plan(models.Model):
     def clean(self):
         """Validate trial configuration."""
         super().clean()
+        self.description_html = clean_html(self.description_html)
         if self.is_trial:
             if not self.trial_duration_days:
                 raise ValidationError({

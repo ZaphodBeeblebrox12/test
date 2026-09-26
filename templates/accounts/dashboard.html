@@ -189,11 +189,16 @@
 
                     {% if current_plan %}
                     <hr>
+                    {% if current_plan_description_html %}
+                    <div class="small mb-2">{{ current_plan_description_html|safe }}</div>
+                    {% endif %}
+                    {% if current_plan_features %}
                     <h6 class="small fw-bold">Plan Features:</h6>
+                    {% endif %}
                     <ul class="list-unstyled small mb-0">
-                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> {{ current_plan.max_projects }} Projects</li>
-                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> {{ current_plan.max_storage_mb }} MB Storage</li>
-                        <li><i class="bi bi-check-circle-fill text-success me-1"></i> {{ current_plan.api_calls_per_day }} API Calls/Day</li>
+                        {% for f in current_plan_features %}
+                        <li{% if f.disabled %} class="text-muted"{% endif %}><i class="bi {% if f.disabled %}bi-x-circle{% else %}bi-check-circle-fill text-success{% endif %} me-1"></i> {{ f.text }}</li>
+                        {% endfor %}
                     </ul>
                     {% endif %}
                 {% else %}
@@ -209,7 +214,11 @@
                     {% for plan in available_plans_geo %}
                         <div class="d-flex justify-content-between align-items-center mb-1 small">
                             <span>{{ plan.name }}</span>
+                            {% if plan.price_display %}
                             <span class="badge bg-primary">{{ plan.price_display }}</span>
+                            {% else %}
+                            <a href="{% url 'support:request_ticket' %}" class="badge bg-secondary text-decoration-none">Request access</a>
+                            {% endif %}
                         </div>
                     {% endfor %}
                     {% endif %}

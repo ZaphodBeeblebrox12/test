@@ -11,7 +11,10 @@ User = get_user_model()
 
 class StaticPageTests(TestCase):
     def test_support_page(self):
-        self.assertEqual(self.client.get("/support/").status_code, 200)
+        # /support/ is now the login-required ticket system (apps.support);
+        # the static help page lives at /help/.
+        self.assertEqual(self.client.get("/help/").status_code, 200)
+        self.assertEqual(self.client.get("/support/").status_code, 302)
 
     def test_policy_pages(self):
         for path in ("/policies/refund/", "/policies/terms/", "/policies/risk/"):
