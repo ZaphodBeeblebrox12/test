@@ -8,17 +8,20 @@ from .base import *
 
 DEBUG = env("DEBUG", default=False)
 
-# Hosts: comma-separated env (Render injects its own URL too).
-ALLOWED_HOSTS = env(
-    "ALLOWED_HOSTS",
-    default=".onrender.com",
-)
+# Hosts: comma-separated env. MUST be a list (Django rejects a plain
+# string, and this override replaces base.py's list conversion).
+ALLOWED_HOSTS = [
+    h.strip() for h in
+    env("ALLOWED_HOSTS", default=".onrender.com").split(",")
+    if h.strip()
+]
 
-# CSRF: env list + the app URL. base.py only allows all-origins when DEBUG.
-CSRF_TRUSTED_ORIGINS = env(
-    "CSRF_TRUSTED_ORIGINS",
-    default="https://*.onrender.com",
-)
+# CSRF: same list requirement.
+CSRF_TRUSTED_ORIGINS = [
+    o.strip() for o in
+    env("CSRF_TRUSTED_ORIGINS", default="https://*.onrender.com").split(",")
+    if o.strip()
+]
 
 # --- Security hardening ---------------------------------------------------
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
