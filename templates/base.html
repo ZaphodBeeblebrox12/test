@@ -170,6 +170,11 @@
                     <i class="bi bi-clock-history"></i> Activity
                 </a>
             </li>
+            <li>
+                <a href="{% url 'support:my_tickets' %}" class="{% if '/support/' in request.path %}active{% endif %}">
+                    <i class="bi bi-headset"></i> Support
+                </a>
+            </li>
             <!-- REFERRAL LINK IN SIDEBAR with credit badge -->
             <li>
                 {% include "growth/partials/navbar_badge.html" with nav_type="sidebar" %}

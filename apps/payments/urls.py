@@ -15,7 +15,10 @@ urlpatterns = [
     path("subscription/manage/", views.manage_subscription_page,
          name="manage-subscription"),
     # Support & policy pages (linked from transactional emails)
-    path("support/", TemplateView.as_view(template_name="support.html"),
+    # NOTE: /support/ is now the login-required ticket system (apps.support).
+    # This static help page moved to /help/; the route name is unchanged so
+    # any reverse("support") callers keep working.
+    path("help/", TemplateView.as_view(template_name="support.html"),
          name="support"),
     path("policies/refund/", TemplateView.as_view(template_name="policies/refund.html"),
          name="refund-policy"),

@@ -45,7 +45,7 @@ def check_banned(view_func):
     def wrapper(request, *args, **kwargs):
         if request.user.is_authenticated and request.user.is_banned:
             return render(request, "accounts/banned.html", {
-                "ban_reason": request.user.ban_reason
+                "ban_reason": user.ban_reason
             })
         return view_func(request, *args, **kwargs)
     return wrapper
@@ -78,51 +78,272 @@ class DashboardView(View):
         ).count()
 
         # Get subscription data
-        try:
-            subscription = Subscription.objects.select_related(
-                'plan', 'plan_price'
-            ).get(user=user, is_active=True, status=Subscription.Status.ACTIVE)
-            current_plan = subscription.plan
-        except Subscription.DoesNotExist:
-            subscription = None
-            current_plan = None
+        # Multi-subscription safe: a user may hold one ACTIVE subscription
+        # PER PRODUCT, so never .get() here — take the most recent one as
+        # the "primary" for legacy context (referral estimate etc.). The
+        # product-aware cards below render ALL active subs.
+        subscription = (Subscription.objects
+                        .select_related('plan', 'plan_price')
+                        .filter(user=user, is_active=True,
+                                status=Subscription.Status.ACTIVE)
+                        .first())
+        current_plan = subscription.plan if subscription is not None else None
 
-        # ===== REPLACED: Get available plans with geo‑pricing =====
+        # Plan features for the subscription card: DB-driven (PlanFeature,
+        # ordered by position) with the hardcoded tier list as fallback.
+        current_plan_features = []
+        if current_plan is not None:
+            current_plan_features = (
+                [{'text': f.text, 'disabled': False}
+                 for f in current_plan.features.order_by('position', 'id')]
+            )
+
+        # ===== REPLACED: Plan & Billing section (redesign v3, product-aware) =====
+        from django.utils import timezone as _tz
+        from apps.subscriptions.models import Product
+        from apps.subscriptions.services import get_geo_price_for_trial
         country = get_pricing_country(request)
-        available_plans = Plan.objects.filter(is_active=True, is_trial=False).order_by('display_order')
-        plans_with_pricing = []
 
-        for plan in available_plans:
+        def _billing_snapshot(subscription):
+            """Immutable-snapshot billing facts for one subscription."""
+            if (subscription.price_cents is not None
+                    and subscription.price_currency):
+                price_display = format_price(
+                    subscription.price_cents, subscription.price_currency)
+            elif subscription.plan_price is not None:
+                price_display = format_price(
+                    subscription.plan_price.price_cents,
+                    subscription.plan_price.currency)
+            else:
+                price_display = None
+            ref_price = subscription.plan_price or subscription.geo_plan_price
+            interval_display = (
+                ref_price.get_interval_display() if ref_price is not None else '')
+            days_remaining = None
+            period_percent = None
+            if subscription.expires_at is not None:
+                days_remaining = (
+                    subscription.expires_at.date() - _tz.now().date()).days
+                if subscription.started_at is not None:
+                    total = (subscription.expires_at - subscription.started_at).total_seconds()
+                    elapsed = (_tz.now() - subscription.started_at).total_seconds()
+                    if total > 0:
+                        period_percent = max(0, min(100, int(elapsed / total * 100)))
+            is_expired = days_remaining is not None and days_remaining < 0
+            is_complimentary = bool(subscription.is_admin_grant
+                                    or subscription.is_gift)
+            return {
+                'price_display': price_display,
+                'interval_display': interval_display,
+                'period_end': subscription.expires_at,
+                'days_remaining': days_remaining,
+                'period_percent': period_percent,
+                'is_expired': is_expired,
+                'is_expiring': (not is_expired and days_remaining is not None
+                                and days_remaining <= 7),
+                'is_recurring': (not is_complimentary and ref_price is not None),
+                'is_trial': bool(subscription.is_trial),
+                'is_complimentary': is_complimentary,
+                'status': subscription.status,
+            }
+
+        def _interval_display(plan, interval):
+            """Display price for one interval; never raises (display-only)."""
+            try:
+                price_obj = resolve_plan_price(plan, interval, request)
+                if price_obj is not None:
+                    return format_price(price_obj.price_cents, price_obj.currency)
+            except Exception:
+                pass
+            base = plan.prices.filter(interval=interval, is_active=True).first()
+            if base is not None:
+                return format_price(base.price_cents, base.currency)
+            return None
+
+        def _plan_card(plan):
+            interval_displays = {}
+            is_geo = False
+            currency = None
+            price_cents = None
             try:
                 price_obj = resolve_plan_price(plan, 'monthly', request)
-                price_display = format_price(price_obj.price_cents, price_obj.currency)
-                is_geo = isinstance(price_obj, GeoPlanPrice)
-                currency = price_obj.currency
-                price_cents = price_obj.price_cents
+                if price_obj is not None:
+                    interval_displays['monthly'] = format_price(
+                        price_obj.price_cents, price_obj.currency)
+                    is_geo = isinstance(price_obj, GeoPlanPrice)
+                    currency = price_obj.currency
+                    price_cents = price_obj.price_cents
             except Exception:
-                # Fallback to base price
                 base_price = plan.prices.filter(interval='monthly', is_active=True).first()
-                if not base_price:
-                    continue
-                price_display = format_price(base_price.price_cents, base_price.currency)
-                is_geo = False
-                currency = base_price.currency
-                price_cents = base_price.price_cents
-
-            plans_with_pricing.append({
+                if base_price:
+                    interval_displays['monthly'] = format_price(base_price.price_cents, base_price.currency)
+                    is_geo = False
+                    currency = base_price.currency
+                    price_cents = base_price.price_cents
+            for iv in ('quarterly', 'yearly'):
+                iv_display = _interval_display(plan, iv)
+                if iv_display:
+                    interval_displays[iv] = iv_display
+            primary = None
+            for iv, iv_label in (('monthly', 'Month'), ('quarterly', 'Quarter'), ('yearly', 'Year')):
+                if iv in interval_displays:
+                    primary = (iv, iv_label, interval_displays[iv])
+                    break
+            features_qs = plan.features.order_by('position', 'id')
+            return {
                 'id': plan.id,
                 'name': plan.name,
                 'tier': plan.tier,
+                'product': plan.product,
                 'description': plan.description,
-                'price_display': price_display,
+                'price_display': primary[2] if primary else None,
+                'display_interval': primary[0] if primary else None,
+                'display_interval_label': primary[1] if primary else None,
+                'interval_prices': [
+                    {'interval': iv, 'interval_display': lbl,
+                     'price_display': interval_displays[iv]}
+                    for iv, lbl in (('monthly', 'Monthly'), ('quarterly', 'Quarterly'), ('yearly', 'Yearly'))
+                    if iv in interval_displays and primary is not None and iv != primary[0]
+                ],
                 'is_geo': is_geo,
                 'currency': currency,
                 'price_cents': price_cents,
-                # Optionally include features for display
-                'features': _get_plan_features(plan.tier),
+                'is_current': (current_plan is not None and plan.id == current_plan.id),
+                'features': [{'text': f.text, 'disabled': False} for f in features_qs[:6]],
+                'feature_count': features_qs.count(),
+                'description_html': plan.description_html,
+            }
+
+        # All active subscriptions, one card per product held.
+        active_subs = list(Subscription.objects.filter(
+            user=user, is_active=True, status=Subscription.Status.ACTIVE,
+        ).select_related('plan', 'plan__product', 'plan_price', 'geo_plan_price'))
+        active_subs.sort(key=lambda s: (
+            0 if s.plan.product_id is None else 1,
+            s.plan.product.display_order if s.plan.product_id else 0,
+            s.plan.display_order))
+
+        subscribed_product_ids = {s.plan.product_id for s in active_subs}
+
+        subscription_cards = []
+        for sub in active_subs:
+            candidates = (Plan.objects
+                          .filter(is_active=True, is_trial=False, is_hidden=False,
+                                  display_order__gt=sub.plan.display_order)
+                          .order_by('display_order'))
+            if sub.plan.product_id is not None:
+                candidates = candidates.filter(product_id=sub.plan.product_id)
+            else:
+                candidates = candidates.filter(product__isnull=True)
+            subscription_cards.append({
+                'subscription': sub,
+                'product': sub.plan.product,
+                'plan': sub.plan,
+                'billing': _billing_snapshot(sub),
+                'features': [{'text': f.text, 'disabled': False}
+                             for f in sub.plan.features.order_by('position', 'id')][:8],
+                'upgrade_candidates': [_plan_card(p) for p in candidates],
             })
 
+        # Explore: products the user does NOT hold, with visible plans.
+        explore_products = []
+        for product in Product.objects.filter(is_active=True).order_by('display_order', 'name'):
+            if product.id in subscribed_product_ids:
+                continue
+            plans = (Plan.objects
+                     .filter(product=product, is_active=True, is_trial=False,
+                             is_hidden=False)
+                     .order_by('display_order'))
+            cards = [_plan_card(p) for p in plans]
+            if cards:
+                explore_products.append({'product': product, 'plans': cards})
+
+        # Ungrouped (product=None) plans: same upgrade-only rule as before —
+        # a user holding an ungrouped sub sees only higher ungrouped plans;
+        # a user with no ungrouped sub sees all of them.
+        ungrouped_cards = []
+        if None not in subscribed_product_ids:
+            qs = (Plan.objects
+                  .filter(product__isnull=True, is_active=True, is_trial=False,
+                          is_hidden=False)
+                  .order_by('display_order'))
+        else:
+            primary = next(s for s in active_subs if s.plan.product_id is None)
+            qs = (Plan.objects
+                  .filter(product__isnull=True, is_active=True, is_trial=False,
+                          is_hidden=False,
+                          display_order__gt=primary.plan.display_order)
+                  .order_by('display_order'))
+        ungrouped_cards = [_plan_card(p) for p in qs]
+
+        # Per-product trial offers — only where the user has no active sub.
+        trial_offers = []
+        for tp in Plan.objects.filter(is_active=True, is_trial=True,
+                                      is_hidden=False).order_by('display_order'):
+            if tp.product_id in subscribed_product_ids:
+                continue
+            tprice = get_geo_price_for_trial(tp, country)
+            if tprice is None:
+                tprice = (GeoPlanPrice.objects
+                          .filter(plan=tp, is_active=True).first())
+            if tprice is not None:
+                trial_offers.append({
+                    'plan': tp,
+                    'product': tp.product,
+                    'price_display': format_price(tprice.price_cents, tprice.currency),
+                    'duration_days': tp.trial_duration_days,
+                })
+
+        # ---- legacy single-subscription keys (backward compatibility) ----
+        subscription = active_subs[0] if active_subs else None
+        current_plan = subscription.plan if subscription is not None else None
+        current_billing = (_billing_snapshot(subscription)
+                           if subscription is not None else None)
+        available_plans = qs  # ungrouped set above (upgrade-only rule)
+        plans_with_pricing = ungrouped_cards
+        can_upgrade = (subscription is not None and len(ungrouped_cards) > 0)
+        trial_offer = trial_offers[0] if trial_offers else None
+
+        ended_subscription = None
+        if subscription is None:
+            ended = (Subscription.objects
+                     .filter(user=user)
+                     .exclude(status=Subscription.Status.ACTIVE)
+                     .select_related('plan')
+                     .order_by('-expires_at')
+                     .first())
+            if ended is not None:
+                ended_subscription = {
+                    'plan_name': ended.plan.name,
+                    'ended_at': ended.expires_at or ended.canceled_at,
+                }
+
         # ===== END OF REPLACED SECTION =====
+
+        # Trial offer (region-locked, mirrors the landing page's display
+        # chain): country-specific GeoPlanPrice first, then a global
+        # (country__isnull) GeoPlanPrice. purchase_plan() enforces the
+        # country-specific row at buy time; on localhost (no CF header /
+        # MaxMind) load the dashboard as /dashboard/?test_country=IN (DEBUG)
+        # so both display and purchase resolve the same country.
+        trial_offer = None
+        from apps.subscriptions.services import get_geo_price_for_trial
+        trial_plan = Plan.objects.filter(
+            is_active=True, is_trial=True, is_hidden=False
+        ).first()
+        if trial_plan is not None:
+            trial_price = get_geo_price_for_trial(trial_plan, country)
+            if trial_price is None:
+                trial_price = GeoPlanPrice.objects.filter(
+                    plan=trial_plan, country__isnull=True, is_active=True
+                ).first()
+            if trial_price is not None:
+                trial_offer = {
+                    'plan': trial_plan,
+                    'price_display': format_price(
+                        trial_price.price_cents, trial_price.currency),
+                    'duration_days': trial_plan.trial_duration_days,
+                }
 
         # Telegram: channel display data (free = observed, paid = entitlement).
         from apps.bot_integration.services.channel_sync import (
@@ -179,10 +400,21 @@ class DashboardView(View):
             "unread_count": unread_count,
             "subscription": subscription,
             "current_plan": current_plan,
+            'current_plan_features': current_plan_features,
+            'current_plan_description_html': (current_plan.description_html if current_plan is not None else ''),
             # Old variable kept for backward compatibility (list of Plan objects)
             "available_plans": available_plans,
             # New geo‑aware variables
             "available_plans_geo": plans_with_pricing,
+            "current_billing": current_billing,
+            "can_upgrade": can_upgrade,
+            "ended_subscription": ended_subscription,
+            "trial_offer": trial_offer,
+            # product-aware presentation (v3)
+            "subscription_cards": subscription_cards,
+            "explore_products": explore_products,
+            "ungrouped_cards": ungrouped_cards,
+            "trial_offers": trial_offers,
             "user_country": country,
             "recent_payments": recent_payments,
             "telegram_channel_count": telegram_channel_count,
@@ -571,7 +803,6 @@ class UserProfileAPIView(APIView):
 
 class UserActivityAPIView(APIView):
     """Get user activity log."""
-    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         activities = AuditLog.objects.filter(
@@ -591,12 +822,3 @@ class UserActivityAPIView(APIView):
 
 
 # ===== HELPER FUNCTION FOR PLAN FEATURES =====
-def _get_plan_features(tier):
-    """Return feature list for a given tier."""
-    features_map = {
-        'free': ['3 real-time trades/week', 'Entry alerts', 'Email support'],
-        'basic': ['5 trades/week', 'Stop & target alerts', 'Basic risk', 'Email', 'Chat'],
-        'pro': ['Unlimited trades', 'Advanced risk', 'SMS alerts', '24/7 support'],
-        'enterprise': ['All Pro features', '1-on-1 calls', 'API access', 'Custom'],
-    }
-    return features_map.get(tier, features_map['basic'])

@@ -54,7 +54,7 @@ def payment_start(request):
         return Response({"detail": "plan_id is required."}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        plan = Plan.objects.get(id=plan_id, is_active=True)
+        plan = Plan.objects.get(id=plan_id, is_active=True, is_hidden=False)
     except Plan.DoesNotExist:
         return Response({"detail": "Plan not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -588,6 +588,10 @@ def upgrade_page(request):
                       .filter(is_active=True, is_trial=False,
                               display_order__gt=subscription.plan.display_order)
                       .order_by("display_order"))
+        if subscription.plan.product_id is not None:
+            candidates = candidates.filter(product_id=subscription.plan.product_id)
+        else:
+            candidates = candidates.filter(product__isnull=True)
         for plan in candidates:
             try:
                 quote = compute_upgrade_quote(request.user, plan, request)
@@ -619,7 +623,7 @@ def upgrade_start(request):
     from apps.subscriptions.services import get_pricing_country
 
     plan_id = request.POST.get("plan_id") or request.GET.get("plan_id")
-    plan = Plan.objects.filter(pk=plan_id, is_active=True, is_trial=False).first()
+    plan = Plan.objects.filter(pk=plan_id, is_active=True, is_trial=False, is_hidden=False).first()
     if plan is None:
         return redirect("upgrade-page")
     try:

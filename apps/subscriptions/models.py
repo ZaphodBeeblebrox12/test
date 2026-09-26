@@ -10,6 +10,50 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.accounts.models import User
 
+from .sanitize import clean_html
+
+
+class Product(models.Model):
+    """A sellable product/service line.
+
+    Plans belong to a product (or to no product = "ungrouped", the legacy
+    single-hierarchy behavior). Subscriptions are mutually exclusive only
+    WITHIN a product: a user may hold one active subscription per product.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(
+        max_length=100,
+        help_text=_("Display name for the product (e.g. 'Trade Thesis')")
+    )
+    slug = models.SlugField(
+        max_length=50,
+        unique=True,
+        help_text=_("URL/admin identifier (e.g. 'trade-thesis')")
+    )
+    description = models.TextField(
+        blank=True,
+        help_text=_("Short description shown on the dashboard explore section")
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text=_("Whether this product is offered to users")
+    )
+    display_order = models.PositiveSmallIntegerField(
+        default=0,
+        help_text=_("Order in product lists (lower = shown first)")
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("product")
+        verbose_name_plural = _("products")
+        ordering = ["display_order", "name"]
+
+    def __str__(self) -> str:
+        return self.name
+
 
 class Plan(models.Model):
     """Subscription plan definition."""
@@ -21,11 +65,19 @@ class Plan(models.Model):
         ENTERPRISE = "enterprise", _("Enterprise")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-
+    product = models.ForeignKey(
+        "subscriptions.Product",
+        on_delete=models.PROTECT,
+        related_name="plans",
+        null=True,
+        blank=True,
+        help_text=_("Product this plan belongs to. Empty = ungrouped (legacy "
+                    "global hierarchy): one active subscription across ALL "
+                    "ungrouped plans per user.")
+    )
     tier = models.CharField(
         max_length=20,
         choices=Tier.choices,
-        # REMOVED: unique=True  ← This was preventing multiple plans per tier
         help_text=_("Plan tier level")
     )
     name = models.CharField(
@@ -35,6 +87,11 @@ class Plan(models.Model):
     description = models.TextField(
         blank=True,
         help_text=_("Plan description shown to users")
+    )
+    description_html = models.TextField(
+        blank=True,
+        default="",
+        help_text=_("Optional rich HTML shown on the landing page and dashboard card above the feature bullets. Sanitized on save: safe tags only (p, br, ul, ol, li, b, strong, i, em, u, s, a, blockquote, code, h4-h6); scripts and styling are stripped.")
     )
     max_projects = models.PositiveIntegerField(
         default=0,
@@ -57,6 +114,29 @@ class Plan(models.Model):
         help_text=_("Order for display in plan lists (higher = shown first)")
     )
 
+    is_hidden = models.BooleanField(
+        default=False,
+        help_text=_("Hidden plans never appear on the landing page, dashboard, or purchase API. Access is granted by admin/ticket approval only.")
+    )
+    grant_duration_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=_("For approval-granted (hidden) plans: subscription length in days after approval. Leave empty for no expiry.")
+    )
+    notice_channel = models.CharField(
+        max_length=10,
+        choices=[("telegram", _("Telegram")), ("email", _("Email")), ("both", _("Both"))],
+        default="telegram",
+        help_text=_("Where approval/rejection notices are sent for access-request tickets on this plan")
+    )
+    ticket_approvers = models.ManyToManyField(
+        "accounts.User",
+        blank=True,
+        related_name="approvable_plans",
+        limit_choices_to={"is_staff": True},
+        help_text=_("Staff allowed to approve/reject access tickets for this plan. Empty = any staff. Superusers can always approve.")
+    )
+
     # TRIAL FIELDS
     is_trial = models.BooleanField(
         default=False,
@@ -75,9 +155,25 @@ class Plan(models.Model):
         verbose_name = _("plan")
         verbose_name_plural = _("plans")
         ordering = ["display_order", "tier"]
-        # ADDED: Unique constraint on tier + is_trial combination
-        # This allows: (basic, False) and (basic, True) but not (basic, False) twice
-        unique_together = ["tier", "is_trial"]
+        # One plan per (tier, is_trial) among UNGROUPED plans (legacy), and
+        # one per (tier, is_trial) WITHIN each product. This replaces the
+        # old global unique_together = ["tier", "is_trial"].
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tier", "is_trial"],
+                condition=models.Q(product__isnull=True),
+                name="unique_ungrouped_tier_trial",
+                violation_error_message=_(
+                    "Only one plan per tier is allowed outside a product (ungrouped)."),
+            ),
+            models.UniqueConstraint(
+                fields=["product", "tier", "is_trial"],
+                condition=models.Q(product__isnull=False),
+                name="unique_product_tier_trial",
+                violation_error_message=_(
+                    "A plan with this tier already exists in this product."),
+            ),
+        ]
 
     def __str__(self) -> str:
         if self.is_trial:
@@ -87,6 +183,7 @@ class Plan(models.Model):
     def clean(self):
         """Validate trial configuration."""
         super().clean()
+        self.description_html = clean_html(self.description_html)
         if self.is_trial:
             if not self.trial_duration_days:
                 raise ValidationError({
@@ -103,7 +200,7 @@ class PlanPrice(models.Model):
 
     class Interval(models.TextChoices):
         MONTHLY = "monthly", _("Monthly")
-        QUARTERLY = "quarterly", _("Quarterly") 
+        QUARTERLY = "quarterly", _("Quarterly")
         YEARLY = "yearly", _("Yearly")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -132,7 +229,6 @@ class PlanPrice(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -164,12 +260,7 @@ class PlanPrice(models.Model):
 
 
 class PlanFeature(models.Model):
-    """Landing-page feature bullet for a plan.
-
-    DB-driven replacement for the hardcoded per-tier feature lists in
-    LandingPageView._get_features_for_tier. A plan with NO PlanFeature rows
-    falls back to the hardcoded tier defaults (see _get_plan_features).
-    """
+    """Landing-page feature bullet for a plan."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     plan = models.ForeignKey(
@@ -203,7 +294,7 @@ class GeoPlanPrice(models.Model):
 
     class Interval(models.TextChoices):
         MONTHLY = "monthly", _("Monthly")
-        QUARTERLY = "quarterly", _("Quarterly") 
+        QUARTERLY = "quarterly", _("Quarterly")
         YEARLY = "yearly", _("Yearly")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -309,6 +400,17 @@ class Subscription(models.Model):
         on_delete=models.PROTECT,
         related_name="subscriptions",
         help_text=_("The subscribed plan")
+    )
+    # Denormalized from plan at creation (immutable thereafter). Scopes
+    # mutual exclusion: a user may hold one active subscription per
+    # product; product=None keeps the legacy global behavior.
+    product = models.ForeignKey(
+        "subscriptions.Product",
+        on_delete=models.PROTECT,
+        related_name="subscriptions",
+        null=True,
+        blank=True,
+        help_text=_("Product of the subscribed plan (snapshot at creation).")
     )
     plan_price = models.ForeignKey(
         PlanPrice,
@@ -428,7 +530,7 @@ class Subscription(models.Model):
     def clean(self):
         from django.core.exceptions import ValidationError
         if self.pk:
-            orig = Subscription.objects.filter(pk=self.pk).only("price_cents","price_currency").first()
+            orig = Subscription.objects.filter(pk=self.pk).only("price_cents", "price_currency").first()
             if orig and (orig.price_cents != self.price_cents or orig.price_currency != self.price_currency):
                 raise ValidationError("price_cents/price_currency are an immutable historical snapshot and cannot be changed after creation.")
         if self.is_active and self.status not in [self.Status.ACTIVE]:
@@ -437,11 +539,25 @@ class Subscription(models.Model):
             )
 
     def save(self, *args, **kwargs):
+        # Denormalize product from the plan (immutable once set, like the
+        # price snapshot). NOTE: UUID pks are populated at INSTANTIATION,
+        # so "not self.pk" never fires for unsaved rows — key off the
+        # product being unset instead. Legacy rows whose plans have no
+        # product keep product=None (global legacy semantics).
+        if self.plan_id and self.product_id is None:
+            self.product = self.plan.product
         if self.is_active and self.status == self.Status.ACTIVE:
-            Subscription.objects.filter(
+            # Product-scoped mutual exclusion: activating this subscription
+            # ends the user's OTHER subscriptions IN THE SAME PRODUCT only.
+            # product=None keeps the legacy GLOBAL behavior (one active
+            # subscription across all ungrouped plans).
+            others = Subscription.objects.filter(
                 user=self.user,
                 is_active=True
-            ).exclude(pk=self.pk).update(
+            ).exclude(pk=self.pk)
+            if self.product_id is not None:
+                others = others.filter(product_id=self.product_id)
+            others.update(
                 is_active=False,
                 status=self.Status.CANCELED,
                 canceled_at=timezone.now()

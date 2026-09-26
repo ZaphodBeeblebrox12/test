@@ -275,7 +275,10 @@ def compute_upgrade_quote(user, target_plan, request):
     subscription = (Subscription.objects
                     .filter(user=user, status=Subscription.Status.ACTIVE,
                             is_active=True)
-                    .select_related("plan", "plan_price").first())
+                    .select_related("plan", "plan_price"))
+    if target_plan.product_id is not None:
+        subscription = subscription.filter(product_id=target_plan.product_id)
+    subscription = subscription.first()
     if subscription is None:
         raise UpgradeError("No active subscription to upgrade.")
     if target_plan.pk == subscription.plan_id:

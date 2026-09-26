@@ -172,6 +172,10 @@ def purchase_plan(user, plan, request=None):
     """Create a subscription for the user (handles both regular and trial plans)."""
     from datetime import timedelta
 
+    if plan.is_hidden:
+        raise PermissionDenied(
+            "This plan is granted by admin approval and cannot be purchased.")
+
     if not plan.is_trial:
         raise PermissionDenied(
             "Paid plans must be purchased through the payment flow.")
@@ -197,8 +201,13 @@ def purchase_plan(user, plan, request=None):
     pricing_country = get_pricing_country(request) if request else None
     pricing_region = get_region_for_country(pricing_country) if pricing_country else None
 
-    # Deactivate any existing active subscriptions
-    Subscription.objects.filter(user=user, is_active=True).update(
+    # Deactivate existing active subscriptions IN THE SAME PRODUCT only;
+    # subscriptions in other products are independent entitlements.
+    # product=None keeps the legacy GLOBAL behavior.
+    same_product = Subscription.objects.filter(user=user, is_active=True)
+    if plan.product_id is not None:
+        same_product = same_product.filter(product_id=plan.product_id)
+    same_product.update(
         is_active=False, status=Subscription.Status.CANCELED, canceled_at=timezone.now()
     )
 
@@ -327,12 +336,15 @@ def grant_subscription_by_admin(
     user: User,
     plan: Plan,
     granted_by: User,
-    duration_days: int = 30,
+    duration_days: int | None = 30,
     reason: str = "",
     request = None
 ) -> Subscription:
     with transaction.atomic():
-        expires_at = timezone.now() + timezone.timedelta(days=duration_days)
+        if duration_days is None:
+            expires_at = None  # no expiry (approval-granted hidden plans)
+        else:
+            expires_at = timezone.now() + timezone.timedelta(days=duration_days)
         subscription = Subscription.objects.create(
             user=user,
             plan=plan,

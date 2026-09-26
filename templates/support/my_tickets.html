@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}My Tickets{% endblock %}
+{% block page_title %}My Tickets{% endblock %}
+{% block content %}
+<p><a class="btn btn-primary" href="{% url 'support:request_ticket' %}">New ticket</a></p>
+<ul class="list-group">
+  {% for t in tickets %}
+  <li class="list-group-item d-flex justify-content-between align-items-center">
+    <a href="{% url 'support:ticket_detail' t.pk %}">{{ t.short_id }}</a>
+    <span>{{ t.get_category_display }}</span>
+    <span>{{ t.get_status_display }}{% if t.plan %} &mdash; {{ t.plan.name }}{% endif %}</span>
+    <small class="text-muted">{{ t.created_at|date:"Y-m-d H:i" }}</small>
+  </li>
+  {% empty %}
+  <li class="list-group-item">No tickets yet.</li>
+  {% endfor %}
+</ul>
+{% endblock %}
