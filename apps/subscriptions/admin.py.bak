@@ -957,5 +957,3 @@ class GiftSubscriptionAdmin(admin.ModelAdmin):
     list_select_related = ["from_user", "to_user", "plan"]
     readonly_fields = ["gift_code", "created_at", "updated_at"]
     date_hierarchy = "created_at"
-
-from . import admin_product_extension  # noqa: F401

@@ -588,10 +588,6 @@ def upgrade_page(request):
                       .filter(is_active=True, is_trial=False,
                               display_order__gt=subscription.plan.display_order)
                       .order_by("display_order"))
-        if subscription.plan.product_id is not None:
-            candidates = candidates.filter(product_id=subscription.plan.product_id)
-        else:
-            candidates = candidates.filter(product__isnull=True)
         for plan in candidates:
             try:
                 quote = compute_upgrade_quote(request.user, plan, request)

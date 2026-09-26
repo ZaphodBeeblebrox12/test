@@ -69,7 +69,8 @@ class LandingPageView(TemplateView):
 
                 # EVERY plan in the tier gets its own card (ordered by
                 # display_order). The tier's trial offer attaches to the
-                # first card of the tier that actually renders.
+                # first PRICED card of the tier — an invite-only
+                # (request-access) card must not carry a trial CTA.
                 trial = Plan.objects.filter(
                     tier=tier,
                     is_active=True,
@@ -88,31 +89,38 @@ class LandingPageView(TemplateView):
                 trial_attached = False
                 for selected_plan in tier_plans:
                     pricing = self._get_all_interval_pricing(selected_plan, country)
-                    # A paid plan needs at least one resolvable interval price
-                    # to render its card. The FREE tier has no prices by
-                    # design — its card renders with pricing=None (template
-                    # guards handle the missing tabs/price blocks; the CTA is
-                    # "Get Started Free").
-                    if not pricing and tier != 'free':
-                        continue
+
+                    # Paid plans with no resolvable price render as
+                    # request-access (invite-only) cards instead of being
+                    # dropped. Dashboard parity: every active, visible plan
+                    # gets a card; the CTA routes to the support ticket
+                    # flow (template branch on request_access). The FREE
+                    # tier has no prices by design and is not invite-only.
+                    request_access = (not pricing) and tier != 'free'
 
                     # Feature bullets come from PlanFeature rows only
                     # (admin-controlled); no hardcoded fallbacks.
                     features = self._get_plan_features(selected_plan)
 
+                    attach_trial = (trial_info is not None
+                                    and not trial_attached
+                                    and pricing is not None)
+
                     plans_data.append({
                         'plan': selected_plan,
                         'tier': tier,
                         'pricing': pricing,
+                        'request_access': request_access,
                         'currency_symbol': (pricing.get('currency_symbol', '₹')
                                             if pricing else '₹'),
                         'is_geo': (pricing.get('is_geo', False) if pricing else False),
-                        'trial': trial_info if not trial_attached else None,
+                        'trial': trial_info if attach_trial else None,
                         'trial_price_display': (trial_price_display
-                                                if not trial_attached else None),
+                                                if attach_trial else None),
                         'features': features,
                     })
-                    trial_attached = True
+                    if attach_trial:
+                        trial_attached = True
 
             return plans_data
 
@@ -290,21 +298,52 @@ class LandingPageView(TemplateView):
         symbols = {'USD': '$', 'EUR': '€', 'GBP': '£', 'INR': '₹', 'JPY': '¥'}
         return symbols.get(currency, '₹')
 
-    def _get_plan_features(self, plan: Plan) -> List[Dict[str, Any]]:
-        """DB-driven feature bullets (PlanFeature) in admin-controlled order.
+    def _get_features_for_tier(self, tier: str) -> List[Dict[str, Any]]:
+        """Hardcoded fallback bullets for plans without PlanFeature rows.
 
-        Returns an empty list when the plan has no PlanFeature rows, so the
-        caller falls back to the hardcoded tier defaults from
-        the hardcoded tier lists. DB features are the only source; plans without
-    PlanFeature rows render without bullets
-        (they are not merged).
+        DB-driven PlanFeature rows REPLACE this list entirely (never
+        merged) — this is only the safety net so a plan with no configured
+        features still renders meaningful bullets.
         """
+        defaults = {
+            "free": [
+                {"text": "Community access", "disabled": False},
+                {"text": "Limited trading tools", "disabled": False},
+                {"text": "Standard support", "disabled": False},
+            ],
+            "basic": [
+                {"text": "Access to core trading tools", "disabled": False},
+                {"text": "Standard data and analytics", "disabled": False},
+                {"text": "Community access", "disabled": False},
+                {"text": "Email support", "disabled": False},
+            ],
+            "pro": [
+                {"text": "All Basic features", "disabled": False},
+                {"text": "Advanced analytics & data", "disabled": False},
+                {"text": "Priority support", "disabled": False},
+                {"text": "Early access to new features", "disabled": False},
+            ],
+            "enterprise": [
+                {"text": "All Pro features", "disabled": False},
+                {"text": "Exclusive tools and data", "disabled": False},
+                {"text": "Dedicated support", "disabled": False},
+                {"text": "Early feature access", "disabled": False},
+            ],
+        }
+        return defaults.get(tier, [])
+
+    def _get_plan_features(self, plan: Plan) -> List[Dict[str, Any]]:
+        """Feature bullets: PlanFeature rows (admin-controlled) when present,
+        hardcoded tier defaults otherwise. DB rows replace the fallback
+        entirely — they are never merged."""
         try:
-            rows = plan.features.order_by("position", "id")
-            return [{"text": f.text, "disabled": False} for f in rows]
+            rows = list(plan.features.order_by("position", "id"))
+            if rows:
+                return [{"text": f.text, "disabled": False} for f in rows]
+            return self._get_features_for_tier(plan.tier)
         except Exception as e:
             logger.warning(f"Could not load features for plan {plan.pk}: {e}")
-            return []
+            return self._get_features_for_tier(plan.tier)
 
 
 

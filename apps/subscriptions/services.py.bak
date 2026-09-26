@@ -201,13 +201,8 @@ def purchase_plan(user, plan, request=None):
     pricing_country = get_pricing_country(request) if request else None
     pricing_region = get_region_for_country(pricing_country) if pricing_country else None
 
-    # Deactivate existing active subscriptions IN THE SAME PRODUCT only;
-    # subscriptions in other products are independent entitlements.
-    # product=None keeps the legacy GLOBAL behavior.
-    same_product = Subscription.objects.filter(user=user, is_active=True)
-    if plan.product_id is not None:
-        same_product = same_product.filter(product_id=plan.product_id)
-    same_product.update(
+    # Deactivate any existing active subscriptions
+    Subscription.objects.filter(user=user, is_active=True).update(
         is_active=False, status=Subscription.Status.CANCELED, canceled_at=timezone.now()
     )
 
