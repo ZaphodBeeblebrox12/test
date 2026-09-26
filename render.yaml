@@ -1,0 +1,68 @@
+# Render Blueprint: web service + free Postgres.
+# Deploy: push to main, then Render dashboard -> New -> Blueprint -> pick repo.
+services:
+  - type: web
+    name: tradeadmin
+    runtime: python
+    plan: free
+    buildCommand: bash build.sh
+    startCommand: gunicorn config.wsgi:application --workers 2 --threads 4 --timeout 120
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: CSRF_TRUSTED_ORIGINS
+        value: "https://*.onrender.com"
+      - key: SITE_BASE_URL
+        value: "https://tradeadmin.onrender.com"   # change to your real URL
+      - key: WEB_CONCURRENCY
+        value: "2"
+      # ---- secrets: set in Render dashboard (Env Vars) after first deploy ----
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: PROVISION_SHARED_SECRET
+        sync: false
+      - key: PROVISION_BOT_URL
+        sync: false
+      - key: TELEGRAM_CONTROL_CHANNEL_ID
+        sync: false
+      # ---- email (REQUIRED for signup — verification is mandatory) ----
+      - key: EMAIL_BACKEND
+        value: django.core.mail.backends.smtp.EmailBackend
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+      # ---- optional: geo pricing (MaxMind db is committed in data/) ----
+      - key: MAXMIND_ENABLED
+        value: "True"
+
+databases:
+  - name: tradeadmin-db
+    plan: free
+    ipAllowList: []   # only reachable from Render services

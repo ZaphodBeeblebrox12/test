@@ -10,3 +10,5 @@ geoip2>=4.7.0
 maxminddb>=2.2.0
 stripe>=8.0.0        # P1: hosted Stripe Checkout
 razorpay>=1.4.0      # P1: hosted Razorpay Checkout.js
+gunicorn>=21.2.0     # production WSGI server
+psycopg[binary]>=3.1.8   # PostgreSQL driver for Django 4.2 (render.com)
