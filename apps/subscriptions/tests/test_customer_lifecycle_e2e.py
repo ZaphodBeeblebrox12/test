@@ -73,10 +73,12 @@ def patched_provision():
         "apps.bot_integration.reconcile.ProvisionTransport",
     ]
     active = {}
+    patchers = []
     for t in targets:
         try:
-            p = mock.patch(t)
-            active[t] = p.start()
+            patcher = mock.patch(t)
+            active[t] = patcher.start()
+            patchers.append(patcher)
         except Exception:
             pass
     _GRANT_LOG.clear()
@@ -86,8 +88,8 @@ def patched_provision():
     try:
         yield active
     finally:
-        for p in active.values():
-            p.stop()
+        for patcher in reversed(patchers):
+            patcher.stop()
 
 
 _GRANT_LOG = []
@@ -352,3 +354,33 @@ class CustomerLifecycleE2E(TestCase):
         self.assertEqual(me["status"], Subscription.Status.ACTIVE)
         pi = PaymentIntent.objects.get(id=intent.id)
         self.assertEqual(pi.status, PaymentIntent.Status.SUCCESS)
+
+
+class ProvisionPatchHygieneTests(TestCase):
+    """Regression guard: patched_provision must leave no residue.
+
+    The original implementation stopped the returned mocks instead of the
+    patchers, so every patched target (including
+    apps.bot_integration.services.provision_client.ProvisionClient) leaked
+    for the rest of the test process — surfacing as
+    'ValueError: not enough values to unpack (expected 2, got 0)' in
+    unrelated bot_integration tests that import ProvisionClient afterwards.
+    """
+
+    def test_patched_provision_restores_all_targets(self):
+        from apps.bot_integration.services import provision_client as pc_module
+        from apps.bot_integration import reconcile, reconcile_jobs
+
+        real_class = pc_module.ProvisionClient
+        real_transport_jobs = getattr(reconcile_jobs, "ProvisionTransport", None)
+        real_transport_rec = getattr(reconcile, "ProvisionTransport", None)
+
+        with patched_provision() as mocks:
+            # Inside: everything patched
+            self.assertIsNot(pc_module.ProvisionClient, real_class)
+            self.assertIn("apps.bot_integration.services.provision_client.ProvisionClient", mocks)
+
+        # Outside: everything restored
+        self.assertIs(pc_module.ProvisionClient, real_class)
+        self.assertIs(getattr(reconcile_jobs, "ProvisionTransport", None), real_transport_jobs)
+        self.assertIs(getattr(reconcile, "ProvisionTransport", None), real_transport_rec)
