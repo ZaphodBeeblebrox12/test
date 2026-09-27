@@ -1,0 +1,62 @@
+"""
+URL configuration for community platform.
+"""
+from django.contrib import admin
+from django.urls import include, path
+from django.conf import settings
+from django.conf.urls.static import static
+
+# Use allauth's views for login and signup
+from allauth.account.views import LoginView, SignupView
+from apps.accounts import views as accounts_views
+from apps.accounts.telegram_views import TelegramCallbackView
+
+urlpatterns = [
+    # Growth admin views - MUST be first to avoid catch_all_view interception
+    path("admin/", include("apps.growth.admin_urls", namespace="growth_admin")),
+
+    # Django admin (default) - comes after so growth URLs take precedence
+    path("admin/", admin.site.urls),
+    path('', include('apps.public_views.urls')),
+
+    # Custom auth views using allauth (with your custom templates)
+    path("accounts/login/", LoginView.as_view(
+        template_name="auth/login.html",
+    ), name="account_login"),
+
+    path("accounts/signup/", SignupView.as_view(
+        template_name="auth/signup.html",
+    ), name="account_signup"),
+
+    path("accounts/", include("allauth.urls")),
+    path("api/auth/telegram/", TelegramCallbackView.as_view(), name="api_telegram_auth"),
+    path("api/auth/", include("apps.accounts.urls")),
+    path("api/admin/", include("apps.accounts.admin_urls")),
+    path("auth/telegram/", include("apps.accounts.telegram_urls")),
+    path("auth/discord/", include("apps.accounts.discord_urls")),
+
+    # Subscriptions API
+    path("api/subscriptions/", include("apps.subscriptions.urls")),
+
+    path("api/analytics/", include("apps.analytics.urls")),
+    path("api/", include("apps.api.urls")),
+    path("api/notifications/", include("apps.notifications.urls")),
+    path("", include("apps.core.urls")),
+    path("dashboard/", accounts_views.DashboardView.as_view(), name="dashboard"),
+    path("", include("apps.accounts.profile_urls")),
+    path("", include("apps.payments.urls")),
+    path("growth/", include("apps.growth.urls")),
+
+    # NEW: Bot integration app (Telegram deep link, Discord OAuth, channel sync)
+    path("bot/", include("apps.bot_integration.urls")),
+    path("bot-admin/", include("apps.bot_integration.integration_admin")),
+    path("support/", include("apps.support.urls")),
+
+    # ---- Chargeback implementation (NEW) ----
+    path("policies/", include("apps.policies.urls")),           # versioned policy pages + historical versions
+    path("admin-disputes/", include("apps.disputes.urls", namespace="disputes")),
+]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
