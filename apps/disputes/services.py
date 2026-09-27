@@ -59,7 +59,9 @@ def ingest_dispute_event(provider, dispute_payload, intent, event_type):
     if created:
         _log(dispute, DisputeEvent.EventType.CREATED,
              note=f"Webhook {event_type}; reason={dispute.reason_raw}")
-        return dispute
+        # NO early return: a charge.dispute.closed event may be the FIRST
+        # one we ever see for this case (out-of-order/replay delivery).
+        # The lifecycle branches below must still run.
 
     # Lifecycle updates:
     if event_type == "charge.dispute.funds_withdrawn":
@@ -252,7 +254,7 @@ def build_timeline(dispute) -> list:
             f"payments.PaymentIntent:{intent.pk}")
     for r in _refunds(intent):
         add(r.refunded_at, "payments", "Refund issued",
-            f"{r.amount} {r.currency} (ref {r.provider_refund_id})",
+            f"{r.amount_cents} {r.currency} (ref {r.provider_refund_id})",
             f"payments.Refund:{r.pk}")
     from apps.subscriptions.models import SubscriptionHistory
     for sh in SubscriptionHistory.objects.filter(
@@ -660,7 +662,7 @@ def build_sections(dispute) -> dict:
     sections["fulfillment"] = ful
 
     sections["refunds"] = {"title": "Refunds", "facts": [
-        _fact("Refund", f"{r.amount} {r.currency} at "
+        _fact("Refund", f"{r.amount_cents} {r.currency} at "
               f"{r.refunded_at:%Y-%m-%d} (id {r.provider_refund_id})",
               f"payments.Refund:{r.pk}") for r in _refunds(intent)]
         or [_fact("Refunds", "None", "")]}
@@ -723,7 +725,7 @@ def draft_narrative(dispute) -> str:
     refunds = list(_refunds(intent))
     if refunds:
         r = refunds[-1]
-        lines.append(f"A refund of {r.amount} {r.currency} was issued on "
+        lines.append(f"A refund of {r.amount_cents} {r.currency} was issued on "
                      f"{r.refunded_at:%Y-%m-%d} (reference "
                      f"{r.provider_refund_id}).")
     lines.append("All statements above are backed by the referenced system "

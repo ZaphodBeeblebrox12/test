@@ -17,6 +17,7 @@ User = get_user_model()
 
 
 def _seed():
+    PolicyVersion.objects.filter(policy_type__in=("terms", "refund", "risk", "cancellation", "privacy"), version="1.0").delete()
     for pt in ("terms", "refund", "risk"):
         PolicyVersion.objects.create(policy_type=pt, version="1.0", title=pt,
             content_html="<p>x</p>", status="active",
@@ -24,7 +25,8 @@ def _seed():
 
 
 def _intent(user, amount=4900):
-    plan = Plan.objects.create(name=f"Plan{user.username}", is_active=True)
+    plan = Plan.objects.create(name=f"Plan{user.username}",
+        tier=f"t-{user.username}", is_active=True)
     pp = PlanPrice.objects.create(plan=plan, interval="monthly",
                                   price_cents=amount, currency="USD")
     intent = PaymentIntent.objects.create(
@@ -50,7 +52,7 @@ class RefundDisputeInteractionTests(TestCase):
     def test_refund_then_dispute(self):
         intent = _intent(self.user)
         record_refund(intent, provider="stripe",
-                      provider_refund_id="rf_1", amount_cents=4900)
+                      provider_refund_id="rf_1", amount_cents=4900, currency="USD")
         d = ingest_dispute_event("stripe", {"id": "dp_r1",
             "reason": "credit_not_processed", "amount": 4900,
             "currency": "usd"}, intent, "charge.dispute.created")
@@ -75,7 +77,7 @@ class RefundDisputeInteractionTests(TestCase):
             price_cents=4900, price_currency="USD")
         with patch("apps.subscriptions.services.cancel_subscription") as c:
             record_refund(intent, provider="stripe",
-                          provider_refund_id="rf_2", amount_cents=4900)
+                          provider_refund_id="rf_2", amount_cents=4900, currency="USD")
             apply_refund_policy(intent)   # full refund -> cancel via refund path
             assert c.call_count == 1
         d.refresh_from_db()
@@ -92,7 +94,7 @@ class RefundDisputeInteractionTests(TestCase):
             expires_at=timezone.now() + timezone.timedelta(days=30),
             price_cents=4900, price_currency="USD")
         record_refund(intent, provider="stripe",
-                      provider_refund_id="rf_3", amount_cents=4900)
+                      provider_refund_id="rf_3", amount_cents=4900, currency="USD")
         apply_refund_policy(intent)
         sub.refresh_from_db()
         assert not sub.is_active  # refund path canceled it
@@ -111,9 +113,9 @@ class RefundDisputeInteractionTests(TestCase):
     def test_partial_refunds_then_chargeback(self):
         intent = _intent(self.user)
         record_refund(intent, provider="stripe",
-                      provider_refund_id="rf_p1", amount_cents=1000)
+                      provider_refund_id="rf_p1", amount_cents=1000, currency="USD")
         record_refund(intent, provider="stripe",
-                      provider_refund_id="rf_p2", amount_cents=2000)
+                      provider_refund_id="rf_p2", amount_cents=2000, currency="USD")
         intent.refresh_from_db()
         assert intent.refunded_cents == 3000 and intent.is_partially_refunded
         d = ingest_dispute_event("stripe", {"id": "dp_r4",

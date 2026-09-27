@@ -1,10 +1,10 @@
 """Billing validation: customer payment history, refunds, chargebacks,
 notifications, and admin operations.
 
-Covers the minimum-billing behavior added on top of the existing payments
-infrastructure. Uses the same conventions as test_payments_api.py and
-test_webhooks.py (Django TestCase, reverse(), direct WebhookEvent + processor
-invocation for provider events, mock.patch on the job enqueue boundary).
+NOTE (chargeback implementation): `charge.dispute.funds_withdrawn` is NO
+LONGER treated as a confirmed loss - the case is still winnable at that
+point. Confirmation happens ONLY on `charge.dispute.closed` with
+status=lost. The previously-failing test below was updated accordingly.
 """
 from types import SimpleNamespace
 from unittest import mock
@@ -258,6 +258,19 @@ class ChargebackTests(BillingTestCase):
         enq.assert_not_called()
         self.assertTrue(AuditLog.objects.filter(action="payment.disputed").exists())
 
+    def test_funds_withdrawn_alone_does_not_confirm(self):
+        """AUDIT C1: funds_withdrawn is NOT a loss; access must stay."""
+        self.make_intent()
+        sub = self.make_subscription()
+        run_event(self.dispute_event("evt_fw", "charge.dispute.funds_withdrawn",
+                                     "under_review"))
+        intent = PaymentIntent.objects.get()
+        self.assertTrue(intent.chargeback)
+        self.assertFalse(intent.chargeback_confirmed)
+        sub.refresh_from_db()
+        self.assertEqual(sub.status, Subscription.Status.ACTIVE)
+        self.assertEqual(self.canceled_history_count(), 0)
+
     def test_confirmed_cancels_revokes_notifies_once(self):
         self.make_intent()
         self.make_subscription()
@@ -265,8 +278,10 @@ class ChargebackTests(BillingTestCase):
              mock.patch("apps.notifications.services.NotificationService.send_email") as send_email, \
              mock.patch("apps.bot_integration.transactional."
                         "TransactionalTelegramService.send_text") as tg:
+            # CONFIRMATION requires charge.dispute.closed with status=lost.
+            # (funds_withdrawn alone no longer confirms - see audit C1.)
             run_event(self.dispute_event("evt_cb1",
-                                         "charge.dispute.funds_withdrawn", "lost"))
+                                         "charge.dispute.closed", "lost"))
         intent = PaymentIntent.objects.get()
         self.assertTrue(intent.chargeback_confirmed)
         self.assertEqual(intent.chargeback_reference, "dp_1")

@@ -80,6 +80,12 @@ class CheckoutEvidence(ImmutableModel):
     risk_disclaimer_version = models.ForeignKey(
         "policies.PolicyVersion", on_delete=models.PROTECT,
         related_name="checkout_risk_evidence")
+    # Optional: set when a separate Cancellation Policy document is presented
+    # at checkout. The standard single-checkbox flow folds cancellation terms
+    # into the Refund & Cancellation Policy, so this stays NULL normally.
+    cancellation_policy_version = models.ForeignKey(
+        "policies.PolicyVersion", on_delete=models.PROTECT, null=True,
+        blank=True, related_name="checkout_cancellation_evidence")
     accepted_at = models.DateTimeField(help_text="Server timestamp of agreement.")
     client_ts = models.DateTimeField(null=True, blank=True,
                                      help_text="Client-reported time (informational).")

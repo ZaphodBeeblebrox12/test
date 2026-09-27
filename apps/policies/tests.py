@@ -9,6 +9,9 @@ User = get_user_model()
 
 
 def _pv(pt="terms", ver="1.0", status="active", content="<p>x</p>"):
+    # The seed migration creates ACTIVE v1.0 rows in every test database;
+    # replace deterministically instead of colliding with it.
+    PolicyVersion.objects.filter(policy_type=pt, version=ver).delete()
     return PolicyVersion.objects.create(
         policy_type=pt, version=ver, title=pt, content_html=content,
         status=status, effective_from=timezone.now(),
@@ -17,7 +20,7 @@ def _pv(pt="terms", ver="1.0", status="active", content="<p>x</p>"):
 
 class PolicyVersionTests(TestCase):
     def test_content_hash_matches_content(self):
-        pv = _pv(ver="9.9")
+        pv = _pv(ver="9.9", status="draft")
         import hashlib
         assert pv.content_sha256 == hashlib.sha256(b"<p>x</p>").hexdigest()
 
@@ -66,6 +69,8 @@ class PolicyAcceptanceTests(TestCase):
             _pv(pt=pt)
         class R:
             META = {"REMOTE_ADDR": "10.0.0.1", "HTTP_USER_AGENT": "UA"}
+            class session:
+                session_key = "s1"
         accs, missing = record_checkout_acceptances(self.user, R())
         assert len(accs) == 3 and not missing
         assert {a.policy_version.policy_type for a in accs} == {

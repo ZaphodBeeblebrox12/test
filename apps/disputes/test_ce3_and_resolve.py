@@ -17,6 +17,7 @@ User = get_user_model()
 
 
 def _seed():
+    PolicyVersion.objects.filter(policy_type__in=("terms", "refund", "risk", "cancellation", "privacy"), version="1.0").delete()
     for pt in ("terms", "refund", "risk"):
         PolicyVersion.objects.create(policy_type=pt, version="1.0", title=pt,
             content_html="<p>x</p>", status="active",
@@ -24,7 +25,8 @@ def _seed():
 
 
 def _intent(user, days_ago, fp, card_fp):
-    plan = Plan.objects.create(name=f"P{days_ago}{fp[:4]}", is_active=True)
+    plan = Plan.objects.create(name=f"P{days_ago}{fp[:4]}",
+        tier=f"t{fp[:6]}-{days_ago}", is_active=True)
     pp = PlanPrice.objects.create(plan=plan, interval="monthly",
                                   price_cents=100, currency="USD")
     intent = PaymentIntent.objects.create(

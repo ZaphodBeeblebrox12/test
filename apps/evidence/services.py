@@ -62,19 +62,11 @@ def _pricing_snapshot(intent) -> dict:
     snap["refund_terms"] = refund_terms
     if snap["is_trial"]:
         snap["trial_duration_days"] = getattr(plan, "trial_duration_days", None)
-        # Conversion price: the plan's own price for the billing interval
-        # (NOT base_amount, which reflects coupons/discounts on the trial
-        # fee). Falls back to base_amount only if no price row exists.
-        conv = None
-        try:
-            from apps.subscriptions.models import PlanPrice
-            conv = PlanPrice.objects.filter(
-                plan=plan,
-                interval=getattr(intent.plan_price, "interval", "monthly"),
-                is_active=True).values_list("price_cents", flat=True).first()
-        except Exception:
-            conv = None
-        snap["conversion_price_cents"] = conv or intent.base_amount_cents or None
+        # Conversion price: the pre-coupon base amount. NOTE: a trial plan's
+        # PlanPrice row is the TRIAL FEE, not the conversion price - using
+        # it here would disclose "$7/month". base_amount_cents carries the
+        # full commercial base before coupon/referral discounts.
+        snap["conversion_price_cents"] = intent.base_amount_cents or None
         snap["conversion_interval"] = snap["interval"]
         snap["initial_charge_cents"] = intent.amount
         # Plain-language conversion disclosure, also shown at checkout.
@@ -115,9 +107,7 @@ def capture_checkout_evidence(intent, request, client_signals=None,
         raise RuntimeError(
             f"No ACTIVE policy versions for {missing}; refusing to capture "
             "checkout evidence without the agreement record.")
-    # Optional separate Cancellation Policy, only if one is ACTIVE:
-    versions[PolicyVersion.PolicyType.CANCELLATION] = PolicyVersion.active(
-        PolicyVersion.PolicyType.CANCELLATION)
+
 
     signals = client_signals or collect_from_request(request)
     fp_hex, canonical = compute_fingerprint(signals)
@@ -136,21 +126,19 @@ def capture_checkout_evidence(intent, request, client_signals=None,
         terms_version=versions[PolicyVersion.PolicyType.TERMS],
         refund_policy_version=versions[PolicyVersion.PolicyType.REFUND],
         risk_disclaimer_version=versions[PolicyVersion.PolicyType.RISK],
-        cancellation_policy_version=versions.get(PolicyVersion.PolicyType.CANCELLATION),
+        cancellation_policy_version=None,
         accepted_at=timezone.now(),
         client_ts=client_ts,
         checkout_version="1",
     )
-    # ONE checkbox -> granular, individually-versioned acceptance records,
-    # all tied to the user, this payment attempt, timestamp, IP, UA, device
-    # evidence (via checkout_evidence) and session reference:
+    # ONE checkbox -> THREE granular, individually-versioned acceptance
+    # records (terms / refund & cancellation / risk disclosure), all tied to
+    # the user, this payment attempt, timestamp, IP, UA, device evidence
+    # (via checkout_evidence) and session reference. The optional separate
+    # Cancellation Policy type is NOT accepted at checkout - cancellation
+    # terms live inside the Refund & Cancellation Policy document:
     record_checkout_acceptances(request.user, request,
                                 checkout_evidence=evidence)
-    if versions.get(PolicyVersion.PolicyType.CANCELLATION) is not None:
-        record_acceptance(
-            request.user, versions[PolicyVersion.PolicyType.CANCELLATION],
-            request, context=PolicyAcceptance.Context.CHECKOUT,
-            checkout_evidence=evidence)
     return evidence
 
 

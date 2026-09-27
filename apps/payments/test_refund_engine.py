@@ -25,6 +25,8 @@ User = get_user_model()
 
 
 def _seed_policies():
+    PolicyVersion.objects.filter(policy_type__in=("terms", "refund", "risk", "cancellation", "privacy"), version="1.0").delete()
+    PolicyVersion.objects.filter(policy_type__in=("terms", "refund", "risk", "cancellation"), version="1.0").delete()
     for pt in ("terms", "refund", "risk", "cancellation"):
         PolicyVersion.objects.create(
             policy_type=pt, version="1.0", title=pt, content_html="<p>x</p>",
@@ -43,8 +45,11 @@ def _rf(user):
 
 
 def _intent(user, plan, price, days_ago=0, base=None):
-    pp = PlanPrice.objects.create(plan=plan, interval="monthly",
-                                  price_cents=price, currency="USD")
+    pp = PlanPrice.objects.filter(plan=plan, interval="monthly",
+                                  currency="USD").first()
+    if pp is None:  # only ONE active base price per plan+interval allowed
+        pp = PlanPrice.objects.create(plan=plan, interval="monthly",
+                                      price_cents=price, currency="USD")
     intent = PaymentIntent.objects.create(
         user=user, plan=plan, plan_price=pp, amount=price,
         base_amount_cents=base if base is not None else price,
@@ -59,10 +64,11 @@ class RefundEngineTests(TestCase):
     def setUp(self):
         _seed_policies()
         self.user = User.objects.create_user(username="u", password="p")
-        self.trial_plan = Plan.objects.create(name="Trial", is_active=True,
+        self.trial_plan = Plan.objects.create(name="Trial", tier="trial-t",
+                                              is_active=True,
                                               is_trial=True,
                                               trial_duration_days=7)
-        self.paid_plan = Plan.objects.create(name="Pro", is_active=True)
+        self.paid_plan = Plan.objects.create(name="Pro", tier="pro-t", is_active=True)
         PlanRefundTerms.objects.create(
             plan=self.trial_plan, refund_window_days=3,
             trial_refund_window_days=1, cancellation_deadline_hours=24)
@@ -123,17 +129,28 @@ class RefundEngineTests(TestCase):
     #      (unified behavior); PARTIAL refund leaves entitlement unchanged.
     def test_full_vs_partial_refund_entitlement(self):
         from unittest.mock import patch
+        from apps.subscriptions.models import Subscription
+
+        def _sub():
+            return Subscription.objects.create(
+                user=self.user, plan=self.paid_plan, status="active",
+                is_active=True, started_at=timezone.now(),
+                expires_at=timezone.now() + timezone.timedelta(days=30),
+                price_cents=4900, price_currency="USD")
+
         intent = _intent(self.user, self.paid_plan, 4900)
+        _sub()  # the refund->cancel policy acts on the ACTIVE subscription
         with patch("apps.subscriptions.services.cancel_subscription") as c:
             record_refund(intent, provider="stripe",
-                          provider_refund_id="rf_full", amount_cents=4900)
+                          provider_refund_id="rf_full", amount_cents=4900, currency="USD")
             from .services import apply_refund_policy
             apply_refund_policy(intent)
             assert c.called  # full refund -> cancel once
         intent2 = _intent(self.user, self.paid_plan, 4900)
+        _sub()
         with patch("apps.subscriptions.services.cancel_subscription") as c2:
             record_refund(intent2, provider="stripe",
-                          provider_refund_id="rf_part", amount_cents=1000)
+                          provider_refund_id="rf_part", amount_cents=1000, currency="USD")
             from .services import apply_refund_policy
             apply_refund_policy(intent2)
             assert not c2.called  # partial -> entitlement untouched
@@ -144,9 +161,9 @@ class RefundEngineTests(TestCase):
     def test_refund_ledger_unified_and_idempotent(self):
         intent = _intent(self.user, self.trial_plan, 700)
         r1, c1 = record_refund(intent, provider="stripe",
-                               provider_refund_id="rf_x", amount_cents=700)
+                               provider_refund_id="rf_x", amount_cents=700, currency="USD")
         r2, c2 = record_refund(intent, provider="stripe",
-                               provider_refund_id="rf_x", amount_cents=700)
+                               provider_refund_id="rf_x", amount_cents=700, currency="USD")
         assert c1 and not c2 and r1.pk == r2.pk
         assert Refund.objects.filter(payment_intent=intent).count() == 1
         assert intent.refunds.get().commercial_context == "trial"
@@ -158,9 +175,9 @@ class RefundEngineTests(TestCase):
     def test_partial_then_full_accumulates(self):
         intent = _intent(self.user, self.paid_plan, 4900)
         record_refund(intent, provider="stripe",
-                      provider_refund_id="rf_p1", amount_cents=1000)
+                      provider_refund_id="rf_p1", amount_cents=1000, currency="USD")
         record_refund(intent, provider="stripe",
-                      provider_refund_id="rf_p2", amount_cents=3900)
+                      provider_refund_id="rf_p2", amount_cents=3900, currency="USD")
         intent.refresh_from_db()
         assert intent.refunded_cents == 4900 and intent.is_fully_refunded
 
@@ -179,7 +196,7 @@ class RefundEngineTests(TestCase):
     def test_refund_then_chargeback_reality_recorded(self):
         intent = _intent(self.user, self.paid_plan, 4900)
         record_refund(intent, provider="stripe",
-                      provider_refund_id="rf_18", amount_cents=4900)
+                      provider_refund_id="rf_18", amount_cents=4900, currency="USD")
         from apps.disputes.services import ingest_dispute_event
         d = ingest_dispute_event("stripe", {"id": "dp18",
                                             "reason": "credit_not_processed",

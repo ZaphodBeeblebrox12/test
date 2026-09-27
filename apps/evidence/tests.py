@@ -14,6 +14,7 @@ User = get_user_model()
 
 
 def _seed_policies():
+    PolicyVersion.objects.filter(policy_type__in=("terms", "refund", "risk", "cancellation", "privacy"), version="1.0").delete()
     for pt in ("terms", "refund", "risk", "cancellation", "privacy"):
         PolicyVersion.objects.create(
             policy_type=pt, version="1.0", title=pt, content_html="<p>x</p>",
@@ -70,7 +71,7 @@ class CaptureTests(TestCase):
         accs = PolicyAcceptance.objects.filter(user=self.user,
                                                checkout_evidence=ev)
         assert {a.policy_version.policy_type for a in accs} == {
-            "terms", "refund", "risk", "cancellation"}
+            "terms", "refund", "risk"}  # single-checkbox doctrine: exactly 3
 
     def test_capture_idempotent_under_double_submit(self):
         ev = capture_checkout_evidence(self.intent, _rf(self.user),

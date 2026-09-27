@@ -1,4 +1,11 @@
-"""P1: hosted-checkout purchase flow (providers mocked; no live calls)."""
+"""P1: hosted-checkout purchase flow (providers mocked; no live calls).
+
+NOTE (chargeback implementation): the flow is now CONSENT-FIRST.
+payment_start only creates the PaymentIntent and returns consent_url.
+The provider session is created on the consent step (POST agree), which
+records the write-once CheckoutEvidence BEFORE any money moves. These
+tests exercise exactly that sequence.
+"""
 import datetime
 from unittest import mock
 
@@ -34,6 +41,11 @@ class PurchaseFlowTests(APITestCase):
         return self.client.post(reverse("payment-start"), {
             "plan_id": str(plan_id), "interval": interval}, format="json")
 
+    def _consent(self, intent):
+        """The agreement moment: ONE checkbox -> evidence -> provider handoff."""
+        return self.client.post(
+            reverse("checkout-consent", args=[intent.id]), {"agree": "on"})
+
     def _confirm(self, intent_id):
         return self.client.post(reverse("payment-confirm"), {
             "payment_intent_id": str(intent_id)}, format="json")
@@ -45,11 +57,22 @@ class PurchaseFlowTests(APITestCase):
         prov.verify_provider_payment.return_value = True
         r = self._start(plan.id, "monthly")
         self.assertEqual(r.status_code, 200, r.data)
+        self.assertIn("consent_url", r.data)          # consent-first handoff
         intent = PaymentIntent.objects.get()
+        self.assertEqual(intent.provider_reference, "")  # provider NOT called yet
+        c = self._consent(intent)
+        self.assertEqual(c.status_code, 302)           # -> checkout bridge
+        intent.refresh_from_db()
         self.assertEqual(intent.provider_reference, "cs_test_123")
         self.assertEqual(intent.plan_price.interval, "monthly")
-        c = self._confirm(intent.id)
-        self.assertEqual(c.data["status"], "success")
+        # Evidence captured BEFORE provider handoff:
+        self.assertTrue(hasattr(intent, "checkout_evidence"))
+        from apps.policies.models import PolicyAcceptance
+        self.assertEqual(PolicyAcceptance.objects.filter(
+            user=self.user, checkout_evidence__payment_intent=intent
+        ).count(), 3)  # terms + refund&cancellation + risk disclosure
+        c2 = self._confirm(intent.id)
+        self.assertEqual(c2.data["status"], "success")
         sub = Subscription.objects.get(user=self.user)
         self.assertEqual((sub.expires_at - sub.started_at).days, 30)
         self.assertEqual(sub.price_cents, intent.amount)
@@ -65,6 +88,7 @@ class PurchaseFlowTests(APITestCase):
         self._start(plan.id, "quarterly")
         intent = PaymentIntent.objects.get()
         self.assertEqual(intent.amount, 2499)
+        self._consent(intent)
         c = self._confirm(intent.id)
         self.assertEqual(c.data["status"], "success")
         self.assertEqual((Subscription.objects.get().expires_at
@@ -76,7 +100,9 @@ class PurchaseFlowTests(APITestCase):
             provider_reference="cs_y", checkout_url="https://pay.example")
         prov.verify_provider_payment.return_value = True
         self._start(plan.id, "yearly")
-        c = self._confirm(PaymentIntent.objects.get().id)
+        intent = PaymentIntent.objects.get()
+        self._consent(intent)
+        c = self._confirm(intent.id)
         self.assertEqual(c.data["status"], "success")
         self.assertEqual((Subscription.objects.get().expires_at
                           - Subscription.objects.get().started_at).days, 365)
@@ -88,6 +114,7 @@ class PurchaseFlowTests(APITestCase):
         self._start(plan.id, "monthly")
         intent = PaymentIntent.objects.get()
         self.assertEqual(intent.provider, "stripe")
+        self._consent(intent)
         kwargs = prov.create_hosted_checkout.call_args
         self.assertEqual(kwargs[0][0].amount, pp.price_cents)
         self.assertEqual(kwargs[0][0].currency, "USD")
@@ -100,6 +127,9 @@ class PurchaseFlowTests(APITestCase):
         self._start(plan.id, "monthly")
         intent = PaymentIntent.objects.get()
         self.assertEqual(intent.provider, "razorpay")
+        self.assertEqual(intent.provider_reference, "")
+        self._consent(intent)
+        intent.refresh_from_db()
         self.assertEqual(intent.provider_reference, "order_in")
 
     def test_failed_verification_does_not_activate(self, _geo, prov):
@@ -108,7 +138,9 @@ class PurchaseFlowTests(APITestCase):
             provider_reference="cs_f", checkout_url="https://pay.example")
         prov.verify_provider_payment.return_value = False
         self._start(plan.id, "monthly")
-        c = self._confirm(PaymentIntent.objects.get().id)
+        intent = PaymentIntent.objects.get()
+        self._consent(intent)
+        c = self._confirm(intent.id)
         self.assertEqual(c.data["status"], "failed")
         self.assertFalse(Subscription.objects.exists())
         self.assertEqual(PaymentIntent.objects.get().status,
@@ -120,7 +152,9 @@ class PurchaseFlowTests(APITestCase):
             provider_reference="cs_p", checkout_url="https://pay.example")
         prov.verify_provider_payment.return_value = None
         self._start(plan.id, "monthly")
-        c = self._confirm(PaymentIntent.objects.get().id)
+        intent = PaymentIntent.objects.get()
+        self._consent(intent)
+        c = self._confirm(intent.id)
         self.assertEqual(c.data["status"], "pending")
         self.assertFalse(Subscription.objects.exists())
         self.assertEqual(PaymentIntent.objects.get().status,
@@ -132,7 +166,9 @@ class PurchaseFlowTests(APITestCase):
             provider_reference="cs_r", checkout_url="https://pay.example")
         prov.verify_provider_payment.return_value = True
         self._start(plan.id, "monthly")
-        intent_id = PaymentIntent.objects.get().id
+        intent = PaymentIntent.objects.get()
+        self._consent(intent)
+        intent_id = intent.id
         first = self._confirm(intent_id)
         second = self._confirm(intent_id)
         self.assertEqual(first.data["status"], "success")
@@ -148,6 +184,13 @@ class PurchaseFlowTests(APITestCase):
         prov.get_stripe_checkout_url.return_value = "https://pay.example"
         self._start(plan.id, "monthly")
         intent = PaymentIntent.objects.get()
+        # Evidence-first: the bridge redirects to consent until the agreement
+        # moment is captured.
+        r = self.client.get(reverse("checkout-page", args=[intent.id]))
+        self.assertEqual(r.status_code, 302)
+        self.assertIn(reverse("checkout-consent", args=[intent.id]),
+                      r["Location"])
+        self._consent(intent)
         r = self.client.get(reverse("checkout-page", args=[intent.id]))
         self.assertEqual(r.status_code, 200)
 
@@ -163,14 +206,29 @@ class PurchaseFlowTests(APITestCase):
         intent.refresh_from_db()
         self.assertEqual(intent.status, PaymentIntent.Status.SUCCESS)
 
-    def test_provider_error_at_start_returns_502_and_no_intent(self, _geo, prov):
+    def test_provider_error_at_consent_keeps_intent_and_shows_error(self, _geo, prov):
+        """Provider failure now happens on the consent step, not at start.
+        The intent stays PENDING (retryable) and the user sees the error."""
         plan, _ = make_plan()
         from apps.payments import providers as real_providers
         prov.ProviderError = real_providers.ProviderError
         prov.create_hosted_checkout.side_effect = real_providers.ProviderError("down")
         r = self._start(plan.id, "monthly")
-        self.assertEqual(r.status_code, 502)
-        self.assertEqual(PaymentIntent.objects.count(), 0)
+        self.assertEqual(r.status_code, 200, r.data)   # start itself succeeds
+        intent = PaymentIntent.objects.get()
+        c = self._consent(intent)
+        self.assertEqual(c.status_code, 200)           # consent re-rendered w/ error
+        self.assertIn(b"Payment provider error", c.content)
+        intent.refresh_from_db()
+        self.assertEqual(intent.status, PaymentIntent.Status.PENDING)
+        # Retry succeeds once provider recovers:
+        prov.create_hosted_checkout.side_effect = None
+        prov.create_hosted_checkout.return_value = providers.CreatedCheckout(
+            provider_reference="cs_retry", checkout_url="https://pay.example")
+        c2 = self._consent(intent)
+        self.assertEqual(c2.status_code, 302)
+        intent.refresh_from_db()
+        self.assertEqual(intent.provider_reference, "cs_retry")
 
 
 @mock.patch("apps.subscriptions.views.get_pricing_country", return_value="US")
@@ -230,6 +288,10 @@ class CtaFlowTests(APITestCase):
         self.assertEqual(r.status_code, 200, r.data)
         intent = PaymentIntent.objects.get()
         self.assertEqual(intent.plan_price.interval, "quarterly")
+        self.assertEqual(intent.provider_reference, "")  # consent-first
+        self.client.post(reverse("checkout-consent", args=[intent.id]),
+                         {"agree": "on"})
+        intent.refresh_from_db()
         self.assertEqual(intent.provider_reference, "cs_cta")
 
     def test_get_start_defaults_to_monthly(self, _geo, prov):
@@ -238,7 +300,12 @@ class CtaFlowTests(APITestCase):
             provider_reference="cs_m", checkout_url="https://pay.example")
         r = self.client.get(reverse("payment-start"), {"plan_id": str(plan.id)})
         self.assertEqual(r.status_code, 200, r.data)
-        self.assertEqual(PaymentIntent.objects.get().plan_price.interval, "monthly")
+        intent = PaymentIntent.objects.get()
+        self.assertEqual(intent.plan_price.interval, "monthly")
+        self.client.post(reverse("checkout-consent", args=[intent.id]),
+                         {"agree": "on"})
+        intent.refresh_from_db()
+        self.assertEqual(intent.provider_reference, "cs_m")
 
     def test_get_start_without_plan_id_is_400(self, _geo, prov):
         r = self.client.get(reverse("payment-start"))

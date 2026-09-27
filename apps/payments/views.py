@@ -668,16 +668,9 @@ def _trial_disclosure(intent) -> str:
     pp = intent.plan_price
     if getattr(plan, "is_trial", False):
         days = getattr(plan, "trial_duration_days", None) or 7
-        conv = None
-        try:
-            from apps.subscriptions.models import PlanPrice
-            conv = PlanPrice.objects.filter(
-                plan=plan,
-                interval=getattr(pp, "interval", "monthly"),
-                is_active=True).values_list("price_cents", flat=True).first()
-        except Exception:
-            conv = None
-        conv = conv or intent.base_amount_cents or 0
+        # base_amount = full commercial base (the PlanPrice row on a trial
+        # plan is the trial fee, not the conversion price).
+        conv = intent.base_amount_cents or 0
         return (f"${intent.amount / 100:.0f} for the first "
                 f"{days} days, then renews at ${conv / 100:.0f}/"
                 f"{getattr(pp, 'interval', 'monthly')} unless cancelled "

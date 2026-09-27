@@ -13,6 +13,7 @@ User = get_user_model()
 
 
 def _seed():
+    PolicyVersion.objects.filter(policy_type__in=("terms", "refund", "risk", "cancellation", "privacy"), version="1.0").delete()
     for pt in ("terms", "refund", "risk"):
         PolicyVersion.objects.create(policy_type=pt, version="1.0", title=pt,
             content_html="<p>x</p>", status="active",
@@ -21,7 +22,8 @@ def _seed():
 
 def _intent(user, amount=4900):
     from apps.subscriptions.models import Plan, PlanPrice
-    plan = Plan.objects.create(name=f"P{user.username}", is_active=True)
+    plan = Plan.objects.create(name=f"P{user.username}",
+        tier=f"t-{user.username}", is_active=True)
     pp = PlanPrice.objects.create(plan=plan, interval="monthly",
                                   price_cents=amount, currency="USD")
     return PaymentIntent.objects.create(user=user, plan=plan, plan_price=pp,

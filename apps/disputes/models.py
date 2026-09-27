@@ -122,7 +122,10 @@ class DisputeEvent(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
-        if self.pk:
+        # NOTE: UUID pk fields are assigned at instantiation, so self.pk is
+        # always set - even for new rows. Only block real updates:
+        # creates arrive with force_insert=True from objects.create().
+        if self.pk and not kwargs.get("force_insert"):
             raise RuntimeError("DisputeEvent is append-only.")
         if not self.prev_hash:
             last = (DisputeEvent.objects.filter(dispute=self.dispute)
