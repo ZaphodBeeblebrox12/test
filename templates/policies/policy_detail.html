@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-4" style="max-width:760px">
+  <h1>{{ policy_type_display }}</h1>
+  {% if historical %}<div class="alert alert-warning">Historical version - shown exactly as served at the time. Current version: <a href="{% url 'policy-page' policy_type %}">latest</a>.</div>{% endif %}
+  {% if version %}
+    <p class="text-muted">Version {{ version.version }} &middot; effective {{ version.effective_from|date:"Y-m-d" }} &middot; sha256 {{ version.content_sha256|slice:":16" }}&hellip;</p>
+    <div class="card"><div class="card-body">{{ version.content_html|safe }}</div></div>
+  {% else %}
+    <div class="alert alert-danger">No active version of this policy exists. Contact support.</div>
+  {% endif %}
+  {% if versions|length > 1 %}
+  <hr><h5>All versions</h5>
+  <ul>{% for v in versions %}
+    <li><a href="{% url 'policy-version-page' policy_type v.version %}">v{{ v.version }}</a> (effective {{ v.effective_from|date:"Y-m-d" }}){% if v.is_active %} <strong>[active]</strong>{% endif %}</li>
+  {% endfor %}</ul>
+  {% endif %}
+</div>
+{% endblock %}

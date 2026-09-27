@@ -1,0 +1,117 @@
+{% extends "base.html" %}{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex justify-content-between align-items-center">
+    <h3>Dispute {{ d.provider_dispute_id }} <small class="text-muted">{{ d.get_status_display }}</small></h3>
+    <form method="post" action="{% url 'disputes:generate' d.pk %}" class="d-inline">{% csrf_token %}
+      <button class="btn btn-primary btn-sm">Generate evidence package</button></form>
+  </div>
+  <p>Customer: <b>{{ user.username }}</b> · {{ d.amount_cents }} {{ d.currency }}
+     · reason: {{ d.get_reason_category_display }} (raw: {{ d.reason_raw }})
+     · opened {{ d.opened_at|date:"Y-m-d H:i" }}
+     · deadline: <b {% if d.evidence_due_at and d.evidence_due_at < now %}class="text-danger"{% endif %}>{{ d.evidence_due_at|date:"Y-m-d H:i"|default:"unknown" }}</b></p>
+
+  {% if plan_type %}
+  <div class="card mb-3">
+    <div class="card-header">Plan type: <b>{{ plan_type.plan_type }}</b></div>
+    <ul class="list-group list-group-flush">
+      {% for f in plan_type.facts %}
+      <li class="list-group-item"><b>{{ f.label }}:</b> {{ f.value }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if agreement.available %}
+  <div class="card mb-3">
+    <div class="card-header">Agreement - exact historical versions (immutable)</div>
+    <div class="card-body">
+      <p><b>{{ agreement.sentence }}</b></p>
+      <ul class="mb-1">
+        {% for link in agreement.links %}
+        <li><a href="{{ link.url }}" target="_blank" rel="noopener">{{ link.label }} v{{ link.version }}</a>
+            · sha256 {{ link.content_sha256|slice:":16" }}&hellip;</li>
+        {% endfor %}
+      </ul>
+      <small class="text-muted">IP {{ agreement.ip }} · device fp
+        {{ agreement.device_fingerprint|slice:":16" }}&hellip;</small>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-warning">{{ agreement.reason }}</div>
+  {% endif %}
+
+  <div class="card mb-3">
+    <div class="card-header">Evidence readiness:
+      <b>{{ readiness.state }}</b> ({{ readiness.present }}/{{ readiness.total }})
+      {% for k in readiness.missing_critical %}<span class="badge bg-danger">{{ k }}</span>{% endfor %}
+    </div>
+    <ul class="list-group list-group-flush">
+      {% for item in readiness.items %}
+      <li class="list-group-item d-flex justify-content-between">
+        <span>{{ item.label }} <small class="text-muted">- {{ item.why }}</small></span>
+        <span class="badge {% if item.status == 'PRESENT' %}bg-success{% else %}bg-secondary{% endif %}">{{ item.status }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="row">
+    <div class="col-md-7">
+      <div class="card">
+        <div class="card-header">Timeline</div>
+        <div class="card-body" style="max-height:520px;overflow:auto">
+          {% for e in timeline %}
+          <div class="mb-2 border-bottom pb-1">
+            <span class="badge bg-light text-dark">{{ e.source }}</span>
+            <b>{{ e.title }}</b>
+            <span class="text-muted float-end">{{ e.ts|slice:"0:16"|default:e.ts }}</span>
+            {% if e.detail %}<br><small class="text-muted">{{ e.detail }}</small>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-5">
+      <div class="card mb-3">
+        <div class="card-header">Packages</div>
+        <ul class="list-group list-group-flush">
+          {% for p in packages %}
+          <li class="list-group-item">
+            <code>{{ p.content_sha256|slice:":12" }}</code> · {{ p.generated_at|date:"m-d H:i" }}
+            {% if p.submitted_at %}· <span class="badge bg-info">submitted</span>{% endif %}
+            · {{ p.outcome }}
+          </li>
+          {% empty %}<li class="list-group-item text-muted">None yet</li>{% endfor %}
+        </ul>
+        {% if packages %}
+        <div class="card-body">
+          <form method="post" action="{% url 'disputes:submit' d.pk %}" class="row g-2">
+            {% csrf_token %}
+            <div class="col"><input class="form-control form-control-sm" name="reference" placeholder="PSP submission ref"></div>
+            <div class="col-auto"><button class="btn btn-sm btn-success">Mark submitted</button></div>
+          </form>
+        </div>
+        {% endif %}
+      </div>
+      <div class="card">
+        <div class="card-header">Case actions</div>
+        <div class="card-body">
+          <form method="post" action="{% url 'disputes:note' d.pk %}" class="mb-2">
+            {% csrf_token %}<input class="form-control form-control-sm mb-1" name="note" placeholder="Add note (audited)">
+            <button class="btn btn-sm btn-outline-secondary">Add note</button></form>
+          {% if can_resolve %}
+          <form method="post" action="{% url 'disputes:resolve' d.pk %}" class="row g-2">
+            {% csrf_token %}
+            <div class="col"><select name="status" class="form-select form-select-sm">
+              <option value="won">Won</option><option value="lost">Lost</option>
+              <option value="withdrawn">Withdrawn</option><option value="accepted">Accepted</option>
+            </select></div>
+            <div class="col-auto"><button class="btn btn-sm btn-outline-danger">Resolve</button></div>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

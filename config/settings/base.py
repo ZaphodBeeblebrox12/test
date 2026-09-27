@@ -55,6 +55,12 @@ LOCAL_APPS = [
     "apps.system_settings",
     "apps.subscriptions",
     "apps.payments",
+    # ---- chargeback implementation (NEW - order matters: policies first) ----
+    "apps.policies",     # versioned policies + acceptances (no model deps)
+    "apps.evidence",     # checkout/auth/cancellation/membership evidence
+    "apps.disputes",     # dispute case management (deps: payments, evidence)
+    "apps.risk",         # internal risk signals (deps: evidence)
+    # ---- existing apps, unchanged ----
     "apps.growth",
     "apps.bot_integration",
     "apps.jobs",
@@ -157,7 +163,7 @@ REST_FRAMEWORK = {
     ],
 }
 
-# ─── Background jobs: Django-native durable job system (apps.jobs) ──────────
+# ---- Background jobs: Django-native durable job system (apps.jobs) ----
 # No Celery/Redis.  Run the worker alongside the app:
 #     python manage.py runjobs --loop
 # The old Redis-backed Celery settings were removed; REDIS_URL is now unused.
@@ -193,7 +199,7 @@ LOGGING = {
     },
 }
 
-# CSRF trusted origins — allow all origins when DEBUG=True (for ngrok testing)
+# CSRF trusted origins - allow all origins when DEBUG=True (for ngrok testing)
 if DEBUG:
     CSRF_TRUSTED_ORIGINS = ["http://*", "https://*"]
 else:
@@ -281,13 +287,13 @@ MAXMIND_UPDATE_INTERVAL_DAYS = env("MAXMIND_UPDATE_INTERVAL_DAYS", default=7)
 LOGIN_REDIRECT_URL = "/dashboard/"
 ACCOUNT_LOGOUT_REDIRECT_URL = "/"
 
-# ─── Provision Contract v1 (Telegram bot bridge integration) ───────────────
-# Shared HMAC secret — MUST equal the bot's PROVISION_SHARED_SECRET. Env only.
+# ---- Provision Contract v1 (Telegram bot bridge integration) ----
+# Shared HMAC secret - MUST equal the bot's PROVISION_SHARED_SECRET. Env only.
 PROVISION_SHARED_SECRET = os.environ.get("PROVISION_SHARED_SECRET", "")
 # Bootstrap fallback ONLY, before the bot has registered itself.
 PROVISION_BOT_URL = os.environ.get("PROVISION_BOT_URL", "")
 PROVISION_FRESHNESS_SECONDS = int(os.environ.get("PROVISION_FRESHNESS_SECONDS", "90"))
-# Admin/control channel — NEVER a valid subscriber provisioning target.
+# Admin/control channel - NEVER a valid subscriber provisioning target.
 PROVISION_CONTROL_CHANNEL_ID = os.environ.get(
     "TELEGRAM_CONTROL_CHANNEL_ID",
     os.environ.get("PROVISION_CONTROL_CHANNEL_ID", ""),
@@ -307,3 +313,12 @@ RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
 SITE_BASE_URL = os.environ.get("SITE_BASE_URL", "http://127.0.0.1:8000")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
+
+# --- Chargeback implementation ----------------------------------------------
+# Independent salt for device/session HMACs (evidence layer). Rotating this
+# severs internal device continuity without touching SECRET_KEY sessions.
+RISK_DEVICE_SALT = os.environ.get("RISK_DEVICE_SALT", "") or SECRET_KEY
+
+# Dispute ops tuning (deadline alert buckets in hours).
+DISPUTE_DUE_SOON_HOURS = 72
+DISPUTE_DUE_URGENT_HOURS = 24

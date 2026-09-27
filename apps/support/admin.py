@@ -3,7 +3,7 @@ from django.contrib import admin, messages
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponseRedirect
 
-from .models import AffiliateLink, SupportTicket, TicketAttachment
+from .models import AffiliateLink, SupportTicket, TicketAttachment, TicketMessage
 from .services import approve_ticket, reject_ticket
 
 
@@ -28,6 +28,18 @@ class TicketAttachmentInline(admin.TabularInline):
     file_link.short_description = "Screenshot"
 
 
+class TicketMessageInline(admin.TabularInline):
+    """Append-only conversation trail on the ticket change page."""
+    model = TicketMessage
+    extra = 1
+    can_delete = False
+    readonly_fields = ["author", "is_internal", "created_at"]
+    fields = ["author", "body", "is_internal", "created_at"]
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(SupportTicket)
 class SupportTicketAdmin(admin.ModelAdmin):
     list_display = ["short_id", "user", "category", "affiliate_link", "plan",
@@ -37,7 +49,7 @@ class SupportTicketAdmin(admin.ModelAdmin):
     list_select_related = ["user", "plan", "affiliate_link", "reviewed_by"]
     readonly_fields = ["user", "category", "affiliate_link", "message", "status",
                        "created_at", "updated_at", "reviewed_by", "reviewed_at"]
-    inlines = [TicketAttachmentInline]
+    inlines = [TicketAttachmentInline, TicketMessageInline]
     change_form_template = "admin/support/supportticket/change_form.html"
 
     fieldsets = (
@@ -138,7 +150,7 @@ class SupportTicketAdmin(admin.ModelAdmin):
     def reject_tickets(self, request, queryset):
         for ticket in queryset:
             try:
-                reject_ticket(ticket, request.user, ticket.admin_notes)
+                reject_ticket(ticket, ticket.admin_notes, request.user)
             except (ValueError, PermissionError) as e:
                 messages.warning(request, f"{ticket.short_id}: {e}")
         messages.success(request, "Rejection pass complete.")

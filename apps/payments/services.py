@@ -84,10 +84,6 @@ def activate_paid_subscription(payment_intent) -> tuple[bool, object]:
 
     interval_days = interval_days_for(payment_intent)
     with transaction.atomic():
-        # Renewal: an existing ACTIVE subscription for the same user+plan is
-        # EXTENDED in place (new expiry = now + interval), not duplicated.
-        # Claim first-come-first-served so concurrent activations for the
-        # same subscription extend at most once.
         subscription = Subscription.objects.filter(
             user_id=payment_intent.user_id,
             plan=payment_intent.plan,
@@ -184,17 +180,64 @@ def activate_paid_subscription(payment_intent) -> tuple[bool, object]:
 # ─────────────────────────── refunds ───────────────────────────────────────
 
 def note_provider_payment_id(payment_intent, provider_payment_id):
-    """Persist the provider's payment/charge id (pi_.. / pay_..) once.
-
-    Set-if-empty: refund/dispute webhooks carry the payment id, not the
-    checkout session/order id we store in provider_reference. Keeping the
-    first id we see lets those webhooks link back to the intent.
-    """
+    """Persist the provider's payment/charge id (pi_.. / pay_..) once."""
     if not provider_payment_id:
         return
     PaymentIntent.objects.filter(
         pk=payment_intent.pk, provider_payment_id="").update(
         provider_payment_id=provider_payment_id)
+
+
+def refund_context_for(payment_intent) -> str:
+    """Commercial context of a payment, stamped onto its Refund rows.
+
+    Source of truth: the payment's CHECKOUT EVIDENCE snapshot (immutable,
+    transaction-specific). Fallbacks: intent.is_upgrade flag, then the live
+    plan.is_trial (pre-instrumentation payments only - documented weakness).
+    Never derived from today's plan configuration when a snapshot exists.
+    """
+    try:
+        snap = payment_intent.checkout_evidence.pricing_snapshot
+        if snap.get("is_trial"):
+            return Refund.CommercialContext.TRIAL
+        if snap.get("is_upgrade") or getattr(payment_intent, "is_upgrade", False):
+            return Refund.CommercialContext.UPGRADE
+        return Refund.CommercialContext.STANDARD
+    except Exception:
+        pass
+    try:
+        if payment_intent.plan.is_trial:
+            return Refund.CommercialContext.TRIAL
+    except Exception:
+        pass
+    if getattr(payment_intent, "is_upgrade", False):
+        return Refund.CommercialContext.UPGRADE
+    return Refund.CommercialContext.STANDARD
+
+
+def refund_context_for(payment_intent) -> str:
+    """Commercial context of a payment, stamped onto its Refund rows.
+
+    Source of truth: the payment's CHECKOUT EVIDENCE snapshot (immutable,
+    transaction-specific). Fallbacks: intent.is_upgrade, then live plan.is_trial
+    (pre-instrumentation payments only - documented weakness)."""
+    try:
+        snap = payment_intent.checkout_evidence.pricing_snapshot
+        if snap.get("is_trial"):
+            return Refund.CommercialContext.TRIAL
+        if snap.get("is_upgrade") or getattr(payment_intent, "is_upgrade", False):
+            return Refund.CommercialContext.UPGRADE
+        return Refund.CommercialContext.STANDARD
+    except Exception:
+        pass
+    try:
+        if payment_intent.plan.is_trial:
+            return Refund.CommercialContext.TRIAL
+    except Exception:
+        pass
+    if getattr(payment_intent, "is_upgrade", False):
+        return Refund.CommercialContext.UPGRADE
+    return Refund.CommercialContext.STANDARD
 
 
 def record_refund(payment_intent, *, provider, provider_refund_id,
@@ -203,18 +246,26 @@ def record_refund(payment_intent, *, provider, provider_refund_id,
     """Record one refund. Idempotent per (provider, provider_refund_id):
     retries of the same provider refund store exactly one row.
 
+    Unified ledger: trial/standard/upgrade refunds all live in Refund,
+    differentiated by commercial_context (stamped here, at creation, from
+    the checkout-evidence snapshot - see refund_context_for).
+
     Returns (refund, created). created=False means this provider refund was
     already recorded — counters and notifications must NOT be repeated.
     """
     from apps.events.models import record_event
     refunded_at = refunded_at or timezone.now()
+    context = refund_context_for(payment_intent)
     with transaction.atomic():
         refund, created = Refund.objects.get_or_create(
             provider=provider, provider_refund_id=provider_refund_id,
             defaults={"payment_intent": payment_intent,
                       "amount_cents": amount_cents, "currency": currency,
                       "source": source, "refunded_at": refunded_at,
-                      "metadata": metadata or {}})
+                      "commercial_context": context,
+                      "metadata": {**(metadata or {}),
+                                   "commercial_context_source":
+                                       "checkout_evidence_snapshot"}})
         if created:
             PaymentIntent.objects.filter(pk=payment_intent.pk).update(
                 refunded_cents=F("refunded_cents") + amount_cents,
@@ -226,7 +277,7 @@ def record_refund(payment_intent, *, provider, provider_refund_id,
                 object_ref=f"payment:{payment_intent.pk}",
                 payload={"refund_id": str(refund.pk),
                          "amount_cents": amount_cents, "currency": currency,
-                         "source": source,
+                         "source": source, "context": context,
                          "provider_refund_id": provider_refund_id},
             )
     return refund, created
@@ -237,10 +288,15 @@ def apply_refund_policy(payment_intent):
 
       * FULL refund (cumulative refunded >= charged): the customer got all
         their money back, so cancel the affected paid subscription and revoke
-        access through the existing cancel flow.
-      * PARTIAL refund: entitlement is unchanged. An admin can still cancel
-        manually via the existing subscription admin/services if a specific
-        case warrants it.
+        access through the existing cancel flow. THIS APPLIES TO TRIAL
+        PAYMENTS TOO: a fully-refunded trial charge cancels the trial
+        entitlement through the same path. A trial refund is therefore NOT
+        automatically a "refund + keep access" event - if the business wants
+        refund-with-access, issue a PARTIAL refund (entitlement unchanged).
+      * PARTIAL refund: entitlement is unchanged (any plan type).
+
+    Trial cancellation is a DIFFERENT event (CancellationRequest +
+    cancel_subscription(actor="user")) and never writes a Refund row.
 
     Returns the canceled Subscription, or None.
     """
@@ -267,11 +323,7 @@ INTERVAL_DAYS = {"monthly": 30, "quarterly": 90, "yearly": 365}
 
 
 def compute_upgrade_quote(user, target_plan, request):
-    """Prorated upgrade quote. Raises UpgradeError on ineligibility.
-
-    credit = current snapshot price x (remaining days / current interval),
-    amount_due = target price - credit (floor 0). Documented formula.
-    """
+    """Prorated upgrade quote. Raises UpgradeError on ineligibility."""
     subscription = (Subscription.objects
                     .filter(user=user, status=Subscription.Status.ACTIVE,
                             is_active=True)
@@ -315,8 +367,7 @@ def compute_upgrade_quote(user, target_plan, request):
 
 def _finalize_upgrade(payment_intent, subscription):
     """Post-activation: complete the pending UpgradeHistory + write the
-    upgraded lifecycle event. Old subscription is auto-canceled by
-    Subscription.save deactivation. Never raises."""
+    upgraded lifecycle event. Never raises."""
     try:
         from apps.subscriptions.models import UpgradeHistory
         uh = (UpgradeHistory.objects

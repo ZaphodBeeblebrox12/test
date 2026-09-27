@@ -230,3 +230,41 @@ def create_user_preferences(sender, instance, created, **kwargs):
     """Automatically create UserPreference when a new user is created."""
     if created:
         UserPreference.objects.get_or_create(user=instance)
+
+
+class SecurityEvent(models.Model):
+    """Append-only login/security trail (ATO defense in dispute timelines).
+
+    Volume: ~1 row per login. No update/delete code paths. Raw IPs are
+    restricted; retention 13 months per the evidence plan.
+    """
+
+    class EventType(models.TextChoices):
+        LOGIN_OK = "login_ok", "Login succeeded"
+        LOGIN_FAILED = "login_failed", "Login failed"
+        PASSWORD_CHANGED = "password_changed", "Password changed"
+        EMAIL_VERIFIED = "email_verified", "Email verified"
+        MFA_ENABLED = "mfa_enabled", "MFA enabled"
+        ATO_FLAG = "ato_flag", "Account-takeover pattern flagged"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE,
+                             related_name="security_events")
+    event_type = models.CharField(max_length=30, choices=EventType.choices)
+    ip_address = models.GenericIPAddressField()
+    user_agent = models.TextField(blank=True, default="")
+    occurred_at = models.DateTimeField(default=timezone.now)
+    detail = models.JSONField(default=dict, blank=True,
+                              help_text="e.g. failure reason. No passwords/tokens.")
+
+    class Meta:
+        indexes = [models.Index(fields=["user", "occurred_at"]),
+                   models.Index(fields=["event_type", "occurred_at"])]
+
+    def save(self, *args, **kwargs):
+        if self.pk and not kwargs.get("force_insert"):
+            raise RuntimeError("SecurityEvent is append-only.")
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.user} {self.event_type} @ {self.occurred_at}"

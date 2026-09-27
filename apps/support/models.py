@@ -178,3 +178,37 @@ class TicketAttachment(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+class TicketMessage(models.Model):
+    """Append-only threaded reply on a SupportTicket.
+
+    The original ticket keeps its single `message` + `admin_notes` header;
+    this model adds a real conversation trail. Internal notes are staff-only.
+    Disputes lean on billing threads ("I never got access", refund promises).
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ticket = models.ForeignKey(
+        SupportTicket, on_delete=models.CASCADE, related_name="messages")
+    author = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        help_text=_("Null = deleted account; body retained, author shown as "
+                    "'former user'."))
+    body = models.TextField()
+    is_internal = models.BooleanField(
+        default=False, help_text=_("Staff-only note; never shown to the user."))
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        verbose_name = _("ticket message")
+        verbose_name_plural = _("ticket messages")
+        indexes = [models.Index(fields=["ticket", "created_at"])]
+
+    def save(self, *args, **kwargs):
+        if self.pk and not kwargs.get("force_insert"):
+            raise RuntimeError("TicketMessage is append-only.")
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Message on ticket {self.ticket_id} by {self.author}"

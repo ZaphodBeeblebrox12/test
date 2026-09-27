@@ -376,7 +376,7 @@ def my_trial_usage(request):
     })
 
 class CancelSubscriptionView(APIView):
-    """POST /subscriptions/cancel/ — cancel the caller's ACTIVE subscription.
+    """POST /subscriptions/cancel/ - cancel the caller's ACTIVE subscription.
 
     Semantics (see services.cancel_subscription): access ends IMMEDIATELY;
     repeated calls are idempotent no-ops; no active subscription -> 404.
@@ -409,6 +409,7 @@ class CancelSubscriptionView(APIView):
             }, status=status.HTTP_409_CONFLICT)
         if cancel_subscription(subscription, actor="user"):
             subscription.refresh_from_db()
+            _record_cancellation_request(request, subscription)
             return Response({
                 "status": "canceled",
                 "subscription_id": str(subscription.id),
@@ -421,3 +422,28 @@ class CancelSubscriptionView(APIView):
             "subscription_id": str(subscription.id),
             "already_processed": True,
         })
+
+
+def _record_cancellation_request(request, subscription):
+    """Write-once record of WHO asked to cancel, WHEN, via WHICH channel.
+
+    This timestamp is decisive evidence for cancelled-recurring chargeback
+    claims (Visa 13.2/13.7 family): cancellation vs charge date. Recorded
+    only for user-initiated cancels; refund/chargeback-actor cancels are
+    consequences, not requests, and intentionally leave no request row.
+    """
+    from apps.evidence.models import CancellationRequest
+    ip = (request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
+          or request.META.get("REMOTE_ADDR") or None)
+    CancellationRequest.objects.get_or_create(
+        user=subscription.user,
+        subscription=subscription,
+        requested_at=subscription.canceled_at or timezone.now(),
+        defaults={
+            "channel": CancellationRequest.Channel.WEB,
+            "effective_at": subscription.canceled_at or timezone.now(),
+            "actor": request.user,
+            "ip_address": ip,
+            "note": "Self-serve cancellation via /subscriptions/cancel/",
+        },
+    )

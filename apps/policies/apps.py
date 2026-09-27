@@ -1,0 +1,8 @@
+"""Versioned legal-policy artifacts and acceptance recording."""
+from django.apps import AppConfig
+
+
+class PoliciesConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "apps.policies"
+    verbose_name = "Policies"

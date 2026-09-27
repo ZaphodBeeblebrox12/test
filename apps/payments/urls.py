@@ -4,6 +4,8 @@ Payment URL configuration.
 from django.urls import path
 from django.views.generic import TemplateView
 
+from apps.policies.views import terms_page, refund_page, risk_page, privacy_page
+
 from . import views, webhook_views
 
 urlpatterns = [
@@ -20,12 +22,13 @@ urlpatterns = [
     # any reverse("support") callers keep working.
     path("help/", TemplateView.as_view(template_name="support.html"),
          name="support"),
-    path("policies/refund/", TemplateView.as_view(template_name="policies/refund.html"),
-         name="refund-policy"),
-    path("policies/terms/", TemplateView.as_view(template_name="policies/terms.html"),
-         name="terms"),
-    path("policies/risk/", TemplateView.as_view(template_name="policies/risk.html"),
-         name="risk-disclaimer"),
+    # Versioned policy pages (served from immutable PolicyVersion rows; the
+    # historical versions remain viewable from the dispute admin). Route
+    # NAMES unchanged so existing reverse() callers keep working.
+    path("policies/refund/", refund_page, name="refund-policy"),
+    path("policies/terms/", terms_page, name="terms"),
+    path("policies/risk/", risk_page, name="risk-disclaimer"),
+    path("policies/privacy/", privacy_page, name="privacy-policy"),
     path("upgrade/", views.upgrade_page, name="upgrade-page"),
     path("upgrade/start/", views.upgrade_start, name="upgrade-start"),
     # Phase 3: Operator's Cockpit (staff only)
@@ -34,6 +37,10 @@ urlpatterns = [
          name="ops-reconcile-user"),
     path("staff/ops/payments.csv", views.ops_payments_csv, name="ops-payments-csv"),
     path("staff/user/<uuid:pk>/", views.ops_user_detail, name="ops-user-detail"),
+    # Chargeback evidence capture: the consent step (ONE checkbox) happens
+    # BEFORE the provider handoff. Must precede the checkout bridge route.
+    path("checkout/consent/<uuid:pk>/", views.CheckoutConsentView.as_view(),
+         name="checkout-consent"),
     path("checkout/<uuid:pk>/", views.CheckoutPageView.as_view(), name="checkout-page"),
     path("confirm-page/<uuid:pk>/", views.ConfirmPageView.as_view(), name="confirm-page"),
     path("webhooks/stripe/", webhook_views.stripe_webhook, name="stripe-webhook"),

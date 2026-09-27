@@ -34,10 +34,10 @@ urlpatterns = [
     path("api/admin/", include("apps.accounts.admin_urls")),
     path("auth/telegram/", include("apps.accounts.telegram_urls")),
     path("auth/discord/", include("apps.accounts.discord_urls")),
-    
+
     # Subscriptions API
     path("api/subscriptions/", include("apps.subscriptions.urls")),
-    
+
     path("api/analytics/", include("apps.analytics.urls")),
     path("api/", include("apps.api.urls")),
     path("api/notifications/", include("apps.notifications.urls")),
@@ -51,6 +51,10 @@ urlpatterns = [
     path("bot/", include("apps.bot_integration.urls")),
     path("bot-admin/", include("apps.bot_integration.integration_admin")),
     path("support/", include("apps.support.urls")),
+
+    # ---- Chargeback implementation (NEW) ----
+    path("policies/", include("apps.policies.urls")),           # versioned policy pages + historical versions
+    path("admin-disputes/", include("apps.disputes.urls", namespace="disputes")),
 ]
 
 if settings.DEBUG:

@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% block content %}
+<div class="container py-4">
+  <h3>Chargeback disputes</h3>
+  <div class="row text-center my-3">
+    <div class="col"><div class="card"><div class="card-body"><b>{{ buckets.open }}</b><br>Open</div></div></div>
+    <div class="col"><div class="card"><div class="card-body"><b>{{ buckets.needs_response }}</b><br>In progress</div></div></div>
+    <div class="col"><div class="card"><div class="card-body"><b>{{ buckets.due_soon }}</b><br>Due &le;72h</div></div></div>
+    <div class="col"><div class="card"><div class="card-body"><b>{{ buckets.won }}</b> / <b>{{ buckets.lost }}</b><br>Won / Lost</div></div></div>
+  </div>
+  <table class="table table-sm">
+    <thead><tr><th>Case</th><th>Customer</th><th>Amount</th><th>Reason</th>
+      <th>Deadline</th><th>Status</th></tr></thead>
+    <tbody>{% for d in rows %}
+      <tr>
+        <td><a href="{% url 'disputes:detail' d.pk %}">{{ d.provider_dispute_id|slice:":16" }}</a></td>
+        <td>{{ d.payment_intent.user.username }}</td>
+        <td>{{ d.amount_cents }} {{ d.currency }}</td>
+        <td>{{ d.get_reason_category_display }}</td>
+        <td {% if d.evidence_due_at and d.evidence_due_at < now %}class="text-danger"{% endif %}>
+          {{ d.evidence_due_at|date:"m-d H:i"|default:"—" }}</td>
+        <td>{{ d.get_status_display }}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table>
+</div>
+{% endblock %}

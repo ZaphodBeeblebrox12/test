@@ -105,24 +105,18 @@ def payment_start(request):
             base_amount_cents=base_amount,
         )
 
-    success_url = f"{settings.SITE_BASE_URL}/confirm-page/{payment_intent.id}/"
-    cancel_url = f"{settings.SITE_BASE_URL}/checkout/{payment_intent.id}/?canceled=1"
-    try:
-        checkout = providers.create_hosted_checkout(
-            payment_intent, success_url=success_url, cancel_url=cancel_url)
-    except providers.ProviderError as exc:
-        payment_intent.delete()
-        return Response({"detail": f"payment provider error: {exc}"},
-                      status=status.HTTP_502_BAD_GATEWAY)
-    payment_intent.provider_reference = checkout.provider_reference
-    payment_intent.save(update_fields=["provider_reference"])
-
+    # ── Chargeback-evidence architecture: the agreement moment (ONE
+    #    affirmative checkbox -> granular immutable acceptance records,
+    #    device/IP/session capture) happens BEFORE any provider handoff.
+    #    The provider session is created only after consent is captured.
+    consent_url = f"/checkout/consent/{payment_intent.id}/"
     checkout_url = f"/checkout/{payment_intent.id}/"
 
     return Response({
         "provider": provider,
         "payment_intent_id": str(payment_intent.id),
         "checkout_url": checkout_url,
+        "consent_url": consent_url,
         "amount": payment_intent.amount,
         "original_amount": resolved_price.price_cents,
         "discount_applied": applied_referral is not None,
@@ -211,6 +205,11 @@ class CheckoutPageView(APIView):
 
 def _checkout_response(request, pk):
     intent = get_object_or_404(PaymentIntent, pk=pk, user=request.user)
+    from apps.evidence.models import CheckoutEvidence
+    if intent.status == PaymentIntent.Status.PENDING and not \
+            CheckoutEvidence.objects.filter(payment_intent=intent).exists():
+        # The agreement moment must be captured before provider handoff.
+        return redirect("checkout-consent", pk=pk)
     context = {"intent": intent, "plan": intent.plan, "amount": intent.amount,
                "currency": intent.currency,
                "canceled": bool(request.GET.get("canceled"))}
@@ -653,16 +652,124 @@ def upgrade_start(request):
         amount_due_cents=quote["amount_due_cents"],
         pricing_country=country or None, is_successful=False,
     )
-    base = dj_settings.SITE_BASE_URL
-    try:
-        checkout = providers.create_hosted_checkout(
-            intent,
-            success_url=f"{base}/confirm-page/{intent.id}/",
-            cancel_url=f"{base}/checkout/{intent.id}/?canceled=1")
-    except providers.ProviderError as exc:
-        intent.delete()
-        messages.error(request, f"Payment provider error: {exc}")
-        return redirect("upgrade-page")
-    intent.provider_reference = checkout.provider_reference
-    intent.save(update_fields=["provider_reference"])
-    return redirect(f"/checkout/{intent.id}/")
+    # Consent-first: evidence capture happens on the consent step before
+    # any provider session is created.
+    return redirect("checkout-consent", pk=intent.id)
+
+
+# ───────────────────── Checkout consent (evidence capture) ─────────────────
+import json as _json
+
+
+def _trial_disclosure(intent) -> str:
+    """Plain-language billing disclosure shown ABOVE the consent checkbox -
+    never hidden inside the Terms."""
+    plan = intent.plan
+    pp = intent.plan_price
+    if getattr(plan, "is_trial", False):
+        days = getattr(plan, "trial_duration_days", None) or 7
+        conv = None
+        try:
+            from apps.subscriptions.models import PlanPrice
+            conv = PlanPrice.objects.filter(
+                plan=plan,
+                interval=getattr(pp, "interval", "monthly"),
+                is_active=True).values_list("price_cents", flat=True).first()
+        except Exception:
+            conv = None
+        conv = conv or intent.base_amount_cents or 0
+        return (f"${intent.amount / 100:.0f} for the first "
+                f"{days} days, then renews at ${conv / 100:.0f}/"
+                f"{getattr(pp, 'interval', 'monthly')} unless cancelled "
+                f"before the trial ends.")
+    return ""
+
+
+class CheckoutConsentView(APIView):
+    """The agreement moment. ONE affirmative checkbox; granular records.
+
+    GET  - offer summary (plan, price, interval, features, plain billing
+           disclosure) + single checkbox with links to the exact documents.
+    POST - validates affirmative consent, captures write-once evidence
+           (IP / UA / device fingerprint / session ref / pricing snapshot /
+           policy versions) + per-policy acceptance records, THEN creates
+           the provider session and hands off.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        return _consent_response(request, pk)
+
+    def post(self, request, pk):
+        intent = get_object_or_404(
+            PaymentIntent, pk=pk, user=request.user,
+            status=PaymentIntent.Status.PENDING)
+        agreed = request.data.get("agree") in ("on", "true", "1", True)
+        if not agreed:
+            return _consent_response(
+                request, pk,
+                error="Please confirm your agreement to continue.")
+        from apps.evidence.models import CheckoutEvidence
+        from apps.evidence.services import capture_checkout_evidence
+        if not CheckoutEvidence.objects.filter(payment_intent=intent).exists():
+            signals = None
+            raw = request.data.get("device_signals")
+            if raw:
+                if len(str(raw)) > 8192:
+                    signals = None  # oversized payload -> server-side signals
+                else:
+                    try:
+                        parsed = _json.loads(raw)
+                        if isinstance(parsed, dict):
+                            signals = parsed
+                    except (ValueError, TypeError):
+                        signals = None  # fall back to server-side signals
+            try:
+                capture_checkout_evidence(intent, request,
+                                          client_signals=signals)
+            except RuntimeError as exc:
+                logger.exception("checkout evidence capture failed")
+                return _consent_response(
+                    request, pk,
+                    error=f"Could not record your agreement: {exc}")
+        # Evidence captured (or already present): provider handoff.
+        base = settings.SITE_BASE_URL
+        try:
+            checkout = providers.create_hosted_checkout(
+                intent,
+                success_url=f"{base}/confirm-page/{intent.id}/",
+                cancel_url=f"{base}/checkout/{intent.id}/?canceled=1")
+        except providers.ProviderError as exc:
+            return _consent_response(
+                request, pk,
+                error=f"Payment provider error: {exc}")
+        intent.provider_reference = checkout.provider_reference
+        intent.save(update_fields=["provider_reference"])
+        return redirect("checkout-page", pk=pk)
+
+
+def _consent_response(request, pk, error=None):
+    from apps.evidence.models import CheckoutEvidence
+    from apps.policies.services import active_versions
+    from apps.subscriptions.services import format_price
+    intent = get_object_or_404(PaymentIntent, pk=pk, user=request.user)
+    already = CheckoutEvidence.objects.filter(payment_intent=intent).exists()
+    expired = intent.status != PaymentIntent.Status.PENDING
+    policies = active_versions()
+    features = []
+    desc = (intent.plan.description or "")
+    for line in desc.splitlines():
+        line = line.strip().lstrip("*-").strip()
+        if line:
+            features.append(line)
+    return render(request, "payments/checkout_consent.html", {
+        "intent": intent, "plan": intent.plan,
+        "price_display": format_price(intent.amount, intent.currency),
+        "interval": getattr(intent.plan_price, "interval", "monthly"),
+        "features": features,
+        "trial_disclosure": _trial_disclosure(intent),
+        "policies": policies,
+        "already_captured": already,
+        "expired": expired,
+        "error": error,
+    })

@@ -264,9 +264,12 @@ def _process_dispute(event, payload):
       * charge.dispute.created  -> flag disputed (NOT confirmed): audit +
         durable event only. Entitlement is NOT touched; the dispute can be
         won. (Razorpay sends no dispute webhooks — use the admin action.)
-      * charge.dispute.funds_withdrawn, or charge.dispute.closed with
-        status=lost -> CONFIRMED chargeback: cancel subscription + revoke
-        access through the existing cancel flow, notify once.
+      * charge.dispute.funds_withdrawn -> funds held by the issuer; the case
+        is STILL WINNABLE. Flag + record the timestamp ONLY. Revoking access
+        here would punish customers whose disputes we later win, and creates
+        a contradiction with the Dispute case state (opened != lost).
+      * charge.dispute.closed with status=lost -> CONFIRMED chargeback:
+        exactly-once revocation through the existing cancel flow, notify once.
       * charge.dispute.closed with status=won -> clear flags.
     """
     intent = _find_intent(event.provider, event.provider_event_id, payload)
@@ -278,13 +281,25 @@ def _process_dispute(event, payload):
     status = (dispute.get("status") or "").lower()
     et = event.event_type
 
+    # First-class dispute case management: capture reason code, amount,
+    # deadline, network and lifecycle from the provider payload. Idempotent
+    # on (provider, provider_dispute_id). The legacy PaymentIntent flags
+    # below remain as a synced cache for list filters.
+    try:
+        from apps.disputes.services import ingest_dispute_event
+        ingest_dispute_event(provider=event.provider, dispute_payload=dispute,
+                             intent=intent, event_type=et)
+    except Exception:
+        logger.exception("dispute ingestion failed (intent %s)", intent.pk)
+
     if et == "charge.dispute.closed" and status == "won":
         record_dispute_won(intent, dispute_reference=dispute_id)
         _mark(event, WebhookEvent.Status.PROCESSED, "dispute won")
         return
 
-    confirmed = et == "charge.dispute.funds_withdrawn" or (
-        et == "charge.dispute.closed" and status == "lost")
+    # CRITICAL: funds_withdrawn is NOT a final loss (case still winnable).
+    # Only a CLOSED/LOST dispute confirms the chargeback.
+    confirmed = et == "charge.dispute.closed" and status == "lost"
     if confirmed:
         performed = confirm_chargeback(intent, dispute_reference=dispute_id)
         if performed:
@@ -322,7 +337,7 @@ def process_webhook_event(payload, job):
         elif et in ("charge.refunded", "refund.processed"):
             _process_refund(event, event.payload)
         elif et in ("charge.dispute.created", "charge.dispute.funds_withdrawn",
-                    "charge.dispute.closed"):
+                    "charge.dispute.updated", "charge.dispute.closed"):
             _process_dispute(event, event.payload)
         else:
             _mark(event, WebhookEvent.Status.IGNORED, f"unhandled event {et}")
