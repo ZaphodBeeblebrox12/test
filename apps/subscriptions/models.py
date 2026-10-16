@@ -202,6 +202,7 @@ class PlanPrice(models.Model):
         MONTHLY = "monthly", _("Monthly")
         QUARTERLY = "quarterly", _("Quarterly")
         YEARLY = "yearly", _("Yearly")
+        ONE_TIME = "one_time", _("One-time purchase")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     plan = models.ForeignKey(
@@ -296,6 +297,7 @@ class GeoPlanPrice(models.Model):
         MONTHLY = "monthly", _("Monthly")
         QUARTERLY = "quarterly", _("Quarterly")
         YEARLY = "yearly", _("Yearly")
+        ONE_TIME = "one_time", _("One-time purchase")
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     plan = models.ForeignKey(

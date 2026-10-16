@@ -1,0 +1,1 @@
+"""TradeThesis Academy domain."""

@@ -55,6 +55,7 @@ LOCAL_APPS = [
     "apps.system_settings",
     "apps.subscriptions",
     "apps.payments",
+    "apps.academy",
     # ---- chargeback implementation (NEW - order matters: policies first) ----
     "apps.policies",     # versioned policies + acceptances (no model deps)
     "apps.evidence",     # checkout/auth/cancellation/membership evidence
