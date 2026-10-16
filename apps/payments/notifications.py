@@ -109,7 +109,6 @@ def notify_refunded(payment_intent):
     full = payment_intent.is_fully_refunded
     context = _base_context(payment_intent)
     plan_name = context["product_label"]
-    product_noun = "course" if context["product_type"] == "course" else "subscription"
     context["amount"] = context["amount_display"]
     context["refunded_amount"] = f"{payment_intent.currency} {refunded:.2f}"
     context["fully_refunded"] = full

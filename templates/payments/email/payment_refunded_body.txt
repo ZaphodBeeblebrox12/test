@@ -1,10 +1,13 @@
 Hello {{ username }},
 
-A refund of {{ refunded_amount }} has been issued against your {{ plan_name }}
-payment of {{ amount }}.
+A refund has been issued against your {{ plan_name }} payment.
 
-{% if fully_refunded %}Because the payment was fully refunded, your subscription
-has been cancelled and paid access has been revoked.
-{% else %}This was a partial refund — your subscription remains active.
-{% endif %}
-— TradeAdmin
+Original payment: {{ amount_display }}
+Refunded: {{ refunded_amount }}
+{% if fully_refunded %}Fully refunded{% else %}Partially refunded{% endif %}
+
+{% if product_type == "course" %}{% if fully_refunded %}Course access has been revoked because the payment was fully refunded.{% else %}Course access remains active after this partial refund.{% endif %}{% else %}{% if fully_refunded %}Your subscription has been cancelled and paid access has been revoked.{% else %}Your subscription remains active.{% endif %}{% endif %}
+
+Payment history: {{ dashboard_url }}
+
+— {{ site_name|default:"TradeAdmin" }}
