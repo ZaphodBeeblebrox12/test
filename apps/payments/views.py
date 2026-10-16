@@ -58,6 +58,26 @@ def payment_start(request):
     except Plan.DoesNotExist:
         return Response({"detail": "Plan not found."}, status=status.HTTP_404_NOT_FOUND)
 
+    # Course purchases use the common PaymentIntent/evidence ledger but have
+    # one-time pricing and grant a course entitlement instead of a subscription.
+    from apps.academy.models import CourseOffer
+    course_offer = (CourseOffer.objects.filter(plan=plan)
+                    .select_related("course").first())
+    if course_offer is not None:
+        if not course_offer.is_saleable:
+            return Response({"detail": "This course offer is not available for purchase."},
+                            status=status.HTTP_404_NOT_FOUND)
+        from apps.academy.services import get_active_entitlement
+        if get_active_entitlement(request.user, course_offer.course):
+            return Response({
+                "detail": "You already have access to this course.",
+                "course_slug": course_offer.course.slug,
+            }, status=status.HTTP_409_CONFLICT)
+        interval = "one_time"
+    elif interval == "one_time":
+        return Response({"detail": "One-time pricing is reserved for configured course offers."},
+                        status=status.HTTP_400_BAD_REQUEST)
+
     try:
         resolved_price = resolve_plan_price(plan, interval, request)
     except Exception:
@@ -122,18 +142,16 @@ def payment_start(request):
         "discount_applied": applied_referral is not None,
         "discount_percent": discount_info["discount_percent"] if discount_info["has_discount"] else 0,
         "currency": payment_intent.currency,
-        "plan": {"id": str(plan.id), "name": plan.name, "tier": plan.tier}
+        "plan": {"id": str(plan.id), "name": plan.name, "tier": plan.tier},
+        "product_type": "course" if course_offer is not None else "subscription",
+        "course_slug": course_offer.course.slug if course_offer is not None else None,
     })
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def payment_confirm(request):
-    """Verify-first confirmation; delegates activation to the shared service.
-
-    The browser flow never claims the intent or creates subscription-side
-    effects itself — `activate_paid_subscription` is the single authoritative
-    activation path (also used by webhook processing)."""
+    """Verify provider state before applying the common fulfilment path."""
     payment_intent_id = request.data.get("payment_intent_id")
     if not payment_intent_id:
         return Response({"detail": "payment_intent_id required"},
@@ -152,9 +170,6 @@ def payment_confirm(request):
         return Response({"status": "pending",
                          "payment_intent_id": str(payment_intent.id)})
     if verified is False:
-        # Claim PENDING->FAILED exactly once; notify the customer once. The
-        # conditional update is the idempotency guard: retries/re-polls of
-        # this endpoint cannot duplicate the notification.
         marked = PaymentIntent.objects.filter(
             pk=payment_intent.pk,
             status=PaymentIntent.Status.PENDING).update(
@@ -174,20 +189,61 @@ def payment_confirm(request):
         return Response({"status": "failed",
                          "payment_intent_id": str(payment_intent.id)})
 
-    activated, subscription = activate_paid_subscription(payment_intent)
-    if subscription is None:
-        return Response({"status": "pending",
-                         "payment_intent_id": str(payment_intent.id)})
+    activated, result_object = activate_paid_subscription(payment_intent)
+    course_offer = _course_offer_for_payment(payment_intent)
+    if course_offer is not None:
+        result = _course_payment_result(request.user, payment_intent, course_offer)
+        if not activated:
+            result["already_processed"] = True
+        return Response(result)
+    if result_object is None:
+        return Response({"status": "pending", "payment_intent_id": str(payment_intent.id)})
     result = {"status": "success",
-              "subscription_id": str(subscription.id),
+              "subscription_id": str(result_object.id),
               "payment_intent_id": str(payment_intent.id),
-              "expires_at": subscription.expires_at}
+              "expires_at": result_object.expires_at}
     if not activated:
         result["already_processed"] = True
     return Response(result)
 
 
+def _course_offer_for_payment(payment_intent):
+    from apps.academy.models import CourseOffer
+    return (CourseOffer.objects.filter(plan_id=payment_intent.plan_id)
+            .select_related("course").first())
+
+
+def _course_payment_result(user, payment_intent, offer):
+    from apps.academy.models import CourseEntitlement
+    entitlement = CourseEntitlement.objects.filter(
+        user_id=user.pk, course_id=offer.course_id,
+    ).first()
+    if entitlement is None:
+        access_state = "not_granted"
+    elif entitlement.has_access:
+        access_state = "active"
+    elif entitlement.status == CourseEntitlement.Status.REVOKED:
+        access_state = "revoked"
+    else:
+        access_state = "expired"
+    return {
+        "status": "success",
+        "payment_intent_id": str(payment_intent.id),
+        "product_type": "course",
+        "course_slug": offer.course.slug,
+        "course_title": offer.course.title,
+        "course_access": access_state,
+        "course_entitlement_id": str(entitlement.id) if entitlement else None,
+        "expires_at": entitlement.expires_at if entitlement else None,
+    }
+
+
 def _existing_result(user, payment_intent):
+    course_offer = _course_offer_for_payment(payment_intent)
+    if course_offer is not None:
+        result = _course_payment_result(user, payment_intent, course_offer)
+        result["already_processed"] = True
+        return result
     subscription = Subscription.objects.filter(
         user=user, plan=payment_intent.plan, is_active=True).first()
     return {"status": "success", "already_processed": True,
@@ -236,15 +292,41 @@ class ConfirmPageView(APIView):
 
 
 def _confirm_response(request, pk):
-    """Provider return URL: verify server-side, activate via the shared
-    service, then render the result page.
-
-    GET never flips a PaymentIntent to SUCCESS without the matching
-    subscription: activation flows exclusively through
-    `activate_paid_subscription`, which claims the intent and creates the
-    subscription in the same flow."""
+    """Verify provider state and render the course or subscription result."""
     intent = get_object_or_404(PaymentIntent, pk=pk, user=request.user)
-    result = {"status": "pending", "intent": intent}
+    course_offer = _course_offer_for_payment(intent)
+    result = {"status": "pending", "intent": intent, "course_offer": course_offer}
+
+    if course_offer is not None:
+        from apps.academy.models import CourseEntitlement
+        entitlement = CourseEntitlement.objects.filter(
+            user_id=request.user.pk, course_id=course_offer.course_id,
+        ).first()
+        if intent.status != PaymentIntent.Status.SUCCESS:
+            try:
+                verified = providers.verify_provider_payment(intent)
+            except providers.ProviderError:
+                verified = None
+            if verified is True:
+                _activated, _result = activate_paid_subscription(intent)
+                intent.refresh_from_db()
+                entitlement = CourseEntitlement.objects.filter(
+                    user_id=request.user.pk, course_id=course_offer.course_id,
+                ).first()
+            elif verified is False:
+                marked = PaymentIntent.objects.filter(
+                    pk=intent.pk, status=PaymentIntent.Status.PENDING
+                ).update(status=PaymentIntent.Status.FAILED)
+                if marked:
+                    transaction.on_commit(lambda: notify_payment_failed(intent))
+                result["status"] = "failed"
+        if intent.status == PaymentIntent.Status.SUCCESS:
+            result["status"] = "success"
+        result["entitlement"] = entitlement
+        result["course_access_active"] = bool(entitlement and entitlement.has_access)
+        result["course_url"] = f"/learn/course/{course_offer.course.slug}/"
+        return render(request, "payments/confirm.html", result)
+
     if intent.status == PaymentIntent.Status.SUCCESS:
         subscription = Subscription.objects.filter(
             user=request.user, plan=intent.plan, is_active=True).first()
@@ -260,11 +342,9 @@ def _confirm_response(request, pk):
             if subscription is not None:
                 result["status"] = "success"
         elif verified is False:
-            # Claim PENDING->FAILED exactly once; notify the customer once.
             marked = PaymentIntent.objects.filter(
-                pk=intent.pk,
-                status=PaymentIntent.Status.PENDING).update(
-                    status=PaymentIntent.Status.FAILED)
+                pk=intent.pk, status=PaymentIntent.Status.PENDING
+            ).update(status=PaymentIntent.Status.FAILED)
             if marked:
                 transaction.on_commit(lambda: notify_payment_failed(intent))
             result["status"] = "failed"
@@ -755,10 +835,14 @@ def _consent_response(request, pk, error=None):
         line = line.strip().lstrip("*-").strip()
         if line:
             features.append(line)
+    course_offer = _course_offer_for_payment(intent)
+    interval = ("one_time" if course_offer is not None
+                else getattr(intent.plan_price or intent.geo_plan_price, "interval", "monthly"))
+    interval_label = "one-time payment" if interval == "one_time" else interval
     return render(request, "payments/checkout_consent.html", {
-        "intent": intent, "plan": intent.plan,
+        "intent": intent, "plan": intent.plan, "course_offer": course_offer,
         "price_display": format_price(intent.amount, intent.currency),
-        "interval": getattr(intent.plan_price, "interval", "monthly"),
+        "interval": interval, "interval_label": interval_label,
         "features": features,
         "trial_disclosure": _trial_disclosure(intent),
         "policies": policies,

@@ -156,7 +156,7 @@ def _process_payment_captured(event, payload):
     note_provider_payment_id(intent, _payment_id_from(event.provider, payload))
     activated, sub = activate_paid_subscription(intent)
     _mark(event, WebhookEvent.Status.PROCESSED,
-          f"activated={activated} subscription={sub and sub.id}")
+          f"activated={activated} fulfilment={sub and sub.id}")
 
 
 def _process_renewal(event, payload):

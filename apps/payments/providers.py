@@ -47,6 +47,14 @@ def create_stripe_checkout(intent, success_url: str, cancel_url: str) -> Created
     """Create a hosted Checkout Session for the snapshot amount/currency."""
     stripe = _stripe()
     try:
+        from apps.academy.models import CourseOffer
+        course_offer = (CourseOffer.objects.filter(plan_id=intent.plan_id)
+                        .select_related("course").first())
+    except Exception:
+        course_offer = None
+    product_name = course_offer.name if course_offer else intent.plan.name
+    product_description = "Course access" if course_offer else "Subscription"
+    try:
         session = stripe.checkout.Session.create(
             mode="payment",
             success_url=success_url,
@@ -60,11 +68,15 @@ def create_stripe_checkout(intent, success_url: str, cancel_url: str) -> Created
                 "price_data": {
                     "currency": intent.currency.lower(),
                     "unit_amount": int(intent.amount),
-                    "product_data": {"name": f"{intent.plan.name} subscription"},
+                    "product_data": {"name": product_name, "description": product_description},
                 },
                 "quantity": 1,
             }],
-            metadata={"payment_intent_id": str(intent.id)},
+            metadata={
+                "payment_intent_id": str(intent.id),
+                "product_type": "course" if course_offer else "subscription",
+                **({"course_slug": course_offer.course.slug} if course_offer else {}),
+            },
         )
     except ProviderError:
         raise
