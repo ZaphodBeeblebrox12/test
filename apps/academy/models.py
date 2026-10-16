@@ -47,8 +47,8 @@ class CourseModule(models.Model):
     class Meta:
         ordering = ["position", "title"]
         constraints = [
-            models.UniqueConstraint(fields=["course", "slug"], name="academy_module_course_slug_uniq"),
-            models.UniqueConstraint(fields=["course", "position"], name="academy_module_course_pos_uniq"),
+            models.UniqueConstraint(fields=["course", "slug"], name="academy_mod_course_slug_uq"),
+            models.UniqueConstraint(fields=["course", "position"], name="academy_mod_course_pos_uq"),
         ]
 
     def __str__(self):
@@ -84,8 +84,8 @@ class Lesson(models.Model):
     class Meta:
         ordering = ["position", "title"]
         constraints = [
-            models.UniqueConstraint(fields=["module", "slug"], name="academy_lesson_module_slug_uniq"),
-            models.UniqueConstraint(fields=["module", "position"], name="academy_lesson_module_pos_uniq"),
+            models.UniqueConstraint(fields=["module", "slug"], name="academy_les_mod_slug_uq"),
+            models.UniqueConstraint(fields=["module", "position"], name="academy_les_mod_pos_uq"),
         ]
         indexes = [models.Index(fields=["module", "is_published", "position"], name="academy_lesson_release_idx")]
 
@@ -217,10 +217,10 @@ class CourseEntitlement(models.Model):
     class Meta:
         ordering = ["-created_at"]
         constraints = [
-            models.UniqueConstraint(fields=["user", "course"], name="academy_entitlement_user_course_uniq"),
+            models.UniqueConstraint(fields=["user", "course"], name="academy_ent_user_course_uq"),
             models.CheckConstraint(
                 check=models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=models.F("starts_at")),
-                name="academy_entitlement_expiry_after_start",
+                name="academy_ent_expiry_start_ck",
             ),
         ]
         indexes = [models.Index(fields=["user", "status", "expires_at"], name="academy_entitlement_access_idx")]
@@ -284,8 +284,8 @@ class LessonProgress(models.Model):
 
     class Meta:
         ordering = ["-updated_at"]
-        constraints = [models.UniqueConstraint(fields=["user", "lesson"], name="academy_progress_user_lesson_uniq")]
-        indexes = [models.Index(fields=["user", "status"], name="academy_progress_user_status_idx")]
+        constraints = [models.UniqueConstraint(fields=["user", "lesson"], name="academy_prog_user_lesson_uq")]
+        indexes = [models.Index(fields=["user", "status"], name="academy_prog_user_status_idx")]
 
     def __str__(self):
         return f"{self.user} · {self.lesson.title} ({self.status})"

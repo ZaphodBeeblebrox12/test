@@ -27,7 +27,12 @@ logger = logging.getLogger(__name__)
 def interval_days_for(payment_intent):
     price_source = payment_intent.plan_price or payment_intent.geo_plan_price
     interval = getattr(price_source, "interval", "monthly")
-    return {"monthly": 30, "quarterly": 90, "yearly": 365}.get(interval, 30)
+    if interval == "one_time":
+        raise ValueError("A one-time purchase must use a product entitlement, not a subscription.")
+    try:
+        return {"monthly": 30, "quarterly": 90, "yearly": 365}[interval]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported subscription interval: {interval}") from exc
 
 
 def _notify_connect_telegram_once(payment_intent):
@@ -67,11 +72,22 @@ def _notify_payment_succeeded(payment_intent, subscription):
 
 
 def activate_paid_subscription(payment_intent) -> tuple[bool, object]:
-    """Atomically claim the intent and activate the subscription.
+    """Fulfil a verified payment via subscription or Academy entitlement.
 
-    Returns (activated: bool, subscription|None). Idempotent: a second call
-    for an already-SUCCESS intent returns (False, existing_subscription).
+    The public function name and tuple contract remain stable for callers.
+    Course offers use their own access lifecycle; subscriptions are unchanged.
     """
+    from apps.academy.models import CourseOffer
+    course_offer = (CourseOffer.objects.filter(plan_id=payment_intent.plan_id)
+                    .select_related("course").first())
+    if course_offer is not None:
+        from apps.academy.services import activate_course_payment
+        return activate_course_payment(payment_intent, course_offer)
+
+    price_source = payment_intent.plan_price or payment_intent.geo_plan_price
+    if getattr(price_source, "interval", None) == "one_time":
+        raise ValueError("A one-time price must map to a CourseOffer before activation.")
+
     claimed = PaymentIntent.objects.filter(
         pk=payment_intent.pk,
         status=PaymentIntent.Status.PENDING).update(
@@ -304,6 +320,10 @@ def apply_refund_policy(payment_intent):
     payment_intent.refresh_from_db()
     if payment_intent.amount <= 0 or payment_intent.refunded_cents < payment_intent.amount:
         return None
+    from apps.academy.models import CourseOffer
+    if CourseOffer.objects.filter(plan_id=payment_intent.plan_id).exists():
+        from apps.academy.services import revoke_course_entitlement_for_payment
+        return revoke_course_entitlement_for_payment(payment_intent, reason="Payment fully refunded")
     subscription = Subscription.objects.filter(
         user_id=payment_intent.user_id, plan_id=payment_intent.plan_id,
         status=Subscription.Status.ACTIVE, is_active=True).first()
@@ -464,11 +484,16 @@ def confirm_chargeback(payment_intent, *, dispute_reference="", confirmed_at=Non
             payload={"dispute_reference": dispute_reference, "source": source,
                      "amount": payment_intent.amount,
                      "currency": payment_intent.currency})
-        subscription = Subscription.objects.filter(
-            user_id=payment_intent.user_id, plan_id=payment_intent.plan_id,
-            status=Subscription.Status.ACTIVE, is_active=True).first()
-        if subscription is not None:
-            cancel_subscription(subscription, actor="chargeback")
+        from apps.academy.models import CourseOffer
+        if CourseOffer.objects.filter(plan_id=payment_intent.plan_id).exists():
+            from apps.academy.services import revoke_course_entitlement_for_payment
+            revoke_course_entitlement_for_payment(payment_intent, reason="Confirmed payment chargeback")
+        else:
+            subscription = Subscription.objects.filter(
+                user_id=payment_intent.user_id, plan_id=payment_intent.plan_id,
+                status=Subscription.Status.ACTIVE, is_active=True).first()
+            if subscription is not None:
+                cancel_subscription(subscription, actor="chargeback")
     return True
 
 

@@ -54,8 +54,12 @@ def grant_course_entitlement(*, user, offer, payment_intent=None, granted_by=Non
     if source == CourseEntitlement.Source.PURCHASE:
         if payment_intent is None:
             raise ValidationError("A purchase grant requires a verified PaymentIntent.")
-        if offer.plan_id and payment_intent.plan_id != offer.plan_id:
+        if not offer.plan_id or payment_intent.plan_id != offer.plan_id:
             raise ValidationError("PaymentIntent does not match this course offer.")
+        if payment_intent.status != "success":
+            raise ValidationError("Course access can be granted only after verified payment.")
+        if payment_intent.amount <= 0:
+            raise ValidationError("A zero-value or invalid payment cannot grant course access.")
     if offer.course.status == Course.Status.DRAFT:
         raise ValidationError("Cannot grant access to a draft course.")
     now = timezone.now()
@@ -74,7 +78,9 @@ def grant_course_entitlement(*, user, offer, payment_intent=None, granted_by=Non
             event_type = CourseEntitlementEvent.EventType.GRANTED
         else:
             entitlement = CourseEntitlement.objects.select_for_update().get(pk=entitlement.pk)
-            if payment_intent and entitlement.payment_intent_id == payment_intent.pk and entitlement.has_access_at(now):
+            # A duplicate event for the original purchase must not restore
+            # access after that purchase was refunded or disputed.
+            if payment_intent and entitlement.payment_intent_id == payment_intent.pk:
                 return entitlement, False
             was_active = entitlement.has_access_at(now)
             if was_active and entitlement.expires_at is None:
@@ -160,3 +166,59 @@ def update_lesson_progress(*, user, lesson, status=None, response_json=None, sec
     progress.last_seen_at = at
     progress.save()
     return progress
+
+
+@transaction.atomic
+def activate_course_payment(payment_intent, offer):
+    """Atomically claim a verified one-time payment and grant course access."""
+    from apps.payments.models import PaymentIntent
+
+    if not offer.plan_id or payment_intent.plan_id != offer.plan_id:
+        raise ValidationError("PaymentIntent does not match this course offer.")
+    price_source = payment_intent.plan_price or payment_intent.geo_plan_price
+    if price_source is None or getattr(price_source, "interval", None) != "one_time":
+        raise ValidationError("A course offer requires an immutable one-time price snapshot.")
+
+    claimed = PaymentIntent.objects.filter(
+        pk=payment_intent.pk, status=PaymentIntent.Status.PENDING,
+    ).update(status=PaymentIntent.Status.SUCCESS)
+    if not claimed:
+        # A successful earlier claim is terminal here. Never re-grant after a
+        # refund/chargeback merely because a duplicate capture event arrived.
+        entitlement = CourseEntitlement.objects.filter(
+            user_id=payment_intent.user_id, course_id=offer.course_id,
+        ).first()
+        return False, entitlement
+
+    payment_intent.refresh_from_db()
+    entitlement, created = grant_course_entitlement(
+        user=payment_intent.user, offer=offer, payment_intent=payment_intent,
+        source=CourseEntitlement.Source.PURCHASE,
+        reason="Verified one-time course payment",
+    )
+    if created:
+        from apps.events.models import record_event
+        record_event(
+            "academy.entitlement_granted",
+            dedupe_key=f"academy.entitlement_granted:{payment_intent.pk}",
+            user_id=payment_intent.user_id,
+            object_ref=f"course_entitlement:{entitlement.pk}",
+            payload={"payment_intent_id": str(payment_intent.pk),
+                     "course_id": str(offer.course_id),
+                     "course_slug": offer.course.slug,
+                     "entitlement_id": str(entitlement.pk)},
+        )
+        transaction.on_commit(lambda intent_id=payment_intent.pk: _notify_course_purchase(intent_id))
+    return created, entitlement
+
+
+def _notify_course_purchase(payment_intent_id):
+    """Best-effort receipt after the payment/enrolment transaction commits."""
+    try:
+        from apps.payments.models import PaymentIntent
+        from apps.payments.notifications import notify_payment_succeeded
+        intent = PaymentIntent.objects.select_related("user", "plan").get(pk=payment_intent_id)
+        notify_payment_succeeded(intent, subscription=None)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("course purchase receipt failed for PaymentIntent %s", payment_intent_id)
