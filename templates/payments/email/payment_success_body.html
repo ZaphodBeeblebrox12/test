@@ -55,7 +55,7 @@
   <tr>
     <td class="px" style="padding:6px 32px;">
       <p style="margin:0; font-family:-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size:13px; line-height:20px; color:#6b7280;">
-        {% if product_type == "course" %}Your course access is available until{% else %}Your subscription is active until{% endif %} <strong style="color:#111827;">{{ expires_display }}</strong>.
+        {% if product_type == "course" %}{% if is_lifetime_course %}You now have lifetime access to this course.{% elif expires_display %}Your course access is available until <strong style="color:#111827;">{{ expires_display }}</strong>.{% endif %}{% elif expires_display %}Your subscription is active until <strong style="color:#111827;">{{ expires_display }}</strong>.{% endif %}
       </p>
     </td>
   </tr>

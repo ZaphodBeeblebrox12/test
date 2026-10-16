@@ -48,6 +48,7 @@ def _base_context(intent):
         "product_label": product_label,
         "product_type": product_type,
         "learning_url": learning_url,
+        "is_lifetime_course": bool(offer and offer.access_duration_days is None),
         "amount_display": _amount(intent),
         "currency": intent.currency,
         "provider_display": intent.get_provider_display(),
@@ -68,104 +69,112 @@ def _base_context(intent):
 
 
 def notify_payment_succeeded(payment_intent, subscription=None):
-    """Receipt sent exactly once per successful payment (claim-guaranteed by
-    the caller: activate_paid_subscription only returns activated=True once)."""
+    """Send a receipt after the payment and its product access are committed."""
     context = _base_context(payment_intent)
-    plan_name = context["product_label"]
+    product_label = context["product_label"]
     product_noun = "Course" if context["product_type"] == "course" else "Plan"
     if subscription is not None and getattr(subscription, "expires_at", None):
-        from django.utils import timezone as _tz
         context["expires_display"] = _tz.localtime(
-            subscription.expires_at).strftime("%b %d, %Y")
+            subscription.expires_at
+        ).strftime("%b %d, %Y")
     telegram_text = (
-        "\u2705 Payment received, " + payment_intent.user.username + ".\n\n"
-        + product_noun + ": " + plan_name + "\nAmount: " + context["amount_display"] + "\n\n"
+        f"\u2705 Payment received, {payment_intent.user.username}.\n\n"
+        f"{product_noun}: {product_label}\n"
+        f"Amount: {context['amount_display']}\n\n"
         "Your receipt has been emailed to you. Thank you!"
     )
-    _send(payment_intent.user, "payments/email/payment_success",
-          "Receipt: " + plan_name + " \u2014 " + context["amount_display"],
-          context, telegram_text)
-
+    _send(
+        payment_intent.user,
+        "payments/email/payment_success",
+        f"Receipt: {product_label} \u2014 {context['amount_display']}",
+        context,
+        telegram_text,
+    )
 
 def notify_payment_failed(payment_intent):
     """Customer initiated a payment but the provider never confirmed it."""
     context = _base_context(payment_intent)
-    plan_name = context["product_label"]
+    product_label = context["product_label"]
     product_noun = "Course" if context["product_type"] == "course" else "Plan"
     context["amount"] = context["amount_display"]
     telegram_text = (
-        "\u274c Payment failed, " + payment_intent.user.username + ".\n\n"
-        + product_noun + ": " + plan_name + "\nAmount: " + context["amount_display"] + "\n\n"
+        f"\u274c Payment failed, {payment_intent.user.username}.\n\n"
+        f"{product_noun}: {product_label}\n"
+        f"Amount: {context['amount_display']}\n\n"
         "You have not been charged. You can retry the payment anytime from "
         "your dashboard."
     )
-    _send(payment_intent.user, "payments/email/payment_failed",
-          "Your payment for " + plan_name + " failed", context, telegram_text)
-
+    _send(
+        payment_intent.user,
+        "payments/email/payment_failed",
+        f"Your payment for {product_label} failed",
+        context,
+        telegram_text,
+    )
 
 def notify_refunded(payment_intent):
     """A refund was recorded against the customer's payment."""
     refunded = payment_intent.refunded_cents / 100
     full = payment_intent.is_fully_refunded
     context = _base_context(payment_intent)
-    plan_name = context["product_label"]
+    product_label = context["product_label"]
     context["amount"] = context["amount_display"]
     context["refunded_amount"] = f"{payment_intent.currency} {refunded:.2f}"
     context["fully_refunded"] = full
     if context["product_type"] == "course":
-        consequence = ("Course access has been revoked because the payment was fully refunded."
-                       if full else "Course access remains active after this partial refund.")
+        consequence = (
+            "Course access has been revoked because the payment was fully refunded."
+            if full else "Course access remains active after this partial refund."
+        )
+        product_noun = "Course"
     elif full:
-        consequence = ("Your subscription has been cancelled because the "
-                       "payment was fully refunded.")
+        consequence = "Your subscription has been cancelled because the payment was fully refunded."
+        product_noun = "Plan"
     else:
         consequence = "Your subscription remains active."
+        product_noun = "Plan"
     telegram_text = (
-        "\u21a9\ufe0f Refund issued, " + payment_intent.user.username + ".\n\n"
-        ("Course: " if context["product_type"] == "course" else "Plan: ") + plan_name + "\n"
-        "Refunded: " + context["refunded_amount"] + " "
-        "(" + ("fully" if full else "partially") + " refunded)\n\n"
-        + consequence
+        f"\u21a9\ufe0f Refund issued, {payment_intent.user.username}.\n\n"
+        f"{product_noun}: {product_label}\n"
+        f"Refunded: {context['refunded_amount']} "
+        f"({'fully' if full else 'partially'} refunded)\n\n"
+        f"{consequence}"
     )
-    _send(payment_intent.user, "payments/email/payment_refunded",
-          "Refund issued for your " + plan_name + " payment", context, telegram_text)
-
+    _send(
+        payment_intent.user,
+        "payments/email/payment_refunded",
+        f"Refund issued for your {product_label} payment",
+        context,
+        telegram_text,
+    )
 
 def notify_chargedback(payment_intent):
     """Confirmed chargeback: revoke the affected product access once."""
     context = _base_context(payment_intent)
-    plan_name = context["product_label"]
+    product_label = context["product_label"]
     context["amount"] = context["amount_display"]
     if context["product_type"] == "course":
         action = "Course access has been revoked."
         subject_suffix = "course access revoked"
     else:
-        action = "The subscription has been cancelled and paid access, including Telegram channel access, has been revoked."
+        action = (
+            "The subscription has been cancelled and paid access, including "
+            "Telegram channel access, has been revoked."
+        )
         subject_suffix = "subscription cancelled"
     telegram_text = (
-        "\u26a0\ufe0f Payment disputed — " + subject_suffix + ", "
-        + payment_intent.user.username + ".\n\n"
-        "Product: " + plan_name + "\nAmount: " + context["amount"] + "\n\n"
+        f"\u26a0\ufe0f Payment disputed — {subject_suffix}, "
+        f"{payment_intent.user.username}.\n\n"
+        f"Product: {product_label}\nAmount: {context['amount']}\n\n"
         "Your payment was charged back / disputed through your payment "
-        "provider and confirmed against the payment. " + action + "\n\n"
+        f"provider and confirmed against the payment. {action}\n\n"
         "If you believe this is a mistake, please contact support."
     )
-    _send(payment_intent.user, "payments/email/payment_chargedback",
-          "Payment disputed — " + plan_name + " " + subject_suffix,
-          context, telegram_text)
+    _send(
+        payment_intent.user,
+        "payments/email/payment_chargedback",
+        f"Payment disputed — {product_label} {subject_suffix}",
+        context,
+        telegram_text,
+    )
 
-
-def _send(user, template, subject, context, telegram_text):
-    email = getattr(user, "email", None)
-    if email:
-        try:
-            from apps.notifications.services import NotificationService
-            NotificationService.send_email(
-                email, template, subject, context, {"billing": True})
-        except Exception:
-            logger.exception("billing email failed: %s", template)
-    try:
-        from apps.bot_integration.transactional import TransactionalTelegramService
-        TransactionalTelegramService.send_text(user, telegram_text)
-    except Exception:
-        logger.exception("billing telegram message failed")
