@@ -16,13 +16,21 @@ def _admin(client):
 PLAN = {"name": "Pro", "tier": "pro", "display_order": "1",
         "max_projects": "5", "max_storage_mb": "100", "api_calls_per_day": "1000"}
 
+# PlanAdmin includes a PlanFeatureInline with one extra row; real browser posts
+# always include its management form even when the row is left empty.
+EMPTY_FEATURES_FORMSET = {
+    "features-TOTAL_FORMS": "1", "features-INITIAL_FORMS": "0",
+    "features-MIN_NUM_FORMS": "0", "features-MAX_NUM_FORMS": "1000",
+    "features-0-id": "",
+}
+
 
 @pytest.mark.django_db
 def test_global_plus_geo_overrides_save(client):
     """Global Monthly USD + Geo US USD + Geo IN INR MUST save (valid)."""
     _admin(client)
     data = {
-        **PLAN,
+        **PLAN, **EMPTY_FEATURES_FORMSET,
         "prices-TOTAL_FORMS": "1", "prices-INITIAL_FORMS": "0",
         "prices-MIN_NUM_FORMS": "0", "prices-MAX_NUM_FORMS": "1000",
         "prices-0-id": "", "prices-0-interval": "monthly",
@@ -48,7 +56,7 @@ def test_duplicate_global_base_is_inline_error_not_500(client):
     """Global Monthly USD + Global Monthly INR must be a normal inline error."""
     _admin(client)
     data = {
-        **PLAN,
+        **PLAN, **EMPTY_FEATURES_FORMSET,
         "prices-TOTAL_FORMS": "2", "prices-INITIAL_FORMS": "0",
         "prices-MIN_NUM_FORMS": "0", "prices-MAX_NUM_FORMS": "1000",
         "prices-0-id": "", "prices-1-id": "",
