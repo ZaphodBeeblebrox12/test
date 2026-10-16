@@ -237,10 +237,13 @@ class PlanPrice(models.Model):
 
     def clean(self):
         from django.core.exceptions import ValidationError
-        qs = PlanPrice.objects.filter(plan=self.plan, interval=self.interval, is_active=True)
+        # Use the raw FK value here: inline admin validation can call clean()
+        # while a parent Plan is still unsaved. Filtering by self.plan in that
+        # state emits a warning and is fragile across Django versions.
+        qs = PlanPrice.objects.filter(plan_id=self.plan_id, interval=self.interval, is_active=True)
         if self.pk:
             qs = qs.exclude(pk=self.pk)
-        if self.is_active and qs.exists():
+        if self.is_active and self.plan_id and qs.exists():
             raise ValidationError(
                 "An active base price already exists for this plan + interval. "
                 "Only one active global base price is allowed; geo pricing handles market-specific pricing.")

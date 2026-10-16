@@ -8,6 +8,7 @@ from allauth.exceptions import ImmediateHttpResponse
 from allauth.account.models import EmailAddress
 from django.contrib import messages
 from django.http import HttpResponseRedirect
+from django.contrib.sites.shortcuts import get_current_site
 from django.urls import reverse
 
 from apps.accounts.models import User
@@ -123,7 +124,7 @@ class CustomAccountAdapter(DefaultAccountAdapter):
             "activate_url": self.get_email_confirmation_url(
                 request, emailconfirmation
             ),
-            "current_site": self.get_current_site(request),
+            "current_site": get_current_site(request),
             "key": emailconfirmation.key,
         }
         if signup:
