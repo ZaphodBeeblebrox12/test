@@ -1,6 +1,6 @@
 # TradeThesis Academy — Django Compatibility Audit
 
-**Status:** Initial read-only source audit; implementation has not yet started.  
+**Status:** Implementation in progress on `feature/tradethesis-academy`; draft PR opened. Course models, learner routes, one-time course checkout integration, and initial tests are present; CI and integration validation remain in progress.  
 **Branch:** `feature/tradethesis-academy`  
 **Base:** `main` at `846ac33de7ae9fb2fba4c918e2a4484a396ffe6c`  
 **Purpose:** Determine the fastest safe path to connect the existing TradeThesis website to accounts, payment, access control, and course delivery without rewriting the existing commerce application.
@@ -146,3 +146,14 @@ The first production candidate should be Trading Path only:
 - Do not alter production plans/customers or enable live payment keys from development branches.
 - Do not commit secrets, live database exports, private lesson media or instructor answer keys.
 - Keep every change on `feature/tradethesis-academy` until test gates pass and the user approves merge/deployment.
+
+
+## Implementation log (16 October 2026)
+
+- Added `apps.academy` models/admin for courses, modules, lessons, instructor-only materials, one-time offers, entitlements, entitlement events, and learner progress.
+- Added the explicit `one_time` price interval for base and regional prices and dispatched mapped course offers through the existing payment-intent lifecycle rather than creating subscriptions.
+- Added authenticated Academy overview, course, lesson and progress routes. Lesson bodies are only rendered after the server-side published/release/entitlement check.
+- Added customer-return and webhook fulfilment handling for course purchases, plus refund/chargeback revocation hooks.
+- Added unit tests for learner access, progress and idempotent payment fulfilment.
+- CI initially could not run because the workflow omitted Ruff/Black/mypy from its installed tools. The feature branch installs these tools and limits static checks to Academy and touched integration files; the full pytest suite remains enabled.
+- **Not launch-ready:** test results are still being collected; Django/allauth upgrade, production secrets/settings, persistent private content storage, course-source migration from the public static repo, content/interactive migration and live sandbox end-to-end tests remain gates.
