@@ -6,11 +6,23 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Prefetch, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
-from django.views.decorators.http import require_POST
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 
-from .models import Course, CourseEntitlement, CourseModule, CourseOffer, Lesson, LessonProgress
-from .services import can_access_lesson, get_active_entitlement, lesson_release_at, update_lesson_progress
+from .models import (
+    Course,
+    CourseEntitlement,
+    CourseModule,
+    CourseOffer,
+    Lesson,
+    LessonProgress,
+)
+from .services import (
+    can_access_lesson,
+    get_active_entitlement,
+    lesson_release_at,
+    update_lesson_progress,
+)
 
 
 def _active_entitlements(user, at=None):

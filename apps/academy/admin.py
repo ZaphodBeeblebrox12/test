@@ -1,8 +1,14 @@
 from django.contrib import admin
 
 from .models import (
-    Course, CourseEntitlement, CourseEntitlementEvent, CourseModule, CourseOffer,
-    Lesson, LessonInstructorMaterial, LessonProgress,
+    Course,
+    CourseEntitlement,
+    CourseEntitlementEvent,
+    CourseModule,
+    CourseOffer,
+    Lesson,
+    LessonInstructorMaterial,
+    LessonProgress,
 )
 
 

@@ -7,7 +7,12 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .models import (
-    Course, CourseEntitlement, CourseEntitlementEvent, CourseOffer, Lesson, LessonProgress,
+    Course,
+    CourseEntitlement,
+    CourseEntitlementEvent,
+    CourseOffer,
+    Lesson,
+    LessonProgress,
 )
 
 

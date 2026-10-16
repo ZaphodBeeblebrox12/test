@@ -4,7 +4,12 @@ from django.test import TestCase
 from django.urls import reverse
 
 from apps.academy.models import (
-    Course, CourseEntitlement, CourseEntitlementEvent, CourseModule, CourseOffer, Lesson,
+    Course,
+    CourseEntitlement,
+    CourseEntitlementEvent,
+    CourseModule,
+    CourseOffer,
+    Lesson,
 )
 from apps.payments.models import PaymentIntent
 from apps.payments.services import activate_paid_subscription, apply_refund_policy

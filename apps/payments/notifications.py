@@ -79,7 +79,7 @@ def notify_payment_succeeded(payment_intent, subscription=None):
             subscription.expires_at).strftime("%b %d, %Y")
     telegram_text = (
         "\u2705 Payment received, " + payment_intent.user.username + ".\n\n"
-        product_noun + ": " + plan_name + "\nAmount: " + context["amount_display"] + "\n\n"
+        + product_noun + ": " + plan_name + "\nAmount: " + context["amount_display"] + "\n\n"
         "Your receipt has been emailed to you. Thank you!"
     )
     _send(payment_intent.user, "payments/email/payment_success",
@@ -95,7 +95,7 @@ def notify_payment_failed(payment_intent):
     context["amount"] = context["amount_display"]
     telegram_text = (
         "\u274c Payment failed, " + payment_intent.user.username + ".\n\n"
-        product_noun + ": " + plan_name + "\nAmount: " + context["amount_display"] + "\n\n"
+        + product_noun + ": " + plan_name + "\nAmount: " + context["amount_display"] + "\n\n"
         "You have not been charged. You can retry the payment anytime from "
         "your dashboard."
     )

@@ -7,12 +7,21 @@ from django.db import IntegrityError
 from django.test import TestCase
 
 from apps.academy.models import (
-    Course, CourseEntitlement, CourseEntitlementEvent, CourseModule,
-    CourseOffer, Lesson, LessonInstructorMaterial, LessonProgress,
+    Course,
+    CourseEntitlement,
+    CourseEntitlementEvent,
+    CourseModule,
+    CourseOffer,
+    Lesson,
+    LessonInstructorMaterial,
+    LessonProgress,
 )
 from apps.academy.services import (
-    can_access_lesson, grant_course_entitlement, lesson_release_at,
-    revoke_course_entitlement_for_payment, update_lesson_progress,
+    can_access_lesson,
+    grant_course_entitlement,
+    lesson_release_at,
+    revoke_course_entitlement_for_payment,
+    update_lesson_progress,
 )
 from apps.payments.models import PaymentIntent
 from apps.subscriptions.models import Plan
