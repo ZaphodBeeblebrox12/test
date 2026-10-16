@@ -44,7 +44,7 @@ def academy_home(request):
 
     offers = CourseOffer.objects.filter(
         is_active=True, course__status=Course.Status.PUBLISHED,
-        plan__is_active=True, plan__is_hidden=False,
+        plan__is_active=True,
     ).select_related("course", "plan").order_by("position", "name")
     offers = [o for o in offers if o.is_saleable and o.course_id not in entitlements_by_course]
     return render(request, "academy/home.html", {
@@ -84,7 +84,7 @@ def course_detail(request, course_slug):
             module_rows.append({"module": module, "lessons": rows})
 
     offer = CourseOffer.objects.filter(
-        course=course, is_active=True, plan__is_active=True, plan__is_hidden=False,
+        course=course, is_active=True, plan__is_active=True,
     ).select_related("plan", "course").first()
     if offer is not None and not offer.is_saleable:
         offer = None

@@ -142,6 +142,10 @@ class CourseOffer(models.Model):
             if self.course_id and self.course.status != Course.Status.PUBLISHED:
                 errors["course"] = "Publish the course before activating its offer."
             if self.plan_id:
+                if not self.plan.is_hidden:
+                    errors["plan"] = (
+                        "Course offer Plans must be hidden from the subscription catalogue."
+                    )
                 from apps.subscriptions.models import GeoPlanPrice, PlanPrice
                 has_price = PlanPrice.objects.filter(
                     plan_id=self.plan_id, interval="one_time", is_active=True

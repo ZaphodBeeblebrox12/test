@@ -54,7 +54,7 @@ def payment_start(request):
         return Response({"detail": "plan_id is required."}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        plan = Plan.objects.get(id=plan_id, is_active=True, is_hidden=False)
+        plan = Plan.objects.get(id=plan_id, is_active=True)
     except Plan.DoesNotExist:
         return Response({"detail": "Plan not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -74,6 +74,10 @@ def payment_start(request):
                 "course_slug": course_offer.course.slug,
             }, status=status.HTTP_409_CONFLICT)
         interval = "one_time"
+    elif plan.is_hidden:
+        # Hidden plans are not publicly purchasable through subscription checkout.
+        # They may be purchased only through a configured active CourseOffer above.
+        return Response({"detail": "Plan not found."}, status=status.HTTP_404_NOT_FOUND)
     elif interval == "one_time":
         return Response({"detail": "One-time pricing is reserved for configured course offers."},
                         status=status.HTTP_400_BAD_REQUEST)

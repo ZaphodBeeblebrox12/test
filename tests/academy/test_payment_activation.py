@@ -1,5 +1,7 @@
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
 
 from apps.academy.models import (
     Course, CourseEntitlement, CourseEntitlementEvent, CourseModule, CourseOffer, Lesson,
@@ -17,7 +19,7 @@ class CoursePaymentActivationTests(TestCase):
             username="course-buyer", password="Test-password-123!"
         )
         self.plan = Plan.objects.create(
-            name="Trading Path One-Time", tier=Plan.Tier.BASIC, is_active=True,
+            name="Trading Path One-Time", tier=Plan.Tier.BASIC, is_active=True, is_hidden=True,
         )
         self.price = PlanPrice.objects.create(
             plan=self.plan, interval=PlanPrice.Interval.ONE_TIME,
@@ -46,6 +48,24 @@ class CoursePaymentActivationTests(TestCase):
             provider=PaymentIntent.Provider.RAZORPAY,
             status=PaymentIntent.Status.PENDING,
         )
+
+    def test_hidden_plan_without_course_offer_cannot_be_purchased(self):
+        hidden_plan = Plan.objects.create(
+            name="Internal-only plan", tier=Plan.Tier.PRO, is_active=True, is_hidden=True,
+        )
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse("payment-start"),
+            {"plan_id": str(hidden_plan.pk), "interval": "monthly"},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(PaymentIntent.objects.filter(user=self.user, plan=hidden_plan).exists())
+
+    def test_active_course_offer_requires_hidden_commerce_plan(self):
+        self.plan.is_hidden = False
+        self.plan.save(update_fields=["is_hidden"])
+        with self.assertRaises(ValidationError):
+            self.offer.full_clean()
 
     def test_verified_one_time_payment_grants_permanent_course_access_once(self):
         activated, entitlement = activate_paid_subscription(self.intent)
