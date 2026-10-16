@@ -33,7 +33,7 @@ class AcademyViewTests(TestCase):
         response = self.client.get(reverse("academy:course-detail", args=[self.course.slug]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Private lesson")
-        self.assertNotContains(response, "SECRET PAID LESSON BODY")
+        self.assertNotContains(response, "SECRET PAID LESSON BODY", status_code=403)
 
     def test_paid_lesson_is_not_retrievable_without_entitlement(self):
         response = self.client.get(reverse("academy:lesson", args=[self.course.slug, self.paid_lesson.pk]))

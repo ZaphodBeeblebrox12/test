@@ -3,6 +3,7 @@ Custom allauth adapter for Google authentication.
 """
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.account.adapter import DefaultAccountAdapter
+from django import forms
 from allauth.exceptions import ImmediateHttpResponse
 from allauth.account.models import EmailAddress
 from django.contrib import messages
@@ -82,6 +83,16 @@ class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
 
 class CustomAccountAdapter(DefaultAccountAdapter):
     """Custom account adapter with email verification support."""
+
+    def clean_email(self, email):
+        """Reject duplicate email addresses before the unique DB constraint is hit."""
+        email = super().clean_email(email)
+        if email and User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError(
+                "An account with this email address already exists."
+            )
+        return email
+
 
     def get_login_redirect_url(self, request):
         """Redirect after login - check if email is verified."""

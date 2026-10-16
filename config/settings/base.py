@@ -213,6 +213,8 @@ else:
 # ============================================================
 # DJANGO-ALLAUTH CONFIGURATION
 # ============================================================
+ACCOUNT_ADAPTER = "apps.accounts.adapters.CustomAccountAdapter"
+
 
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",

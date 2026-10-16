@@ -195,3 +195,18 @@ def notify_chargedback(payment_intent):
         telegram_text,
     )
 
+def _send(user, template, subject, context, telegram_text):
+    """Deliver billing email and Telegram notification without breaking billing."""
+    email = getattr(user, "email", None)
+    if email:
+        try:
+            from apps.notifications.services import NotificationService
+            NotificationService.send_email(
+                email, template, subject, context, {"billing": True})
+        except Exception:
+            logger.exception("billing email failed: %s", template)
+    try:
+        from apps.bot_integration.transactional import TransactionalTelegramService
+        TransactionalTelegramService.send_text(user, telegram_text)
+    except Exception:
+        logger.exception("billing telegram message failed: %s", template)
