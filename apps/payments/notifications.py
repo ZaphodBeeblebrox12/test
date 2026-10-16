@@ -59,6 +59,22 @@ def _base_context(intent):
         "support_url": (base + "/support/") if base else "#",
     }
     logo = getattr(settings, "EMAIL_LOGO_URL", "")
+    if offer:
+        try:
+            from apps.academy.models import CourseEntitlement
+            entitlement = CourseEntitlement.objects.filter(
+                user_id=intent.user_id,
+                course_id=offer.course_id,
+                payment_intent_id=intent.pk,
+            ).first()
+            if entitlement and entitlement.expires_at:
+                context["expires_display"] = _tz.localtime(
+                    entitlement.expires_at
+                ).strftime("%b %d, %Y")
+        except Exception:
+            logger.exception(
+                "could not resolve course access expiry for PaymentIntent %s", intent.pk
+            )
     if logo:
         context["logo_url"] = logo
     if intent.applied_coupon_code:
@@ -74,6 +90,7 @@ def notify_payment_succeeded(payment_intent, subscription=None):
     product_label = context["product_label"]
     product_noun = "Course" if context["product_type"] == "course" else "Plan"
     if subscription is not None and getattr(subscription, "expires_at", None):
+        from django.utils import timezone as _tz
         context["expires_display"] = _tz.localtime(
             subscription.expires_at
         ).strftime("%b %d, %Y")
