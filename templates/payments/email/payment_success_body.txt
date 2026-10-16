@@ -7,7 +7,8 @@ Date: {{ date_display }}
 Payment method: {{ provider_display }}
 Transaction ID: {{ provider_reference }}
 
-{% if expires_display %}Your subscription is active until {{ expires_display }}.{% endif %}
-View your subscription: {{ dashboard_url }}
+{% if expires_display %}{% if product_type == 'course' %}Your course access is available until {{ expires_display }}.{% else %}Your subscription is active until {{ expires_display }}.{% endif %}{% endif %}
+{% if product_type == 'course' and learning_url %}Open your course: {{ learning_url }}{% else %}View your subscription: {{ dashboard_url }}{% endif %}
+{% if product_type == 'course' and learning_url %}Open your course: {{ learning_url }}{% else %}View your subscription: {{ dashboard_url }}{% endif %}
 
 — {{ site_name|default:"TradeAdmin" }}
