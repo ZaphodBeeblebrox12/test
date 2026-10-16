@@ -157,3 +157,38 @@ The first production candidate should be Trading Path only:
 - Added unit tests for learner access, progress and idempotent payment fulfilment.
 - CI initially could not run because the workflow omitted Ruff/Black/mypy from its installed tools. The feature branch installs these tools and limits static checks to Academy and touched integration files; the full pytest suite remains enabled.
 - **Not launch-ready:** test results are still being collected; Django/allauth upgrade, production secrets/settings, persistent private content storage, course-source migration from the public static repo, content/interactive migration and live sandbox end-to-end tests remain gates.
+
+## Cross-repo handoff: lesson editing, shared instructional media, and VPA discovery (17 October 2026)
+
+**Source of the website-side requirement:** `ZaphodBeeblebrox12/prototypeweb`, branch `my-new-branch`, checkpoint [`189892f5c3d0c7e27ea8046022cc5411d430d05e`](https://github.com/ZaphodBeeblebrox12/prototypeweb/commit/189892f5c3d0c7e27ea8046022cc5411d430d05e). The static `Understand Bollinger Bands` preview now has deliberate related-course placements for the separate **Volume & Price Analysis** course, a visible non-purchasable development entry in the static catalogue, figure-count/label updates, and browser-local text/image editing prototypes. This is a handoff of requirements—not evidence that the website preview has been visually browser-tested or that the local edits are persistent.
+
+### Integrate into the existing Academy model; do not create a second CMS
+
+- `apps.academy.models.Lesson` already has `content_markdown` and `content_json`, and `LessonAdmin` already exposes these fields. Reuse them as the content source of truth. Keep this narrowly scoped to lesson copy, figure captions, structured practice content, and media references; do not introduce a general page builder or a parallel lesson-content store.
+- Provide the minimum staff editing experience needed to edit learner-facing text and replace a figure without hand-editing HTML. Prefer stable content/block identifiers stored with the lesson content; do not make persisted identity depend on DOM order or the preview editor's generated IDs.
+- Only render editing controls for authenticated staff with the appropriate course-content permission, and re-check that permission on every save. Use POST with CSRF protection, validate the submitted lesson/field IDs, and sanitise rendered content. A success message may appear only after the database transaction succeeds; a failed request must leave the UI showing a clear failure.
+- The static prototype's browser-local drafts are for interaction testing only. They must not be described as shared saves or carried into production as a security boundary.
+
+### Shared image replacement
+
+- The Academy `Lesson` model does not appear to have a stable shared-media relation today. First check for an existing project-wide media/storage abstraction; reuse it if one exists. Otherwise, add only a small persistent instructional-media record with a stable asset ID, stored file, alt text, and updated-by/updated-at metadata.
+- Let lesson content reference the stable asset ID so every use of that asset resolves to the same current image. A successful staff replacement must update the persistent file/reference and affect every rendered use, not only the current browser or lesson instance.
+- Restrict uploads to validated JPEG/PNG/WebP images, enforce size limits and safe storage names, and use persistent storage appropriate for paid/private course content. The upload endpoint must enforce staff permission and CSRF server-side; hidden buttons and client-side flags are not authorization. Keep old assets recoverable until the replacement is verified.
+- The public static preview references external images; do not assume all images have been downloaded, audited, or migrated. Track asset mapping during course-content migration and verify image readability/annotations before publishing learner content.
+
+### Volume & Price Analysis course discovery
+
+- Preserve the website-side course-discovery intent when connecting the Academy catalogue: learners studying relevant Bollinger Bands lessons—especially the price/indicator disagreement lesson in Module 5—should see a compact link to the separate **Volume & Price Analysis** outline.
+- Keep that entry visibly **In development / Coming soon** until the course is actually ready. It must be searchable/discoverable but must not create an active `CourseOffer`, purchasable CTA, or checkout path prematurely. Keep course availability separate from payment/entitlement logic.
+- The companion outline should cover, where supported by the planned curriculum, relative volume, buying/selling pressure, effort versus result, price/volume disagreement and confirmation, breakout failures/climaxes, Volume Profile, Point of Control, Value Area, high-/low-volume nodes, and MFI. Do not add every topic to every Bollinger lesson; use contextual lesson placements instead of keyword-only card injection.
+
+### Acceptance checks before merge/release
+
+1. An authorised staff editor can update existing lesson text/captions and receives a success state only after persistence; a save failure is visible and does not lose the original server content.
+2. Learners, anonymous visitors and staff without the required permission cannot invoke the save/upload endpoints; CSRF and unsafe-content tests pass.
+3. Replacing a shared asset changes every reference to that asset for subsequent page loads, while preserving alt text/metadata and private-content access checks.
+4. The VPA discovery card and catalogue outline are visible/searchable, explicitly marked in development, and have no purchase action or active offer.
+5. Test the real Django-rendered lesson on desktop and mobile, including chart readability, figure enlargement, navigation, and the existing progress/entitlement flow.
+
+**Branching:** continue this work on `feature/tradethesis-academy`. Keep the website source branch separate; do not merge to `main`, deploy, or activate live checkout as part of this handoff note.
+
