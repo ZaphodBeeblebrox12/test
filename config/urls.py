@@ -17,6 +17,8 @@ urlpatterns = [
 
     # Django admin (default) - comes after so growth URLs take precedence
     path("admin/", admin.site.urls),
+    # Academy routes are explicit and must be resolved before public catch-all routes.
+    path("learn/", include("apps.academy.urls")),
     path('', include('apps.public_views.urls')),
 
     # Custom auth views using allauth (with your custom templates)

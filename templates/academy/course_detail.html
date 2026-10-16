@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-4" style="max-width:920px">
+  <p class="text-uppercase text-muted small mb-2"><a href="{% url 'academy:home' %}">Academy</a> / Course</p>
+  <div class="d-flex justify-content-between align-items-start gap-4 flex-wrap mb-4">
+    <div><h1>{{ course.title }}</h1><p class="text-muted">{{ course.summary }}</p><p>{{ course.description }}</p></div>
+    {% if entitlement %}<div class="text-end"><span class="badge text-bg-success">Access active</span><p class="small text-muted mt-2">{% if entitlement.expires_at %}Access until {{ entitlement.expires_at|date:"M j, Y" }}{% else %}Lifetime course access{% endif %}</p><p class="small">{{ completed_lessons }} of {{ total_lessons }} lessons complete · {{ progress_percent }}%</p></div>{% endif %}
+  </div>
+  {% if offer and not entitlement %}
+    <section class="card mb-4"><div class="card-body">
+      <h2 class="h5">Get the full course</h2><p class="text-muted">Secure one-time checkout. Course access is granted only after the payment provider confirms payment.</p>
+      <form action="{% url 'payment-start' %}" method="post" data-academy-checkout>
+        {% csrf_token %}<input type="hidden" name="plan_id" value="{{ offer.plan_id }}"><input type="hidden" name="interval" value="one_time">
+        <button type="submit" class="btn btn-primary">Continue to secure checkout</button>
+        <p class="small text-danger mt-2 mb-0" data-checkout-error role="status"></p>
+      </form>
+    </div></section>
+  {% elif not entitlement %}
+    <p class="alert alert-info">This course has no active checkout offer at the moment.</p>
+  {% endif %}
+
+  {% for row in module_rows %}
+    <section class="mb-4"><h2 class="h5 border-bottom pb-2">{{ row.module.position|stringformat:"02d" }} · {{ row.module.title }}</h2>
+      <div class="list-group">
+        {% for item in row.lessons %}
+          <div class="list-group-item d-flex justify-content-between align-items-center gap-3">
+            <div><strong>{{ item.lesson.title }}</strong>{% if item.lesson.summary %}<p class="small text-muted mb-0">{{ item.lesson.summary }}</p>{% endif %}
+              {% if item.progress and item.progress.status == "completed" %}<span class="badge text-bg-success mt-1">Complete</span>{% elif item.lesson.is_preview %}<span class="badge text-bg-secondary mt-1">Preview</span>{% elif item.release_at and not item.accessible %}<span class="small text-muted d-block mt-1">Available {{ item.release_at|date:"M j, Y, H:i" }}</span>{% endif %}
+            </div>
+            {% if item.accessible %}<a class="btn btn-sm btn-outline-primary" href="{% url 'academy:lesson' course.slug item.lesson.id %}">Open lesson</a>{% else %}<span class="text-muted small" aria-label="Lesson locked">Locked</span>{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% empty %}<p class="text-muted">Course lessons are being prepared.</p>{% endfor %}
+</div>
+<script>
+(() => {
+  document.querySelectorAll("[data-academy-checkout]").forEach(form => {
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      const button = form.querySelector("button[type=submit]");
+      const error = form.querySelector("[data-checkout-error]");
+      button.disabled = true;
+      error.textContent = "Preparing secure checkout…";
+      try {
+        const csrf = form.querySelector('[name="csrfmiddlewaretoken"]').value;
+        const response = await fetch(form.action, {
+          method: "POST", credentials: "same-origin",
+          headers: {"X-CSRFToken": csrf, "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"},
+          body: new URLSearchParams(new FormData(form))
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "Checkout could not be started.");
+        if (!payload.consent_url) throw new Error("The server did not return a checkout consent URL.");
+        window.location.assign(payload.consent_url);
+      } catch (err) {
+        error.textContent = err.message || "Checkout could not be started. Please try again.";
+        button.disabled = false;
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}

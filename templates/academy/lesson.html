@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-4" style="max-width:850px">
+  <p class="text-uppercase small text-muted mb-2"><a href="{% url 'academy:home' %}">Academy</a> / <a href="{% url 'academy:course-detail' course.slug %}">{{ course.title }}</a> / {{ module.title }}</p>
+  <div class="d-flex justify-content-between flex-wrap gap-3"><div><p class="text-muted small mb-1">Lesson {{ lesson.position }} · {{ lesson.duration_minutes }} min</p><h1>{{ lesson.title }}</h1><p class="text-muted">{{ lesson.summary }}</p></div>{% if lesson.is_preview %}<span class="badge text-bg-secondary align-self-start">Preview</span>{% endif %}</div>
+  <hr>
+  <article class="lesson-body py-3" style="font-size:1.05rem;line-height:1.85;white-space:normal">{{ lesson.content_markdown|linebreaks }}</article>
+  {% if lesson.content_json %}<section class="card mt-4"><div class="card-body"><h2 class="h5">Practice activity</h2><p class="text-muted small">Interactive activity data is available for this lesson. The full interactive renderer can be connected as a separate pass.</p></div></section>{% endif %}
+  <div class="d-flex align-items-center gap-3 border-top pt-4 mt-4 flex-wrap">
+    <form method="post" action="{% url 'academy:lesson-progress' lesson.id %}" data-lesson-complete>
+      {% csrf_token %}<input type="hidden" name="status" value="completed"><button class="btn btn-primary" type="submit">{% if progress and progress.status == "completed" %}Completed ✓{% else %}Mark lesson complete{% endif %}</button>
+    </form>
+    <a class="btn btn-outline-secondary" href="{% url 'academy:course-detail' course.slug %}">Back to course</a>
+    <span class="small text-muted" data-progress-feedback role="status"></span>
+  </div>
+</div>
+<script>
+(() => {
+ const form=document.querySelector("[data-lesson-complete]"); if(!form)return;
+ form.addEventListener("submit",async event=>{
+  event.preventDefault(); const btn=form.querySelector("button"); const feedback=document.querySelector("[data-progress-feedback]");
+  btn.disabled=true;
+  try {
+   const response=await fetch(form.action,{method:"POST",credentials:"same-origin",headers:{"X-CSRFToken":form.querySelector('[name="csrfmiddlewaretoken"]').value},body:new FormData(form)});
+   const payload=await response.json(); if(!response.ok)throw new Error(payload.detail||"Progress could not be saved.");
+   btn.textContent="Completed ✓"; feedback.textContent="Progress saved.";
+  } catch(err){feedback.textContent=err.message||"Progress could not be saved.";btn.disabled=false;}
+ });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-4" style="max-width:980px">
+  <div class="d-flex justify-content-between align-items-end flex-wrap gap-3 mb-4">
+    <div><p class="text-uppercase text-muted small mb-1">TradeThesis / Academy</p><h1 class="mb-1">Your learning room</h1><p class="text-muted mb-0">Pick up where you left off, or choose your next course.</p></div>
+  </div>
+  <h2 class="h4 mb-3">My courses</h2>
+  {% if course_cards %}
+    <div class="row g-3 mb-5">
+      {% for item in course_cards %}
+        <div class="col-12 col-md-6">
+          <article class="card h-100"><div class="card-body">
+            <p class="text-uppercase small text-muted mb-2">{% if item.entitlement %}Enrolled{% else %}Course overview{% endif %}</p>
+            <h3 class="h5">{{ item.course.title }}</h3>
+            <p class="text-muted">{{ item.course.summary }}</p>
+            {% if item.entitlement %}<p class="small mb-2">{{ item.completed_lessons }} of {{ item.total_lessons }} lessons complete · {{ item.progress_percent }}%</p><div class="progress mb-3" role="progressbar" aria-valuenow="{{ item.progress_percent }}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar" style="width:{{ item.progress_percent }}%"></div></div>{% endif %}
+            <a class="btn btn-primary" href="{% url 'academy:course-detail' item.course.slug %}">{% if item.entitlement %}Continue learning{% else %}Explore course{% endif %}</a>
+          </div></article>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}<p class="text-muted mb-5">Your courses will appear here after you enrol.</p>{% endif %}
+
+  {% if offers %}
+    <h2 class="h4 mb-3">Available courses</h2>
+    <div class="row g-3">
+      {% for offer in offers %}
+        <div class="col-12 col-md-6"><article class="card h-100"><div class="card-body">
+          <p class="text-uppercase small text-muted mb-2">Course</p><h3 class="h5">{{ offer.name }}</h3><p class="text-muted">{{ offer.course.summary }}</p><a class="btn btn-outline-primary" href="{% url 'academy:course-detail' offer.course.slug %}">View course</a>
+        </div></article></div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
