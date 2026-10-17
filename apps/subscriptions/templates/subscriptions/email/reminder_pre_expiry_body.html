@@ -20,7 +20,12 @@
   </tr>
   <tr>
     <td class="px" style="padding:16px 32px 34px 32px;">
-      {% include "emails/partials/button.html" with url=dashboard_url|default:"#" label="Renew subscription" %}
+      {% if dashboard_url %}
+        {% include "emails/partials/button.html" with url=dashboard_url label="Renew subscription" %}
+      {% endif %}
+      {% if telegram_connect_url %}
+        {% include "emails/partials/button.html" with url=telegram_connect_url label="Connect Telegram" color="#0891b2" %}
+      {% endif %}
     </td>
   </tr>
 </table>
