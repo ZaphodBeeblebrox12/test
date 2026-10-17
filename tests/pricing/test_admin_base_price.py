@@ -21,6 +21,10 @@ PLAN = {"name": "Pro", "tier": "pro", "display_order": "1",
 EMPTY_FEATURES_FORMSET = {
     "features-TOTAL_FORMS": "1", "features-INITIAL_FORMS": "0",
     "features-MIN_NUM_FORMS": "0", "features-MAX_NUM_FORMS": "1000",
+    # Browser submissions include controls from the empty extra row too.
+    # The model default renders position=0; missing keys make Django treat
+    # the supposedly blank row as changed and reject the parent Plan form.
+    "features-0-position": "0", "features-0-text": "",
     "features-0-id": "",
 }
 
