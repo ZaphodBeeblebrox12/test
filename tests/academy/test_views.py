@@ -1,8 +1,10 @@
+import re
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
-from apps.academy.models import Course, CourseModule, Lesson
+from apps.academy.models import Course, CourseMediaAsset, CourseModule, Lesson
 
 User = get_user_model()
 
@@ -44,6 +46,58 @@ class AcademyViewTests(TestCase):
         response = self.client.get(reverse("academy:lesson", args=[self.course.slug, self.preview_lesson.pk]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Public preview content.")
+
+    def test_published_preview_renders_multiple_images_in_selected_learning_room_tabs(self):
+        placements = [
+            ("Idea figure", "Additional concept figure", "idea", "https://example.com/idea.png"),
+            ("Example chart", "Additional chart examples", "examples", "https://example.com/examples.png"),
+            ("Practice figure", "Practice figure", "practice", "https://example.com/practice.png"),
+        ]
+        assets = []
+        markdown_parts = ["### The question", "", "Look at the evidence in each panel."]
+        for index, (alt_text, heading, _tab, url) in enumerate(placements, start=1):
+            asset = CourseMediaAsset.objects.create(
+                course=self.course,
+                asset_key=f"test/learning-room-figure-{index}",
+                alt_text=alt_text,
+                original_url=url,
+            )
+            assets.append(asset)
+            markdown_parts.extend([
+                "",
+                f"### {heading}",
+                "",
+                f"![{alt_text}](asset://{asset.pk})",
+            ])
+        self.preview_lesson.content_markdown = "\n".join(markdown_parts)
+        self.preview_lesson.content_json = {"asset_ids": [str(asset.pk) for asset in assets]}
+        self.preview_lesson.save(update_fields=["content_markdown", "content_json", "updated_at"])
+
+        response = self.client.get(
+            reverse("academy:lesson", args=[self.course.slug, self.preview_lesson.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        rendered_html = response.content.decode()
+        panel_patterns = {
+            tab: re.compile(
+                rf'<div class="tt-tab-panel" role="tabpanel" data-tab-panel="{tab}"[^>]*>(.*?)</div>',
+                re.DOTALL,
+            )
+            for tab in ("idea", "examples", "practice")
+        }
+        panels = {}
+        for tab, pattern in panel_patterns.items():
+            match = pattern.search(rendered_html)
+            self.assertIsNotNone(match, f"Published lesson is missing the {tab} tab panel.")
+            panels[tab] = match.group(1)
+
+        self.assertIn('<span class="tt-tab-count">3</span>', rendered_html)
+        for alt_text, _heading, expected_tab, url in placements:
+            self.assertIn(f'alt="{alt_text}"', panels[expected_tab])
+            self.assertIn(f'src="{url}"', panels[expected_tab])
+            for other_tab, panel_html in panels.items():
+                if other_tab != expected_tab:
+                    self.assertNotIn(url, panel_html)
 
     def test_progress_endpoint_rejects_unentitled_paid_lesson(self):
         response = self.client.post(
