@@ -25,15 +25,21 @@ logger = logging.getLogger(__name__)
 def start_telegram_connect(request):
     """Generate a deep link and redirect immediately to Telegram."""
     config = BotConfig.get_config()
-    if not config.telegram_bot_username:
+    # Prefer the admin-configured handle, but allow the deployment setting as
+    # a fallback. A missing DB value must not send dashboard users to the old
+    # profile page when TELEGRAM_BOT_USERNAME is configured correctly.
+    bot_username = (
+        config.telegram_bot_username or getattr(settings, "TELEGRAM_BOT_USERNAME", "") or ""
+    ).strip().lstrip("@")
+    if not bot_username:
         messages.error(request, "Telegram bot is not configured.")
-        return redirect('profile')
+        return redirect('dashboard')
 
     # Delete old unused tokens for this user
     TelegramVerificationToken.objects.filter(user=request.user).delete()
 
     token = TelegramVerificationToken.create_token(request.user)
-    deep_link = f"https://t.me/{config.telegram_bot_username}?start=verify_{token.token}"
+    deep_link = f"https://t.me/{bot_username}?start=verify_{token.token}"
     
     # Redirect directly to Telegram (no intermediate page)
     return redirect(deep_link)
@@ -101,7 +107,8 @@ def telegram_webhook(request):
     except json.JSONDecodeError:
         return HttpResponse(status=400)
 
-    logger.info(f"Telegram webhook received: {data}")
+    # Never log raw updates: /start verify_<token> contains a bearer token.
+    logger.debug("Telegram webhook received update_id=%s", data.get("update_id"))
 
     if 'message' not in data or 'text' not in data['message']:
         return JsonResponse({"ok": True})
@@ -112,15 +119,27 @@ def telegram_webhook(request):
     telegram_user_id = from_user.get('id')
 
     if not text.startswith('/start'):
+        # A plain greeting cannot securely identify the TradeThesis account,
+        # but should give a clear next step instead of being silently ignored.
+        if text.strip().casefold() in {"hi", "hello", "hey", "help", "/help"}:
+            TelegramBotService.send_message(
+                chat_id,
+                "👋 Hi! To connect Telegram, open the Connect Telegram link in "
+                "your TradeThesis email, or sign in to your dashboard and press "
+                "Connect Telegram. When Telegram opens, tap Start to verify "
+                "your account. A plain Hi by itself cannot securely link an account."
+            )
         return JsonResponse({"ok": True})
 
     parts = text.split()
     if len(parts) != 2 or not parts[1].startswith('verify_'):
         TelegramBotService.send_message(
             chat_id,
-            "\U0001f44b Hi! To link your account: open the website, go to"
-            " Dashboard and press Connect Telegram. Already paid? Connecting"
-            " grants your channel access automatically.")
+            "👋 Hi! To connect Telegram, open the Connect Telegram link in your "
+            "TradeThesis email, or sign in to your dashboard and press Connect "
+            "Telegram. When Telegram opens, tap Start to verify your account. "
+            "If you already have an active subscription, access will sync after linking."
+        )
         return JsonResponse({"ok": True})
 
     token_str = parts[1][7:]  # remove 'verify_'
