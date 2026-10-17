@@ -538,6 +538,62 @@ def _plan_label(subscription) -> str:
     return "your plan"
 
 
+def _absolute_site_url(path: str) -> str:
+    """Build a safe absolute website URL for emails; never email localhost in production."""
+    from urllib.parse import urlsplit
+    from django.contrib.sites.models import Site
+
+    base = str(getattr(settings, "SITE_BASE_URL", "") or "").strip().rstrip("/")
+    local_hosts = {"localhost", "127.0.0.1", "0.0.0.0", "example.com"}
+    if base:
+        parsed = urlsplit(base)
+        if (parsed.scheme in {"http", "https"} and parsed.netloc
+                and (getattr(settings, "DEBUG", False)
+                     or parsed.hostname not in local_hosts)):
+            return f"{base}{path}"
+
+    # Fall back to the configured Django Site when SITE_BASE_URL is unset or
+    # still has its development default. Suppress example.com rather than
+    # sending a misleading email link if production configuration is missing.
+    try:
+        domain = str(Site.objects.get_current().domain or "").strip().rstrip("/")
+        domain_host = urlsplit("//" + domain).hostname if domain else None
+        if domain and domain_host and (
+                getattr(settings, "DEBUG", False) or domain_host.lower() not in local_hosts):
+            scheme = "http" if getattr(settings, "DEBUG", False) else "https"
+            return f"{scheme}://{domain}{path}"
+    except Exception:
+        pass
+    return ""
+
+
+def _telegram_connect_email_url(user) -> str:
+    """Make a one-use Telegram deep link for an account-linking email.
+
+    Email recipients may open a reminder days after it is sent, so this token
+    is valid for seven days. The regular dashboard flow remains ten minutes.
+    """
+    from apps.bot_integration.models import (
+        BotConfig, TelegramAccount, TelegramVerificationToken,
+    )
+
+    if TelegramAccount.objects.filter(user=user, is_active=True).exists():
+        return ""
+
+    config = BotConfig.get_config()
+    bot_username = (
+        config.telegram_bot_username or getattr(settings, "TELEGRAM_BOT_USERNAME", "") or ""
+    ).strip().lstrip("@")
+    if not bot_username:
+        return ""
+
+    # Keep only the newest outstanding link for this user; otherwise an old
+    # reminder email could later relink the account to a different Telegram chat.
+    TelegramVerificationToken.objects.filter(user=user).delete()
+    token = TelegramVerificationToken.create_token(user, ttl_minutes=7 * 24 * 60)
+    return f"https://t.me/{bot_username}?start=verify_{token.token}"
+
+
 def _send_reminder_once(subscription, kind: str) -> bool:
     """Claim (get_or_create) then deliver on both channels. Returns True when
     at least one channel delivered; row is removed otherwise so a later run
@@ -581,10 +637,15 @@ def _send_reminder_once(subscription, kind: str) -> bool:
         recipient = getattr(subscription.user, "email", None)
         if recipient:
             from apps.notifications.services import NotificationService
+            from django.urls import reverse
+
+            telegram_connect_url = _telegram_connect_email_url(subscription.user)
             NotificationService.send_email(
                 to_email=recipient, template=email_tpl, subject=subject,
                 context={"username": username, "plan_name": plan_label,
-                         "days": PRE_EXPIRY_DAYS})
+                         "days": PRE_EXPIRY_DAYS,
+                         "dashboard_url": _absolute_site_url(reverse("dashboard")),
+                         "telegram_connect_url": telegram_connect_url})
             email_sent = True
             delivered = True
             email_recipient = recipient
