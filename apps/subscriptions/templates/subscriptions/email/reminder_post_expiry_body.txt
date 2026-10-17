@@ -4,4 +4,9 @@ Your {{ plan_name }} access has ended.
 
 Renew anytime to restore access to all channels.
 
+{% if telegram_connect_url %}
+Connect your TradeThesis account to Telegram for future channel access and account updates:
+{{ telegram_connect_url }}
+{% endif %}
+
 — The Team
