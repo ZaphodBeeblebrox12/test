@@ -1,10 +1,14 @@
 import re
+from io import BytesIO
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 
 from apps.academy.models import Course, CourseMediaAsset, CourseModule, Lesson
+from apps.academy.storage import course_asset_storage
+from PIL import Image
 
 User = get_user_model()
 
@@ -98,6 +102,65 @@ class AcademyViewTests(TestCase):
             for other_tab, panel_html in panels.items():
                 if other_tab != expected_tab:
                     self.assertNotIn(url, panel_html)
+
+    def test_uploaded_replacement_renders_through_protected_media_and_retains_source_url(self):
+        source_url = "https://example.com/charts/original.png"
+        image_bytes = BytesIO()
+        Image.new("RGB", (12, 8), (245, 220, 170)).save(image_bytes, format="PNG")
+        asset = CourseMediaAsset.objects.create(
+            course=self.course,
+            asset_key="test/uploaded-replacement",
+            alt_text="Uploaded replacement chart",
+            original_url=source_url,
+        )
+        asset.file.save(
+            "replacement.png",
+            SimpleUploadedFile("replacement.png", image_bytes.getvalue(), content_type="image/png"),
+            save=True,
+        )
+        stored_name = asset.file.name
+        self.addCleanup(lambda: course_asset_storage.delete(stored_name))
+
+        self.preview_lesson.content_markdown = f"![Uploaded replacement chart](asset://{asset.pk})"
+        self.preview_lesson.content_json = {"asset_ids": [str(asset.pk)]}
+        self.preview_lesson.save(update_fields=["content_markdown", "content_json", "updated_at"])
+
+        response = self.client.get(
+            reverse("academy:lesson", args=[self.course.slug, self.preview_lesson.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        protected_url = reverse("academy:media-asset", args=[asset.pk])
+        self.assertContains(response, f'src="{protected_url}"')
+        self.assertNotContains(response, source_url)
+
+        media_response = self.client.get(protected_url)
+        self.assertEqual(media_response.status_code, 200)
+        self.assertEqual(media_response["Content-Type"], "image/png")
+        self.assertEqual(media_response["Cache-Control"], "private, no-store")
+        self.assertEqual(media_response["X-Content-Type-Options"], "nosniff")
+
+    def test_uploaded_media_for_unentitled_paid_lesson_is_forbidden(self):
+        image_bytes = BytesIO()
+        Image.new("RGB", (12, 8), (245, 220, 170)).save(image_bytes, format="PNG")
+        asset = CourseMediaAsset.objects.create(
+            course=self.course,
+            asset_key="test/private-paid-image",
+            alt_text="Private lesson chart",
+            original_url="https://example.com/charts/private-original.png",
+        )
+        asset.file.save(
+            "private-chart.png",
+            SimpleUploadedFile("private-chart.png", image_bytes.getvalue(), content_type="image/png"),
+            save=True,
+        )
+        stored_name = asset.file.name
+        self.addCleanup(lambda: course_asset_storage.delete(stored_name))
+        self.paid_lesson.content_markdown = f"![Private lesson chart](asset://{asset.pk})"
+        self.paid_lesson.content_json = {"asset_ids": [str(asset.pk)]}
+        self.paid_lesson.save(update_fields=["content_markdown", "content_json", "updated_at"])
+
+        response = self.client.get(reverse("academy:media-asset", args=[asset.pk]))
+        self.assertEqual(response.status_code, 403)
 
     def test_progress_endpoint_rejects_unentitled_paid_lesson(self):
         response = self.client.post(
