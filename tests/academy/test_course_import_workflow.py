@@ -202,6 +202,57 @@ class CourseImportWorkflowTests(TestCase):
             2,
         )
 
+    def test_admin_added_images_render_only_in_the_selected_learning_room_tab(self):
+        course = publish_course_import(self.import_draft(), user=self.admin)
+        lesson = Lesson.objects.get(module__course=course)
+        self.client.force_login(self.admin)
+        add_url = reverse("admin:academy_lesson_add_figure", args=[lesson.pk])
+        placements = [
+            ("Idea diagram", "https://example.com/figures/idea.png", "idea", "idea_html"),
+            ("Chart example", "https://example.com/figures/example.png", "examples", "examples_html"),
+            ("Practice figure", "https://example.com/figures/practice.png", "practice", "practice_html"),
+        ]
+
+        for alt_text, url, placement, _expected_section in placements:
+            response = self.client.post(add_url, {
+                "alt_text": alt_text,
+                "original_url": url,
+                "placement": placement,
+            })
+            self.assertEqual(response.status_code, 302)
+
+        lesson.refresh_from_db()
+        self.assertEqual(len(lesson.content_json["asset_ids"]), 3)
+        added_assets = CourseMediaAsset.objects.filter(
+            course=course, asset_key__startswith="admin-added/"
+        )
+        self.assertEqual(added_assets.count(), 3)
+        asset_urls = {str(asset.pk): asset.original_url for asset in added_assets}
+        sections = build_lesson_sections(lesson.content_markdown, asset_urls)
+
+        for _alt_text, url, _placement, expected_section in placements:
+            self.assertIn(url, sections[expected_section])
+            for other_section in ("idea_html", "examples_html", "practice_html"):
+                if other_section != expected_section:
+                    self.assertNotIn(url, sections[other_section])
+
+        self.assertEqual(
+            CourseContentRevision.objects.filter(
+                lesson=lesson,
+                revision_type=CourseContentRevision.RevisionType.ADMIN_EDIT,
+            ).count(),
+            3,
+        )
+        self.assertEqual(
+            AuditLog.objects.filter(
+                action="academy_lesson_figure_added",
+                object_type="lesson",
+                object_id=str(lesson.pk),
+                user=self.admin,
+            ).count(),
+            3,
+        )
+
     def test_ordinary_staff_cannot_add_lesson_figures(self):
         course = publish_course_import(self.import_draft(), user=self.admin)
         lesson = Lesson.objects.get(module__course=course)
