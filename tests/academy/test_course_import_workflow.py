@@ -1,12 +1,15 @@
 import json
 import tempfile
+from io import BytesIO
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import Client, TestCase
 from django.urls import reverse
+from PIL import Image
 
 from apps.academy.content_rendering import build_lesson_sections, validate_markdown_source
 from apps.academy.importing import publish_course_import, validate_import_for_publish
@@ -19,6 +22,8 @@ from apps.academy.models import (
     Lesson,
     LessonProgress,
 )
+from apps.academy.storage import course_asset_storage
+from apps.audit.models import AuditLog
 
 User = get_user_model()
 
@@ -221,14 +226,6 @@ class CourseImportWorkflowTests(TestCase):
         self.assertFalse(CourseMediaAsset.objects.filter(course=course, asset_key__startswith="admin-added/").exists())
 
     def test_admin_can_replace_a_linked_image_with_an_upload(self):
-        from io import BytesIO
-
-        from django.core.files.uploadedfile import SimpleUploadedFile
-        from PIL import Image
-
-        from apps.audit.models import AuditLog
-        from apps.academy.storage import course_asset_storage
-
         course = Course.objects.create(title="Image replacement course", slug="image-replacement-course")
         source_url = "https://example.com/charts/original.png"
         asset = CourseMediaAsset.objects.create(
