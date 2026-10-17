@@ -44,10 +44,10 @@
                 <i class="bi bi-telegram"></i> Telegram Connection
             </div>
             <div class="card-body">
-                {% if user.telegram_id and user.telegram_verified %}
+                {% if telegram_connected %}
                 <div class="alert alert-success">
-                    <i class="bi bi-check-circle-fill"></i> 
-                    Connected as @{{ user.telegram_username }}
+                    <i class="bi bi-check-circle-fill"></i>
+                    Connected{% if telegram_account.username %} as @{{ telegram_account.username }}{% elif telegram_account.first_name %} as {{ telegram_account.first_name }}{% endif %}
                 </div>
                 {% else %}
                 <div class="alert alert-warning">
