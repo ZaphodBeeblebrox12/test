@@ -121,6 +121,26 @@ class CourseImportWorkflowTests(TestCase):
         self.assertEqual(progress.status, LessonProgress.Status.COMPLETED)
         self.assertEqual(CourseContentRevision.objects.filter(lesson=lesson).count(), 1)
 
+    def test_external_image_url_is_preserved_as_fallback_and_can_publish(self):
+        original_url = "https://example.com/charts/bollinger-example.png?source=lesson"
+        self.write_source(f"![Original chart]({original_url})\n\nThe source can be replaced later.")
+        record = self.import_draft()
+
+        staged_asset = record.assets.get()
+        self.assertEqual(staged_asset.original_url, original_url)
+        self.assertFalse(staged_asset.file)
+        self.assertEqual(validate_import_for_publish(record), [])
+
+        course = publish_course_import(record, user=self.admin)
+        live_asset = CourseMediaAsset.objects.get(course=course)
+        self.assertEqual(live_asset.original_url, original_url)
+        self.assertFalse(live_asset.file)
+        lesson = Lesson.objects.get(module__course=course)
+        rendered = build_lesson_sections(
+            lesson.content_markdown, {str(live_asset.pk): live_asset.original_url}
+        )
+        self.assertIn(original_url, rendered["idea_html"])
+
     def test_missing_image_blocks_publish_and_leaves_course_unpublished(self):
         self.write_source("![Missing chart](../assets/not-ready.png)\n\nThis is the lesson.")
         record = self.import_draft()
