@@ -88,10 +88,15 @@ def build_lesson_sections(source, asset_urls=None):
             finish_section()
             current_heading = match.group(2)
             heading = current_heading.casefold()
-            # Respect explicit Learning Room placement words before the generic
-            # "figure" keyword used by examples headings. Admin-added headings
-            # intentionally preserve the selected tab in their wording.
-            if any(word in heading for word in (
+            # Admin-added headings encode the selected Learning Room tab;
+            # handle those exact prefixes before generic content heuristics.
+            if heading.startswith("additional concept figure"):
+                current_group = "idea"
+            elif heading.startswith("additional chart examples"):
+                current_group = "examples"
+            elif heading.startswith("practice figure"):
+                current_group = "practice"
+            elif any(word in heading for word in (
                 "practice", "task", "try a new", "test your", "model response",
                 "model reasoning", "feedback", "knowledge check", "apply",
             )):
