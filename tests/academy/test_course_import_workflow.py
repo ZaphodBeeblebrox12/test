@@ -14,6 +14,7 @@ from apps.academy.models import (
     Course,
     CourseContentRevision,
     CourseImport,
+    CourseMediaAsset,
     CourseModule,
     Lesson,
     LessonProgress,
