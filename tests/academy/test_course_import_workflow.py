@@ -208,6 +208,56 @@ class CourseImportWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertFalse(CourseMediaAsset.objects.filter(course=course, asset_key__startswith="admin-added/").exists())
 
+    def test_lesson_add_figure_requires_csrf_token(self):
+        course = publish_course_import(self.import_draft(), user=self.admin)
+        lesson = Lesson.objects.get(module__course=course)
+        client = Client(enforce_csrf_checks=True)
+        client.force_login(self.admin)
+        response = client.post(
+            reverse("admin:academy_lesson_add_figure", args=[lesson.pk]),
+            {"alt_text": "Chart", "original_url": "https://example.com/chart.png", "placement": "examples"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(CourseMediaAsset.objects.filter(course=course, asset_key__startswith="admin-added/").exists())
+
+    def test_admin_can_replace_a_linked_image_with_an_upload(self):
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        from apps.audit.models import AuditLog
+        from apps.academy.storage import course_asset_storage
+
+        course = Course.objects.create(title="Image replacement course", slug="image-replacement-course")
+        source_url = "https://example.com/charts/original.png"
+        asset = CourseMediaAsset.objects.create(
+            course=course, asset_key="remote/original-chart", original_url=source_url,
+            alt_text="Original linked chart",
+        )
+        image_bytes = BytesIO()
+        Image.new("RGB", (12, 8), (245, 220, 170)).save(image_bytes, format="PNG")
+        upload = SimpleUploadedFile("my-chart.png", image_bytes.getvalue(), content_type="image/png")
+
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("admin:academy_coursemediaasset_change", args=[asset.pk]),
+            {"alt_text": "My replacement chart", "file": upload},
+        )
+        self.assertEqual(response.status_code, 302)
+        asset.refresh_from_db()
+        self.addCleanup(lambda: course_asset_storage.delete(asset.file.name) if asset.file else None)
+        self.assertTrue(asset.file)
+        self.assertEqual(asset.original_url, source_url)
+        self.assertEqual(asset.alt_text, "My replacement chart")
+        self.assertEqual(asset.updated_by, self.admin)
+        self.assertTrue(AuditLog.objects.filter(
+            action="academy_course_media_replaced",
+            object_type="course_media_asset",
+            object_id=str(asset.pk),
+            user=self.admin,
+        ).exists())
+
 
     def test_missing_image_blocks_publish_and_leaves_course_unpublished(self):
         self.write_source("![Missing chart](../assets/not-ready.png)\n\nThis is the lesson.")

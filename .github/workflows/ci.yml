@@ -47,6 +47,10 @@ jobs:
       run: |
         mypy apps/academy/
 
+    - name: Run focused micro-course image-slot regressions
+      run: |
+        pytest tests/academy/test_course_import_workflow.py
+
     - name: Run tests with pytest
       run: |
         pytest --cov=apps --cov=integrations --cov-report=xml
