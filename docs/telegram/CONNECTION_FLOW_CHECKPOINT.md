@@ -18,6 +18,7 @@ Deployment: **not performed**
 
 - Confirmed the updated files and regression test exist on `feature/tradethesis-academy`.
 - Reviewed the URL names, `BotConfig` and `TelegramVerificationToken` model contracts, HMAC signature helper, email template context, and email templates against the branch source.
+- The new regression test module passed a local Python syntax compilation check. This does **not** execute Django tests or validate database/runtime behavior.
 - **Runtime tests are not yet confirmed.** The available GitHub status lookup reported no legacy status entries for the test commit. The available workflow-run lookup only returns pull-request-triggered runs, so it does not prove whether a push-triggered GitHub Actions run occurred. A local test run was not possible in this environment because the repository could not be cloned and Django is not installed here.
 - The branch is 63 commits ahead of `main`. Do not create a PR to `main` just to force CI; that would present a much broader change set.
 - The Render service for the `test` repository is configured to deploy `main`, not this feature branch. No deployment was triggered.
