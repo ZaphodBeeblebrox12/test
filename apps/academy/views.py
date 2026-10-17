@@ -1,10 +1,12 @@
 """Authenticated learner views for TradeThesis Academy."""
 import json
+import mimetypes
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Prefetch, Q
-from django.http import JsonResponse
+from django.http import FileResponse, JsonResponse
+from django.urls import reverse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -12,11 +14,14 @@ from django.views.decorators.http import require_POST
 from .models import (
     Course,
     CourseEntitlement,
+    CourseMediaAsset,
     CourseModule,
     CourseOffer,
     Lesson,
     LessonProgress,
 )
+from .content_rendering import build_lesson_sections
+from .permissions import is_course_content_admin
 from .services import (
     can_access_lesson,
     get_active_entitlement,
@@ -125,11 +130,62 @@ def lesson_detail(request, course_slug, lesson_id):
         raise PermissionDenied("You do not have access to this lesson yet.")
     entitlement = get_active_entitlement(request.user, course)
     progress = LessonProgress.objects.filter(user=request.user, lesson=lesson).first()
-    # Instructor materials are deliberately not added to this learner context.
+    asset_ids = lesson.content_json.get("asset_ids", []) if isinstance(lesson.content_json, dict) else []
+    media_assets = CourseMediaAsset.objects.filter(course=course, pk__in=asset_ids, file__gt="")
+    asset_urls = {
+        str(asset.pk): reverse("academy:media-asset", args=[asset.pk])
+        for asset in media_assets
+    }
+    outline_modules = []
+    modules = CourseModule.objects.filter(course=course).prefetch_related("lessons").order_by("position", "title")
+    now = timezone.now()
+    for module_row in modules:
+        rows = []
+        for outline_lesson in module_row.lessons.all():
+            if not outline_lesson.is_published:
+                continue
+            rows.append({
+                "lesson": outline_lesson,
+                "accessible": can_access_lesson(request.user, outline_lesson, now),
+                "current": outline_lesson.pk == lesson.pk,
+                "progress": LessonProgress.objects.filter(user=request.user, lesson=outline_lesson).first(),
+            })
+        if rows and module_row.is_published:
+            outline_modules.append({"module": module_row, "lessons": rows})
+    notebook = lesson.content_json.get("notebook", {}) if isinstance(lesson.content_json, dict) else {}
     return render(request, "academy/lesson.html", {
-        "course": course, "lesson": lesson,
-        "module": lesson.module, "entitlement": entitlement, "progress": progress,
+        "course": course, "lesson": lesson, "module": lesson.module,
+        "entitlement": entitlement, "progress": progress,
+        "lesson_sections": build_lesson_sections(lesson.content_markdown, asset_urls),
+        "notebook": notebook, "outline_modules": outline_modules,
     })
+
+
+@login_required
+def media_asset(request, asset_id):
+    """Deliver teaching images only to admins or learners allowed to view a referencing lesson."""
+    asset = get_object_or_404(CourseMediaAsset.objects.select_related("course"), pk=asset_id)
+    if not asset.file:
+        from django.http import Http404
+        raise Http404
+    allowed = is_course_content_admin(request.user)
+    if not allowed:
+        for related_lesson in Lesson.objects.filter(
+            module__course=asset.course, module__is_published=True, is_published=True,
+        ).select_related("module__course"):
+            asset_ids = related_lesson.content_json.get("asset_ids", []) if isinstance(related_lesson.content_json, dict) else []
+            if str(asset.pk) in asset_ids and can_access_lesson(request.user, related_lesson):
+                allowed = True
+                break
+    if not allowed:
+        raise PermissionDenied("You do not have access to this course image.")
+    response = FileResponse(
+        asset.file.open("rb"),
+        content_type=mimetypes.guess_type(asset.file.name)[0] or "application/octet-stream",
+    )
+    response["Cache-Control"] = "private, no-store"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @login_required

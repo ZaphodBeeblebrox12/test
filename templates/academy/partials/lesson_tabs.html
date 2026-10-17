@@ -1,0 +1,27 @@
+<section class="tt-lesson-tabs" data-learning-tabs>
+  <div class="tt-tab-list" role="tablist" aria-label="Lesson sections">
+    <button class="tt-tab is-active" type="button" role="tab" aria-selected="true" data-tab-name="idea">The idea</button>
+    <button class="tt-tab" type="button" role="tab" aria-selected="false" data-tab-name="examples">Chart examples <span class="tt-tab-count">{{ lesson_sections.figure_count }}</span></button>
+    <button class="tt-tab" type="button" role="tab" aria-selected="false" data-tab-name="practice">Test your reading</button>
+  </div>
+  <div class="tt-tab-panel" role="tabpanel" data-tab-panel="idea">{{ lesson_sections.idea_html|safe }}</div>
+  <div class="tt-tab-panel" role="tabpanel" data-tab-panel="examples" hidden>{{ lesson_sections.examples_html|safe }}</div>
+  <div class="tt-tab-panel" role="tabpanel" data-tab-panel="practice" hidden>{{ lesson_sections.practice_html|safe }}</div>
+</section>
+<aside class="tt-notebook" aria-label="Your Trading Notebook">
+  <div class="tt-notebook-kicker">YOUR TRADING NOTEBOOK</div>
+  <h3>{{ notebook.title|default:"Your Trading Notebook" }}</h3>
+  {% if notebook.prompts %}
+    <ol>
+      {% for prompt in notebook.prompts %}
+        <li><strong>{{ prompt.label }}</strong><p>{{ prompt.text }}</p></li>
+      {% endfor %}
+    </ol>
+  {% else %}
+    <ol>
+      <li><strong>Observe</strong><p>Describe what the chart actually shows.</p></li>
+      <li><strong>Interpret</strong><p>Write one possible explanation and one reasonable alternative.</p></li>
+      <li><strong>Test</strong><p>Identify the next evidence that would strengthen or weaken your reading.</p></li>
+    </ol>
+  {% endif %}
+</aside>

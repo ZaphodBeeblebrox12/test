@@ -1,5 +1,8 @@
 """Course catalogue, course entitlements and learner progress."""
 import uuid
+from pathlib import Path
+
+from .storage import course_asset_storage
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -293,3 +296,120 @@ class LessonProgress(models.Model):
 
     def __str__(self):
         return f"{self.user} · {self.lesson.title} ({self.status})"
+
+
+def course_import_asset_upload_to(instance, filename):
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp"}:
+        suffix = ".png"
+    return f"academy/course-imports/{instance.course_import_id}/{uuid.uuid4().hex}{suffix}"
+
+
+def course_media_asset_upload_to(instance, filename):
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp"}:
+        suffix = ".png"
+    return f"academy/course-assets/{uuid.uuid4().hex}{suffix}"
+
+
+class CourseImport(models.Model):
+    """Immutable, reviewable import snapshot. Staging never mutates live course rows."""
+    class Status(models.TextChoices):
+        REVIEW = "review", _("Awaiting review")
+        PUBLISHED = "published", _("Published")
+        REJECTED = "rejected", _("Rejected")
+        SUPERSEDED = "superseded", _("Superseded by a newer import")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    course_slug = models.SlugField(max_length=160, db_index=True)
+    title = models.CharField(max_length=200)
+    manifest_version = models.CharField(max_length=40, default="1")
+    content_hash = models.CharField(max_length=64)
+    source_manifest = models.TextField()
+    payload = models.JSONField(default=dict)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.REVIEW)
+    target_course = models.ForeignKey(Course, on_delete=models.SET_NULL, null=True, blank=True, related_name="imports")
+    imported_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="academy_course_imports")
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="academy_course_imports_reviewed")
+    imported_at = models.DateTimeField(auto_now_add=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-imported_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["course_slug", "content_hash"], name="academy_import_slug_hash_uq"),
+        ]
+        indexes = [models.Index(fields=["status", "imported_at"], name="academy_import_status_idx")]
+
+    def __str__(self):
+        return f"{self.title} · {self.get_status_display()}"
+
+
+class CourseImportAsset(models.Model):
+    """Asset belonging to a staged import; missing source images can be uploaded during review."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    course_import = models.ForeignKey(CourseImport, on_delete=models.CASCADE, related_name="assets")
+    asset_key = models.CharField(max_length=512)
+    stable_asset_id = models.UUIDField(db_index=True)
+    alt_text = models.CharField(max_length=500, blank=True)
+    source_path = models.CharField(max_length=512, blank=True)
+    source_error = models.CharField(max_length=240, blank=True)
+    file = models.ImageField(storage=course_asset_storage, upload_to=course_import_asset_upload_to, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["asset_key"]
+        constraints = [
+            models.UniqueConstraint(fields=["course_import", "asset_key"], name="academy_import_asset_key_uq"),
+        ]
+
+    def __str__(self):
+        return f"{self.course_import.title} · {self.asset_key}"
+
+
+class CourseMediaAsset(models.Model):
+    """Shared course asset with a stable ID and protected delivery route."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    course = models.ForeignKey(Course, on_delete=models.PROTECT, related_name="media_assets")
+    asset_key = models.CharField(max_length=512)
+    file = models.ImageField(storage=course_asset_storage, upload_to=course_media_asset_upload_to, blank=True)
+    alt_text = models.CharField(max_length=500, blank=True)
+    source_path = models.CharField(max_length=512, blank=True)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="academy_media_assets_updated")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["asset_key"]
+        constraints = [
+            models.UniqueConstraint(fields=["course", "asset_key"], name="academy_media_course_key_uq"),
+        ]
+
+    def __str__(self):
+        return f"{self.course.title} · {self.asset_key}"
+
+
+class CourseContentRevision(models.Model):
+    """Previous lesson content, retained before admin edits or approved imports."""
+    class RevisionType(models.TextChoices):
+        ADMIN_EDIT = "admin_edit", _("Administrator edit")
+        IMPORT = "import", _("Approved course import")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    lesson = models.ForeignKey(Lesson, on_delete=models.PROTECT, related_name="content_revisions")
+    editor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="academy_content_revisions")
+    source_import = models.ForeignKey(CourseImport, on_delete=models.SET_NULL, null=True, blank=True, related_name="content_revisions")
+    revision_type = models.CharField(max_length=16, choices=RevisionType.choices)
+    title_before = models.CharField(max_length=240)
+    summary_before = models.CharField(max_length=360, blank=True)
+    content_markdown_before = models.TextField(blank=True)
+    content_json_before = models.JSONField(default=dict, blank=True)
+    fields_changed = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Revision · {self.lesson} · {self.created_at:%Y-%m-%d %H:%M}"

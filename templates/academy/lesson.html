@@ -1,31 +1,86 @@
 {% extends "base.html" %}
+{% load static %}
+{% block title %}{{ lesson.title }} · {{ course.title }}{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'academy/learning-room.css' %}">{% endblock %}
 {% block content %}
-<div class="container py-4" style="max-width:850px">
-  <p class="text-uppercase small text-muted mb-2"><a href="{% url 'academy:home' %}">Academy</a> / <a href="{% url 'academy:course-detail' course.slug %}">{{ course.title }}</a> / {{ module.title }}</p>
-  <div class="d-flex justify-content-between flex-wrap gap-3"><div><p class="text-muted small mb-1">Lesson {{ lesson.position }} · {{ lesson.duration_minutes }} min</p><h1>{{ lesson.title }}</h1><p class="text-muted">{{ lesson.summary }}</p></div>{% if lesson.is_preview %}<span class="badge text-bg-secondary align-self-start">Preview</span>{% endif %}</div>
-  <hr>
-  <article class="lesson-body py-3" style="font-size:1.05rem;line-height:1.85;white-space:normal">{{ lesson.content_markdown|linebreaks }}</article>
-  {% if lesson.content_json %}<section class="card mt-4"><div class="card-body"><h2 class="h5">Practice activity</h2><p class="text-muted small">Interactive activity data is available for this lesson. The full interactive renderer can be connected as a separate pass.</p></div></section>{% endif %}
-  <div class="d-flex align-items-center gap-3 border-top pt-4 mt-4 flex-wrap">
-    <form method="post" action="{% url 'academy:lesson-progress' lesson.id %}" data-lesson-complete>
-      {% csrf_token %}<input type="hidden" name="status" value="completed"><button class="btn btn-primary" type="submit">{% if progress and progress.status == "completed" %}Completed ✓{% else %}Mark lesson complete{% endif %}</button>
-    </form>
-    <a class="btn btn-outline-secondary" href="{% url 'academy:course-detail' course.slug %}">Back to course</a>
-    <span class="small text-muted" data-progress-feedback role="status"></span>
+<div class="tt-learning-room">
+  <div class="tt-breadcrumb"><a href="{% url 'academy:home' %}">Academy</a><span>/</span><a href="{% url 'academy:course-detail' course.slug %}">{{ course.title }}</a><span>/</span><span>{{ module.title }}</span></div>
+  <header class="tt-course-header">
+    <p class="tt-eyebrow">{{ module.position|stringformat:"02d" }} · {{ module.title }} &nbsp; / &nbsp; LESSON {{ lesson.position|stringformat:"02d" }}</p>
+    <h1>{{ lesson.title }}</h1>
+    {% if lesson.summary %}<p class="tt-lesson-summary">{{ lesson.summary }}</p>{% endif %}
+    <div class="tt-lesson-meta"><span>{{ lesson.duration_minutes }} min estimated study</span>{% if lesson.is_preview %}<span class="tt-preview-label">Preview lesson</span>{% endif %}</div>
+  </header>
+
+  <div class="tt-room-grid">
+    <aside class="tt-outline" aria-label="Course lesson outline">
+      <div class="tt-outline-heading"><h2>Course outline</h2><span>{{ course.title }}</span></div>
+      <label class="tt-outline-search"><span class="visually-hidden">Search lessons</span><input type="search" placeholder="Find a lesson…" data-outline-search></label>
+      <nav>
+        {% for group in outline_modules %}
+          <section class="tt-outline-module">
+            <h3>{{ group.module.position|stringformat:"02d" }} · {{ group.module.title }}</h3>
+            <ul>
+              {% for item in group.lessons %}
+                <li class="tt-outline-item" data-outline-item>
+                  {% if item.accessible %}
+                    <a href="{% url 'academy:lesson' course.slug item.lesson.id %}" {% if item.current %}aria-current="page" class="is-current"{% endif %}>
+                      <span>{{ item.lesson.title }}</span>
+                      {% if item.progress and item.progress.status == "completed" %}<span class="tt-complete-mark" aria-label="Completed">✓</span>{% endif %}
+                    </a>
+                  {% else %}
+                    <span class="tt-locked-lesson">{{ item.lesson.title }} <span aria-label="Locked">⌑</span></span>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          </section>
+        {% endfor %}
+      </nav>
+    </aside>
+
+    <main class="tt-lesson-main">
+      <article class="tt-lesson-article">
+        {% include "academy/partials/lesson_tabs.html" with lesson_sections=lesson_sections notebook=notebook only %}
+        <div class="tt-completion">
+          <div><strong>{% if progress and progress.status == "completed" %}Lesson completed{% else %}Finished this lesson?{% endif %}</strong><p>Your progress is saved to your account.</p></div>
+          <form method="post" action="{% url 'academy:lesson-progress' lesson.id %}" data-lesson-complete>
+            {% csrf_token %}<input type="hidden" name="status" value="completed">
+            <button type="submit" {% if progress and progress.status == "completed" %}disabled{% endif %}>{% if progress and progress.status == "completed" %}Completed ✓{% else %}Mark complete{% endif %}</button>
+          </form>
+          <span data-progress-feedback role="status" aria-live="polite"></span>
+        </div>
+        <div class="tt-next-link"><a href="{% url 'academy:course-detail' course.slug %}">← Return to course overview</a></div>
+      </article>
+    </main>
   </div>
 </div>
+<script src="{% static 'academy/learning-room.js' %}" defer></script>
 <script>
 (() => {
- const form=document.querySelector("[data-lesson-complete]"); if(!form)return;
- form.addEventListener("submit",async event=>{
-  event.preventDefault(); const btn=form.querySelector("button"); const feedback=document.querySelector("[data-progress-feedback]");
-  btn.disabled=true;
-  try {
-   const response=await fetch(form.action,{method:"POST",credentials:"same-origin",headers:{"X-CSRFToken":form.querySelector('[name="csrfmiddlewaretoken"]').value},body:new FormData(form)});
-   const payload=await response.json(); if(!response.ok)throw new Error(payload.detail||"Progress could not be saved.");
-   btn.textContent="Completed ✓"; feedback.textContent="Progress saved.";
-  } catch(err){feedback.textContent=err.message||"Progress could not be saved.";btn.disabled=false;}
- });
+  const form = document.querySelector("[data-lesson-complete]");
+  if (!form) return;
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = form.querySelector("button");
+    const feedback = document.querySelector("[data-progress-feedback]");
+    button.disabled = true;
+    try {
+      const response = await fetch(form.action, {
+        method: "POST", credentials: "same-origin",
+        headers: {"X-CSRFToken": form.querySelector('[name="csrfmiddlewaretoken"]').value},
+        body: new FormData(form)
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "Progress could not be saved.");
+      button.textContent = "Completed ✓";
+      button.disabled = true;
+      feedback.textContent = "Progress saved.";
+    } catch (error) {
+      feedback.textContent = error.message || "Progress could not be saved.";
+      button.disabled = false;
+    }
+  });
 })();
 </script>
 {% endblock %}

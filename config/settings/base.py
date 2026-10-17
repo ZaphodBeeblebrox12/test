@@ -147,6 +147,9 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+# Private instructional images must live outside MEDIA_ROOT (which can be served directly in DEBUG).
+# In production, point this at a durable mounted volume.
+ACADEMY_PRIVATE_MEDIA_ROOT = env("ACADEMY_PRIVATE_MEDIA_ROOT", default=str(BASE_DIR / "private_course_media"))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

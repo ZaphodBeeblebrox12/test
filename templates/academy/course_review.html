@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Review {{ import_record.title }} · TradeThesis{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'academy/learning-room.css' %}">{% endblock %}
+{% block content %}
+<div class="tt-learning-room tt-course-review">
+  <div class="tt-breadcrumb"><a href="{% url 'admin:academy_courseimport_changelist' %}">Course imports</a><span>/</span><span>Review draft</span></div>
+  <header class="tt-course-header">
+    <p class="tt-eyebrow">ADMINISTRATOR REVIEW · {{ import_record.get_status_display|upper }}</p>
+    <h1>{{ import_record.title }}</h1>
+    <p class="tt-lesson-summary">Preview the staged course as learners will read it. Publishing is a separate, explicit action.</p>
+    <div class="tt-lesson-meta"><span>{{ import_record.course_slug }}</span><span>Manifest {{ import_record.manifest_version }}</span><span>Imported {{ import_record.imported_at|date:"j M Y, H:i" }}</span></div>
+  </header>
+  <section class="tt-review-actions">
+    <div><h2>Before publishing</h2><p>Fix missing figures below, check lesson content, then publish this exact staged version.</p></div>
+    <div class="tt-review-action-buttons">
+      <a class="tt-secondary-button" href="{{ changelist_url }}">Back to imports</a>
+      {% if import_record.status == "review" and not publish_errors %}
+        <form method="post" action="{{ publish_url }}" onsubmit="return confirm('Publish this course version to learners?');">
+          {% csrf_token %}<button class="tt-publish-button" type="submit">Approve and publish course</button>
+        </form>
+      {% endif %}
+    </div>
+  </section>
+  {% if publish_errors %}
+    <section class="tt-validation-errors" aria-labelledby="tt-validation-heading">
+      <h2 id="tt-validation-heading">Publishing checks need attention</h2>
+      <p>This draft remains private until all required checks pass.</p>
+      <ul>{% for error in publish_errors %}<li>{{ error }}</li>{% endfor %}</ul>
+    </section>
+  {% endif %}
+  {% if asset_rows %}
+    <section class="tt-asset-review" aria-labelledby="tt-assets-heading">
+      <h2 id="tt-assets-heading">Figures and image assets</h2>
+      <p>Images are shared by stable asset ID. Replace missing or unsuitable assets here before publishing.</p>
+      <ul>
+        {% for row in asset_rows %}
+          <li><span>{% if row.has_file %}✓{% else %}Needs image{% endif %}</span><div><strong>{{ row.asset.alt_text|default:row.asset.asset_key }}</strong><small>{{ row.asset.asset_key }}</small></div><a href="{{ row.edit_url }}">Review / replace</a></li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+  <div class="tt-review-curriculum">
+    {% for group in review_modules %}
+      <section class="tt-review-module">
+        <h2>{{ group.module.position|stringformat:"02d" }} · {{ group.module.title }}</h2>
+        {% if group.module.summary %}<p>{{ group.module.summary }}</p>{% endif %}
+        {% for row in group.lessons %}
+          <details class="tt-review-lesson" {% if forloop.parentloop.first and forloop.first %}open{% endif %}>
+            <summary><span class="tt-review-lesson-number">{{ row.lesson.position|stringformat:"02d" }}</span><span><strong>{{ row.lesson.title }}</strong><small>{{ row.lesson.duration_minutes }} min · {{ row.lesson.source_id }}</small></span></summary>
+            <div class="tt-review-lesson-content">
+              {% include "academy/partials/lesson_tabs.html" with lesson_sections=row.sections notebook=row.notebook only %}
+            </div>
+          </details>
+        {% endfor %}
+      </section>
+    {% endfor %}
+  </div>
+</div>
+<script src="{% static 'academy/learning-room.js' %}" defer></script>
+{% endblock %}

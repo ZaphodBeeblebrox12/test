@@ -13,3 +13,5 @@ stripe>=8.0.0        # P1: hosted Stripe Checkout
 razorpay>=1.4.0      # P1: hosted Razorpay Checkout.js
 gunicorn>=21.2.0     # production WSGI server
 psycopg[binary]>=3.1.8   # PostgreSQL driver for Django 4.2 (render.com)
+Markdown>=3.6,<4.0
+bleach>=6.1,<7.0
