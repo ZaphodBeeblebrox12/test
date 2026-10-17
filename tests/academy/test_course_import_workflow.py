@@ -230,7 +230,8 @@ class CourseImportWorkflowTests(TestCase):
         asset_urls = {str(asset.pk): asset.original_url for asset in added_assets}
         sections = build_lesson_sections(lesson.content_markdown, asset_urls)
 
-        for _alt_text, url, _placement, expected_section in placements:
+        for alt_text, url, _placement, expected_section in placements:
+            self.assertIn(alt_text, sections[expected_section])
             self.assertIn(url, sections[expected_section])
             for other_section in ("idea_html", "examples_html", "practice_html"):
                 if other_section != expected_section:
