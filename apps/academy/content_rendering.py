@@ -94,9 +94,7 @@ def build_lesson_sections(source, asset_urls=None):
                 current_group = "idea"
             elif heading.startswith("additional chart examples"):
                 current_group = "examples"
-            elif heading.startswith("practice figure"):
-                current_group = "practice"
-            elif any(word in heading for word in (
+            elif heading.startswith("practice figure") or any(word in heading for word in (
                 "practice", "task", "try a new", "test your", "model response",
                 "model reasoning", "feedback", "knowledge check", "apply",
             )):
