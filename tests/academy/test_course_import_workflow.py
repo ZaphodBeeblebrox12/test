@@ -18,8 +18,6 @@ from apps.academy.models import (
     Lesson,
     LessonProgress,
 )
-
-
 User = get_user_model()
 
 

@@ -1,4 +1,6 @@
 """Server-side form validation for administrator course and media editing."""
+from contextlib import suppress
+
 from django import forms
 from django.core.exceptions import ValidationError
 from PIL import Image, UnidentifiedImageError
@@ -32,10 +34,8 @@ def validate_upload_image(upload):
     except (UnidentifiedImageError, OSError, ValueError) as exc:
         raise ValidationError("The uploaded file is not a valid supported image.") from exc
     finally:
-        try:
+        with suppress(AttributeError, OSError):
             upload.seek(0)
-        except (AttributeError, OSError):
-            pass
 
 
 class LessonAdminForm(forms.ModelForm):
