@@ -78,27 +78,29 @@ Latest relevant Actions run for runtime head `a83b6eb20f40aa342790f2b7180b746b1c
 
 **Checkpoint date:** 17 October 2026  
 **Runtime branch:** `feature/tradethesis-academy`  
-**Base head inspected:** `a98b75adbf0261c77c8d6947b1117219304eedff`  
-**Change scope:** Parser tab classification plus explicit route-regression coverage; source-template repository is unchanged.
+**Latest implementation commit at CI verification:** `3671cdf901788e411cdda911aa535c335341f721`  
+**CI run:** [39046300112](https://github.com/ZaphodBeeblebrox12/test/actions/runs/39046300112)
 
 ### Defect and correction
 
-The add-image workflow emits `Additional concept figure`, `Additional chart examples` and `Practice figure`. Previously the generic `figure` keyword was checked before practice keywords, causing both idea/practice items to route to Chart examples. The parser now gives explicit practice words precedence, while the existing shared Markdown structure and emitted headings remain unchanged.
+The add-image workflow emits `Additional concept figure`, `Additional chart examples` and `Practice figure`. The original parser classified any heading containing `figure` as Chart examples before checking practice-related words; moving the generic practice check earlier was insufficient for “Additional concept figure”. The parser now recognises the three admin-generated placement headings explicitly before applying the existing generic heading heuristics. Existing Markdown structure and shared template standard remain unchanged.
 
-### Added regression coverage
+### Regression coverage and verified outcomes
 
 `tests/academy/test_course_import_workflow.py::test_admin_added_images_render_only_in_the_selected_learning_room_tab` posts one image through the real Django Admin add-image endpoint for each of the three placement options, then verifies:
 - all three independent assets and source URLs are retained;
-- each URL is present only in its selected rendered tab;
+- each image caption and URL appears in its selected rendered tab, and its URL is absent from the other two tabs;
 - three content revisions and audit events are recorded.
 
-The existing multiple-image test continues to cover more than one image assigned to the same tab.
+The existing multiple-image test continues to cover adding multiple images to the same tab. The existing focused workflow test also covers upload replacement precedence/original URL retention, ordinary staff denial, CSRF, and URL-first preview.
 
-### Verification status
+On run `39046300112`, **both Python 3.11 and Python 3.12 passed Ruff, Black, the configured mypy step, and the focused micro-course image-slot stage**. The focused stage passed on both versions with the new regression included.
 
-This checkpoint was prepared against the latest inspected branch head. The GitHub connector can write repository files and inspect hosted CI, but it does not provide a local checkout/runtime to execute pytest, render a live browser session, or inspect private Render environment variables in this workflow. The new code/tests therefore require the branch CI run before this change can be marked verified.
+The **full-suite outcome was not green**: Python 3.11 finished with **663 passed, 1 skipped, 1 failed**. The remaining failure is `tests/pricing/test_admin_base_price.py::test_global_plus_geo_overrides_save`; the response contains required `PlanFeature` inline fields `position` and `text` that the test did not submit. This failure also existed on the pre-image-feature baseline (commit `f07aacc6424256a41fa329936a5f2d034c1f48e9`) and is outside this image-routing change. Python 3.12's full-suite step was cancelled by the matrix after the Python 3.11 failure, so there is no full-suite result for 3.12 in this run.
 
-Latest previously inspected CI run for `a83b6eb20f40aa342790f2b7180b746b1cda1522`: Ruff and Black passed; focused image-slot tests passed (13 tests); Python 3.12 full suite failed at `tests/pricing/test_admin_base_price.py::test_global_plus_geo_overrides_save`; Python 3.11 full-suite job was cancelled. This is not an overall green CI result. The known pricing failure, scheduler/table warnings, SQLite lock warnings, and non-blocking mypy errors remain open.
+### Remaining verification gaps
+
+The GitHub connector supports source edits and Actions inspection, but it does not provide a local checkout/runtime or interactive browser session in this workflow. A browser review of the course-import preview and published lesson has therefore **not** been performed. Render environment settings for `ACADEMY_PRIVATE_MEDIA_ROOT` are not readable from the available workflow, so durable shared storage is **not verified**. Do not rely on production image uploads until that setting is confirmed against durable shared storage.
 
 ## 6. Production storage and release boundaries
 
