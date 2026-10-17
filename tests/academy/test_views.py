@@ -5,10 +5,10 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
+from PIL import Image
 
 from apps.academy.models import Course, CourseMediaAsset, CourseModule, Lesson
 from apps.academy.storage import course_asset_storage
-from PIL import Image
 
 User = get_user_model()
 
