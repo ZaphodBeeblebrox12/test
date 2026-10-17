@@ -591,9 +591,15 @@ class ProfileView(View):
     """User profile view and edit."""
 
     def get(self, request):
+        # The deep-link flow writes TelegramAccount; the older login-widget
+        # fields on User are not the source of truth for this connection.
+        from apps.bot_integration.models import TelegramAccount
+        telegram_account = TelegramAccount.objects.filter(
+            user=request.user, is_active=True).first()
         return render(request, "accounts/profile.html", {
             "user": request.user,
-            "telegram_connected": bool(request.user.telegram_id and request.user.telegram_verified),
+            "telegram_connected": bool(telegram_account),
+            "telegram_account": telegram_account,
         })
 
     def post(self, request):
