@@ -74,21 +74,31 @@ Latest relevant Actions run for runtime head `a83b6eb20f40aa342790f2b7180b746b1c
 - The logs also show the periodic scheduler trying to query `jobs_periodicjob` before that table exists and occasional SQLite database-lock warnings during tests.
 - The mypy command is configured as non-blocking and logged 18 errors across 8 files during the latest run; these have not been resolved as part of the image feature.
 
-## 5. Known follow-up to fix next
+## 5. Latest engineering checkpoint — Learning Room tab routing
 
-**Tab placement classification needs a targeted regression and likely correction.** The new add-image form emits headings:
-- `Additional concept figure` for the idea tab
-- `Additional chart examples` for chart examples
-- `Practice figure` for practice
+**Checkpoint date:** 17 October 2026  
+**Runtime branch:** `feature/tradethesis-academy`  
+**Base head inspected:** `a98b75adbf0261c77c8d6947b1117219304eedff`  
+**Change scope:** Parser tab classification plus explicit route-regression coverage; source-template repository is unchanged.
 
-The existing `build_lesson_sections()` checks whether a heading contains the word `figure` for the examples group before it checks practice-related words. Therefore “Additional concept figure” and “Practice figure” may both end up in **Chart examples** despite the user's selected tab. Correct the emitted headings or the parser ordering, and add a test that places a new image into each of the three tabs and verifies it renders only in the selected section.
+### Defect and correction
 
-Also verify:
-1. CSRF protection for the add-image POST.
-2. Actual upload replacement preserves the original URL while displaying the uploaded file through the protected media route.
-3. Ordinary staff and learners cannot add/replace shared images.
-4. New image and replacement operations create the expected revisions/audit logs.
-5. The review preview and a published lesson render multiple image slots correctly in a browser.
+The add-image workflow emits `Additional concept figure`, `Additional chart examples` and `Practice figure`. Previously the generic `figure` keyword was checked before practice keywords, causing both idea/practice items to route to Chart examples. The parser now gives explicit practice words precedence, while the existing shared Markdown structure and emitted headings remain unchanged.
+
+### Added regression coverage
+
+`tests/academy/test_course_import_workflow.py::test_admin_added_images_render_only_in_the_selected_learning_room_tab` posts one image through the real Django Admin add-image endpoint for each of the three placement options, then verifies:
+- all three independent assets and source URLs are retained;
+- each URL is present only in its selected rendered tab;
+- three content revisions and audit events are recorded.
+
+The existing multiple-image test continues to cover more than one image assigned to the same tab.
+
+### Verification status
+
+This checkpoint was prepared against the latest inspected branch head. The GitHub connector can write repository files and inspect hosted CI, but it does not provide a local checkout/runtime to execute pytest, render a live browser session, or inspect private Render environment variables in this workflow. The new code/tests therefore require the branch CI run before this change can be marked verified.
+
+Latest previously inspected CI run for `a83b6eb20f40aa342790f2b7180b746b1cda1522`: Ruff and Black passed; focused image-slot tests passed (13 tests); Python 3.12 full suite failed at `tests/pricing/test_admin_base_price.py::test_global_plus_geo_overrides_save`; Python 3.11 full-suite job was cancelled. This is not an overall green CI result. The known pricing failure, scheduler/table warnings, SQLite lock warnings, and non-blocking mypy errors remain open.
 
 ## 6. Production storage and release boundaries
 
