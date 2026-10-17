@@ -138,7 +138,7 @@
                 {% if user.is_banned %}
                 <span class="badge bg-danger">BANNED</span>
                 {% endif %}
-                {% if user.telegram_verified %}
+                {% if user.telegram_account.is_active %}
                 <span class="badge bg-success"><i class="bi bi-telegram"></i> Connected</span>
                 {% endif %}
                 <!-- REFERRAL BADGE IN TOP NAVBAR -->
