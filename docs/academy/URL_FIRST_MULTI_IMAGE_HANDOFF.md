@@ -74,36 +74,44 @@ Latest relevant Actions run for runtime head `a83b6eb20f40aa342790f2b7180b746b1c
 - The logs also show the periodic scheduler trying to query `jobs_periodicjob` before that table exists and occasional SQLite database-lock warnings during tests.
 - The mypy command is configured as non-blocking and logged 18 errors across 8 files during the latest run; these have not been resolved as part of the image feature.
 
-## 5. Latest engineering checkpoint — Learning Room tab routing
+## 5. Latest engineering checkpoint — published rendering and protected media
 
 **Checkpoint date:** 17 October 2026  
 **Runtime branch:** `feature/tradethesis-academy`  
-**Latest implementation commit at CI verification:** `3671cdf901788e411cdda911aa535c335341f721`  
-**CI run:** [39046300112](https://github.com/ZaphodBeeblebrox12/test/actions/runs/39046300112)
+**Verified code head:** `16993a496045c4e65911c374ed2d2a781e51f1ed`  
+**CI run:** [39047175695](https://github.com/ZaphodBeeblebrox12/test/actions/runs/39047175695)
 
 ### Defect and correction
 
-The add-image workflow emits `Additional concept figure`, `Additional chart examples` and `Practice figure`. The original parser classified any heading containing `figure` as Chart examples before checking practice-related words; moving the generic practice check earlier was insufficient for “Additional concept figure”. The parser now recognises the three admin-generated placement headings explicitly before applying the existing generic heading heuristics. Existing Markdown structure and shared template standard remain unchanged.
+The add-image workflow emits `Additional concept figure`, `Additional chart examples` and `Practice figure`. The original parser classified headings containing `figure` as Chart examples before practice-related words, and a simple reordering was insufficient for `Additional concept figure`. The parser now recognises all three admin-generated placement headings explicitly before applying generic heading heuristics. Markdown source structure and the approved shared Learning Room template remain unchanged.
 
-### Regression coverage and verified outcomes
+### Regression coverage
 
-`tests/academy/test_course_import_workflow.py::test_admin_added_images_render_only_in_the_selected_learning_room_tab` posts one image through the real Django Admin add-image endpoint for each of the three placement options, then verifies:
-- all three independent assets and source URLs are retained;
-- each image caption and URL appears in its selected rendered tab, and its URL is absent from the other two tabs;
-- three content revisions and audit events are recorded.
+`tests/academy/test_course_import_workflow.py::test_admin_added_images_render_only_in_the_selected_learning_room_tab` posts one image through the actual Django Admin add-image endpoint for each placement and verifies the image and caption are rendered exclusively in the selected tab, all three IDs/URLs are retained, and revisions/audit events are recorded.
 
-The existing multiple-image test continues to cover adding multiple images to the same tab. The existing focused workflow test also covers upload replacement precedence/original URL retention, ordinary staff denial, CSRF, and URL-first preview.
+`tests/academy/test_course_import_workflow.py::test_ordinary_staff_and_learner_cannot_add_or_replace_shared_images` verifies an ordinary staff member (403) and a learner (redirected away from Admin) cannot add an image or modify an existing asset.
 
-On run `39046300112`, **both Python 3.11 and Python 3.12 passed Ruff, Black, the configured mypy step, and the focused micro-course image-slot stage**. The focused stage passed on both versions with the new regression included.
+`tests/academy/test_views.py::test_published_preview_renders_multiple_images_in_selected_learning_room_tabs` calls the learner-facing published preview route and verifies that each of three images appears in its correct rendered tab panel, nowhere else, and the tab count is correct.
 
-The **full-suite outcome was not green**: Python 3.11 finished with **663 passed, 1 skipped, 1 failed**. The remaining failure is `tests/pricing/test_admin_base_price.py::test_global_plus_geo_overrides_save`; the response contains required `PlanFeature` inline fields `position` and `text` that the test did not submit. This failure also existed on the pre-image-feature baseline (commit `f07aacc6424256a41fa329936a5f2d034c1f48e9`) and is outside this image-routing change. Python 3.12's full-suite step was cancelled by the matrix after the Python 3.11 failure, so there is no full-suite result for 3.12 in this run.
+`tests/academy/test_views.py::test_uploaded_replacement_renders_through_protected_media_and_retains_source_url` verifies uploaded-file precedence over the external source URL, that the rendered image uses the protected Academy media route, and that the private-media response has `private, no-store` and `nosniff` headers. The existing replacement test verifies the original URL remains stored. `test_uploaded_media_for_unentitled_paid_lesson_is_forbidden` verifies a learner without entitlement cannot fetch an uploaded image referenced only by a paid lesson.
+
+### CI result
+
+On run `39047175695`, **both Python 3.11 and Python 3.12 completed successfully**. For each version:
+- Ruff, Black, and the configured mypy step passed.
+- The focused Academy image-slot regression stage passed.
+- The full repository test suite passed: **668 passed, 1 skipped, 187 warnings, and 4 subtests passed**.
+
+The Codecov upload request reported a repository-not-found response, but the workflow explicitly has `fail_ci_if_error: false`; this did not fail either CI job. Coverage upload itself should be treated as unavailable for this run.
 
 ### Remaining verification gaps
 
-The GitHub connector supports source edits and Actions inspection, but it does not provide a local checkout/runtime or interactive browser session in this workflow. A browser review of the course-import preview and published lesson has therefore **not** been performed. Render environment settings for `ACADEMY_PRIVATE_MEDIA_ROOT` are not readable from the available workflow, so durable shared storage is **not verified**. Do not rely on production image uploads until that setting is confirmed against durable shared storage.
+These tests exercise the published lesson view through Django's test client; they are not a manual interactive browser review of the currently hosted Render app. The source branch was rechecked at `5d0750b7147f6326a3ce0ac759c30075c0bef6b5` and remains unchanged.
+
+The code reads `ACADEMY_PRIVATE_MEDIA_ROOT` from Django settings/environment, but the active Render service's configured value and attached persistent disk have not been inspected. Durable shared storage is therefore **not verified**. Do not rely on production uploads until this is confirmed. The Render workspace selection must be confirmed before reading service configuration.
 
 ## 6. Production storage and release boundaries
 
 Before depending on uploads in production, configure `ACADEMY_PRIVATE_MEDIA_ROOT` to durable shared storage. A transient container filesystem is not suitable for persistent course images. No Render deployment or public course release has been approved as part of this work.
 
-No source-template merge, runtime merge, or Render deployment has been performed in this workstream. The source branch was rechecked at `5d0750b7147f6326a3ce0ac759c30075c0bef6b5` and left unchanged. The Learning Room routing fix and focused regression are committed on the runtime feature branch. The remaining next steps are browser review and confirmation of durable Render storage; keep the pre-existing pricing failure separate unless explicitly expanding scope.
+No source-template merge or runtime merge has been performed in this workstream. No manual Render deployment was triggered. Whether an existing Render service is configured to auto-deploy this branch remains unchecked and must be confirmed during the hosting review. No public course release has been approved. The code/test checkpoint is complete; next steps are the hosted browser review and confirmation of durable Render storage once the correct Render workspace is confirmed.
