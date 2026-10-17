@@ -106,4 +106,4 @@ The GitHub connector supports source edits and Actions inspection, but it does n
 
 Before depending on uploads in production, configure `ACADEMY_PRIVATE_MEDIA_ROOT` to durable shared storage. A transient container filesystem is not suitable for persistent course images. No Render deployment or public course release has been approved as part of this work.
 
-No source-template merge, runtime merge, or Render deployment has been performed in this workstream. The next chat should fetch the latest heads first, inspect changes since this note, fix the tab-placement issue, run the focused image tests and then the full runtime CI. Keep the known pricing failure separate unless explicitly expanding scope.
+No source-template merge, runtime merge, or Render deployment has been performed in this workstream. The source branch was rechecked at `5d0750b7147f6326a3ce0ac759c30075c0bef6b5` and left unchanged. The Learning Room routing fix and focused regression are committed on the runtime feature branch. The remaining next steps are browser review and confirmation of durable Render storage; keep the pre-existing pricing failure separate unless explicitly expanding scope.
