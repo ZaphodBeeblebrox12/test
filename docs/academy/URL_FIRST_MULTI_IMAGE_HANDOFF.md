@@ -104,14 +104,22 @@ On run `39047175695`, **both Python 3.11 and Python 3.12 completed successfully*
 
 The Codecov upload request reported a repository-not-found response, but the workflow explicitly has `fail_ci_if_error: false`; this did not fail either CI job. Coverage upload itself should be treated as unavailable for this run.
 
-### Remaining verification gaps
+### Remaining verification gaps and hosting constraint
 
 These tests exercise the published lesson view through Django's test client; they are not a manual interactive browser review of the currently hosted Render app. The source branch was rechecked at `5d0750b7147f6326a3ce0ac759c30075c0bef6b5` and remains unchanged.
 
-The code reads `ACADEMY_PRIVATE_MEDIA_ROOT` from Django settings/environment, but the active Render service's configured value and attached persistent disk have not been inspected. Durable shared storage is therefore **not verified**. Do not rely on production uploads until this is confirmed. The Render workspace selection must be confirmed before reading service configuration.
+A source-level hosting audit found that the repository's `render.yaml` declares a **Free** web service and has no persistent disk or `ACADEMY_PRIVATE_MEDIA_ROOT` environment variable. The `DEPLOY.md` also acknowledges that media on the service filesystem is ephemeral. Render's current documentation confirms free web services lose local files on redeploy, restart or spin-down, and do not support persistent disks:
+- [Render: Deploy for Free](https://render.com/docs/free#free-web-services)
+- [Render: Persistent Disks](https://render.com/docs/disks)
+
+Accordingly, the repository's default Free Blueprint is **not safe for durable course-image uploads**. This does not prove the live Render service has the same plan/configuration, because the actual service has not been inspected. The code reads `ACADEMY_PRIVATE_MEDIA_ROOT` from Django settings/environment, but the active service's configured value and disk/storage have not been verified. Do not rely on production uploads until durable storage is confirmed.
+
+Two hosting paths remain possible, requiring an explicit decision before changing infrastructure: a paid Render service with a persistent disk mounted at the configured path, or compatible external object storage using the existing `CourseMediaAsset` records and protected delivery route. No plan change, storage backend change, environment update, or deployment was made in this checkpoint.
+
+The Render connector requires confirmation of the workspace before service-level inspection. Once confirmed, inspect the target service's branch, auto-deploy setting, environment variable **presence** (without exposing secret values), and attached disks. The source-level checks above are already complete.
 
 ## 6. Production storage and release boundaries
 
 Before depending on uploads in production, configure `ACADEMY_PRIVATE_MEDIA_ROOT` to durable shared storage. A transient container filesystem is not suitable for persistent course images. No Render deployment or public course release has been approved as part of this work.
 
-No source-template merge or runtime merge has been performed in this workstream. No manual Render deployment was triggered. Whether an existing Render service is configured to auto-deploy this branch remains unchecked and must be confirmed during the hosting review. No public course release has been approved. The code/test checkpoint is complete; next steps are the hosted browser review and confirmation of durable Render storage once the correct Render workspace is confirmed.
+No source-template merge or runtime merge has been performed in this workstream. No manual Render deployment was triggered. Whether an existing Render service is configured to auto-deploy this branch remains unchecked and must be confirmed during the hosting review. No public course release has been approved. The code/test checkpoint is complete; remaining work is service-level Render inspection and hosted browser review after the correct Render workspace is confirmed, followed by a durable-storage decision before production uploads.
