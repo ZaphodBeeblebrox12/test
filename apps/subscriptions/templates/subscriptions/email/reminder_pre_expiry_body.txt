@@ -4,4 +4,9 @@ Your {{ plan_name }} subscription expires in {{ days }} days.
 
 Renew before it expires to keep uninterrupted access to all channels.
 
+{% if telegram_connect_url %}
+Connect your TradeThesis account to Telegram here, then tap Start in Telegram:
+{{ telegram_connect_url }}
+{% endif %}
+
 — The Team
