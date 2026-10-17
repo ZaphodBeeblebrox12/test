@@ -42,3 +42,16 @@ Do not edit generated preview JavaScript to change lesson content. Edit the Mark
 ## Validation status
 
 The command's dry run checks source files, source IDs, stable slugs, unique module/lesson positions and image availability. Automated tests cover repeat imports, staged update behaviour, stable lesson IDs, progress preservation, missing-image publish denial, CSRF failure, unsafe markup rejection and ordinary-staff denial. Run the Academy test suite and deployment browser checks before release.
+
+## URL-first figures and multiple images
+
+Existing Markdown image URLs using `https://` or `http://` are retained as independent, stable image slots. The Learning Room renders those URLs immediately. A later administrator upload attaches to the same asset record and overrides the remote source; the original URL remains recorded as fallback/provenance. Each Markdown image becomes a slot, so one lesson can render several images across **The idea**, **Chart examples**, and **Test your reading**.
+
+After a course has been published, open **Django Admin → Academy → Lessons** and use **Add image** on the relevant lesson to add another figure without editing source files. Supply an HTTP(S) URL, an upload, or both; choose the Learning Room tab and provide meaningful alt text. The image is saved as a course media asset and inserted into the lesson with a stable `asset://` reference. Repeating this action adds additional independent image slots. Use **Academy → Course media assets** to replace a linked image with your own JPEG/PNG/WebP upload; uploaded replacements are served through the protected Academy media route. Only the Admin role/superuser can do this, with validation, CSRF protection, content revision, and audit logging.
+
+The import review screen labels each asset as **Uploaded replacement**, **Using URL for now**, or **Needs upload**. A URL-backed figure is not a missing-image error. A missing local file with no URL is a real unresolved slot and still blocks publishing, by design.
+
+### Current Bollinger Bands source status (17 October 2026)
+
+The committed source package has 62 Markdown image references across seven modules: 32 HTTP(S) examples in Module 5 and 30 references to local SVG figure briefs/files that are not yet present. Therefore the temporary URL images can render today, but this is not yet a complete 62-image visual course. The 30 missing local figure slots will be visibly listed as needing upload and must be resolved before this course can be published. Do not replace them with unrelated stock images or invented URLs. Before public release, replace the temporary external chart examples with course-owned TradingView captures or media cleared for the intended use. Configure `ACADEMY_PRIVATE_MEDIA_ROOT` to durable shared storage before relying on image uploads in production.
+

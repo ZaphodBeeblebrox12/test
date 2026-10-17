@@ -1,14 +1,22 @@
+import logging
 import mimetypes
+import uuid
 
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.http import FileResponse, HttpResponseForbidden, HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from django.utils.html import format_html
 
 from .content_rendering import build_lesson_sections
-from .forms import CourseImportAssetAdminForm, CourseMediaAssetAdminForm, LessonAdminForm
+from .forms import (
+    CourseImportAssetAdminForm,
+    CourseMediaAssetAdminForm,
+    LessonAdminForm,
+    LessonFigureAdminForm,
+)
 from .importing import publish_course_import, validate_import_for_publish
 from .models import (
     Course,
@@ -25,6 +33,9 @@ from .models import (
     LessonProgress,
 )
 from .permissions import is_course_content_admin
+from .storage import course_asset_storage
+
+logger = logging.getLogger(__name__)
 
 
 class CourseModuleInline(admin.TabularInline):
@@ -85,11 +96,128 @@ class CourseModuleAdmin(admin.ModelAdmin):
 @admin.register(Lesson)
 class LessonAdmin(admin.ModelAdmin):
     form = LessonAdminForm
-    list_display = ("title", "module", "format", "position", "release_day", "is_preview", "is_published")
+    list_display = ("title", "module", "format", "position", "release_day", "is_preview", "is_published", "add_figure_link")
     list_filter = ("format", "is_preview", "is_published", "module__course")
     search_fields = ("title", "summary", "module__title", "module__course__title")
     prepopulated_fields = {"slug": ("title",)}
     readonly_fields = ("created_at", "updated_at")
+
+    def get_urls(self):
+        custom = [
+            path(
+                "<uuid:object_id>/add-figure/",
+                self.admin_site.admin_view(self.add_figure_view),
+                name="academy_lesson_add_figure",
+            ),
+        ]
+        return custom + super().get_urls()
+
+    @admin.display(description="Add image")
+    def add_figure_link(self, obj):
+        return format_html(
+            '<a href="{}">Add image</a>',
+            reverse("admin:academy_lesson_add_figure", args=[obj.pk]),
+        )
+
+    def add_figure_view(self, request, object_id):
+        if not is_course_content_admin(request.user):
+            return HttpResponseForbidden("Administrator course-content access is required.")
+        lesson = get_object_or_404(
+            Lesson.objects.select_related("module__course"),
+            pk=object_id,
+        )
+        form = LessonFigureAdminForm(request.POST or None, request.FILES or None)
+
+        if request.method == "POST" and form.is_valid():
+            upload = form.cleaned_data.get("file")
+            stored_name = ""
+            asset = None
+            try:
+                with transaction.atomic():
+                    asset = CourseMediaAsset(
+                        course=lesson.module.course,
+                        asset_key=f"admin-added/{lesson.pk}/{uuid.uuid4().hex}",
+                        alt_text=form.cleaned_data["alt_text"],
+                        original_url=form.cleaned_data.get("original_url", ""),
+                        updated_by=request.user,
+                    )
+                    if upload:
+                        asset.file.save(upload.name, upload, save=False)
+                        stored_name = asset.file.name
+                    asset.save()
+
+                    CourseContentRevision.objects.create(
+                        lesson=lesson,
+                        editor=request.user,
+                        revision_type=CourseContentRevision.RevisionType.ADMIN_EDIT,
+                        title_before=lesson.title,
+                        summary_before=lesson.summary,
+                        content_markdown_before=lesson.content_markdown,
+                        content_json_before=lesson.content_json,
+                        fields_changed=["content_markdown", "content_json"],
+                    )
+                    heading_by_placement = {
+                        "idea": "Additional concept figure",
+                        "examples": "Additional chart examples",
+                        "practice": "Practice figure",
+                    }
+                    alt = form.cleaned_data["alt_text"]
+                    figure_markdown = f"![{alt}] (asset://{asset.pk})"
+                    # Markdown image syntax must not contain whitespace between ] and (.
+                    figure_markdown = figure_markdown.replace("] (", "](")
+                    lesson.content_markdown = (
+                        lesson.content_markdown.rstrip()
+                        + "\n\n### "
+                        + heading_by_placement[form.cleaned_data["placement"]]
+                        + "\n\n"
+                        + figure_markdown
+                        + "\n"
+                    )
+                    content_json = dict(lesson.content_json) if isinstance(lesson.content_json, dict) else {}
+                    asset_ids = list(content_json.get("asset_ids", []))
+                    asset_ids.append(str(asset.pk))
+                    content_json["asset_ids"] = asset_ids
+                    lesson.content_json = content_json
+                    lesson.save(update_fields=["content_markdown", "content_json", "updated_at"])
+
+                    from apps.audit.models import AuditLog
+                    AuditLog.log(
+                        action="academy_lesson_figure_added",
+                        user=request.user,
+                        object_type="lesson",
+                        object_id=lesson.pk,
+                        metadata={
+                            "course_id": str(lesson.module.course_id),
+                            "asset_id": str(asset.pk),
+                            "asset_key": asset.asset_key,
+                            "placement": form.cleaned_data["placement"],
+                            "source_url_used": bool(asset.original_url),
+                            "uploaded_file": bool(asset.file),
+                        },
+                    )
+            except Exception:
+                if stored_name:
+                    course_asset_storage.delete(stored_name)
+                logger.exception("Could not add a course figure to lesson %s", lesson.pk)
+                form.add_error(None, "The image could not be added. No lesson change was saved; please try again.")
+            else:
+                messages.success(
+                    request,
+                    "Image added. You can replace its URL with an uploaded image in Course media assets.",
+                )
+                return redirect("admin:academy_lesson_change", object_id=lesson.pk)
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": f"Add image · {lesson.title}",
+            "opts": self.model._meta,
+            "original": lesson,
+            "lesson": lesson,
+            "form": form,
+            "changelist_url": reverse("admin:academy_lesson_changelist"),
+            "change_url": reverse("admin:academy_lesson_change", args=[lesson.pk]),
+        }
+        return render(request, "admin/academy/lesson_add_figure.html", context)
 
     def has_module_permission(self, request):
         return is_course_content_admin(request.user)
@@ -291,6 +419,18 @@ class CourseImportAdmin(admin.ModelAdmin):
                 "has_file": bool(asset.file) or bool(live_asset and live_asset.file),
                 "preview_url": asset_urls.get(str(asset.stable_asset_id), ""),
                 "original_url": asset.original_url or (live_asset.original_url if live_asset else ""),
+                "has_external_source": bool(
+                    (asset.original_url or (live_asset.original_url if live_asset else "")).startswith(("https://", "http://"))
+                ),
+                "status_label": (
+                    "Uploaded replacement"
+                    if (bool(asset.file) or bool(live_asset and live_asset.file))
+                    else (
+                        "Using URL for now"
+                        if (asset.original_url or (live_asset.original_url if live_asset else "")).startswith(("https://", "http://"))
+                        else "Needs upload"
+                    )
+                ),
                 "edit_url": reverse("admin:academy_courseimportasset_change", args=[asset.pk]),
             })
         context = {

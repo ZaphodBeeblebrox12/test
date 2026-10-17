@@ -1,0 +1,28 @@
+{% extends "admin/base_site.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <div class="module aligned">
+    <h2>Add a figure to {{ lesson.title }}</h2>
+    <p>Use an existing URL now, upload your own image, or provide both. An upload overrides the URL while preserving the original source. You can add more than one figure to this lesson.</p>
+    <form method="post" enctype="multipart/form-data" novalidate>
+      {% csrf_token %}
+      {{ form.non_field_errors }}
+      {% for field in form %}
+        <div class="form-row">
+          {{ field.errors }}
+          {{ field.label_tag }}
+          {{ field }}
+          {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+        </div>
+      {% endfor %}
+      <div class="submit-row">
+        <input type="submit" class="default" value="Add image to lesson">
+        <a class="button cancel-link" href="{{ change_url }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

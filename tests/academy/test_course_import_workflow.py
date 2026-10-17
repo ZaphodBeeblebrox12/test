@@ -142,6 +142,73 @@ class CourseImportWorkflowTests(TestCase):
         )
         self.assertIn(original_url, rendered["idea_html"])
 
+    def test_multiple_external_images_keep_independent_replaceable_slots(self):
+        first_url = "https://example.com/charts/first.png"
+        second_url = "https://example.com/charts/second.png"
+        self.write_source(
+            f"![First chart]({first_url})\n\n![Second chart]({second_url})"
+        )
+        record = self.import_draft()
+        self.assertEqual(record.assets.count(), 2)
+        self.assertEqual(
+            set(record.assets.values_list("original_url", flat=True)),
+            {first_url, second_url},
+        )
+
+        course = publish_course_import(record, user=self.admin)
+        lesson = Lesson.objects.get(module__course=course)
+        asset_urls = {
+            str(asset.pk): asset.original_url
+            for asset in CourseMediaAsset.objects.filter(course=course)
+        }
+        sections = build_lesson_sections(lesson.content_markdown, asset_urls)
+        self.assertIn(first_url, sections["idea_html"])
+        self.assertIn(second_url, sections["idea_html"])
+        self.assertEqual(len(lesson.content_json["asset_ids"]), 2)
+
+    def test_admin_can_add_multiple_url_images_to_a_lesson(self):
+        course = publish_course_import(self.import_draft(), user=self.admin)
+        lesson = Lesson.objects.get(module__course=course)
+        self.client.force_login(self.admin)
+        add_url = reverse("admin:academy_lesson_add_figure", args=[lesson.pk])
+        urls = [
+            ("Second chart", "https://example.com/charts/second.png", "examples"),
+            ("Third chart", "https://example.com/charts/third.png", "examples"),
+        ]
+        for alt_text, original_url, placement in urls:
+            response = self.client.post(add_url, {
+                "alt_text": alt_text,
+                "original_url": original_url,
+                "placement": placement,
+            })
+            self.assertEqual(response.status_code, 302)
+
+        lesson.refresh_from_db()
+        added_assets = CourseMediaAsset.objects.filter(course=course, asset_key__startswith="admin-added/")
+        self.assertEqual(added_assets.count(), 2)
+        self.assertTrue(all(asset.original_url for asset in added_assets))
+        self.assertEqual(len(lesson.content_json["asset_ids"]), 2)
+        asset_urls = {str(asset.pk): asset.original_url for asset in added_assets}
+        sections = build_lesson_sections(lesson.content_markdown, asset_urls)
+        self.assertIn("https://example.com/charts/second.png", sections["examples_html"])
+        self.assertIn("https://example.com/charts/third.png", sections["examples_html"])
+        self.assertEqual(
+            CourseContentRevision.objects.filter(lesson=lesson, revision_type=CourseContentRevision.RevisionType.ADMIN_EDIT).count(),
+            2,
+        )
+
+    def test_ordinary_staff_cannot_add_lesson_figures(self):
+        course = publish_course_import(self.import_draft(), user=self.admin)
+        lesson = Lesson.objects.get(module__course=course)
+        self.client.force_login(self.ordinary_staff)
+        response = self.client.post(
+            reverse("admin:academy_lesson_add_figure", args=[lesson.pk]),
+            {"alt_text": "Chart", "original_url": "https://example.com/chart.png", "placement": "examples"},
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(CourseMediaAsset.objects.filter(course=course, asset_key__startswith="admin-added/").exists())
+
+
     def test_missing_image_blocks_publish_and_leaves_course_unpublished(self):
         self.write_source("![Missing chart](../assets/not-ready.png)\n\nThis is the lesson.")
         record = self.import_draft()
@@ -182,7 +249,8 @@ class CourseImportAdminPreviewTests(TestCase):
         root = Path(tmp.name)
         (root / "lessons").mkdir()
         (root / "lessons" / "module-01.md").write_text(
-            "## Lesson 1.1 — Read the evidence\n\n### The question\n\nPreview text.",
+            "## Lesson 1.1 — Read the evidence\n\n### The question\n\nPreview text.\n\n"
+            "![Temporary chart](https://example.com/temporary-chart.png)",
             encoding="utf-8",
         )
         manifest = {
@@ -206,4 +274,7 @@ class CourseImportAdminPreviewTests(TestCase):
         response = self.client.get(reverse("admin:academy_courseimport_review", args=[record.pk]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Preview text.")
+        self.assertContains(response, 'src="https://example.com/temporary-chart.png"')
+        self.assertContains(response, "Using URL for now")
+        self.assertContains(response, "Open source")
         self.assertContains(response, "Approve and publish course")
