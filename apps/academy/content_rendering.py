@@ -88,16 +88,19 @@ def build_lesson_sections(source, asset_urls=None):
             finish_section()
             current_heading = match.group(2)
             heading = current_heading.casefold()
+            # Respect explicit Learning Room placement words before the generic
+            # "figure" keyword used by examples headings. Admin-added headings
+            # intentionally preserve the selected tab in their wording.
             if any(word in heading for word in (
+                "practice", "task", "try a new", "test your", "model response",
+                "model reasoning", "feedback", "knowledge check", "apply",
+            )):
+                current_group = "practice"
+            elif any(word in heading for word in (
                 "worked", "compare", "comparison", "chart example", "look closely",
                 "case study", "case a", "case b", "figure",
             )):
                 current_group = "examples"
-            elif any(word in heading for word in (
-                "task", "try a new", "practice", "test your", "model response",
-                "model reasoning", "feedback", "knowledge check", "apply",
-            )):
-                current_group = "practice"
             else:
                 current_group = "idea"
             continue
