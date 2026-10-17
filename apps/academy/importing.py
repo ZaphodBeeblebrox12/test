@@ -198,8 +198,28 @@ def inspect_manifest(manifest_path):
                 alt = match.group("alt").strip() or "Course figure"
                 raw_path = match.group("path").strip()
                 if re.match(r"^https?://", raw_path, re.IGNORECASE):
-                    warnings.append(f"{source_id}: external image reference is not imported: {raw_path}")
-                    return "**Image requires a course-owned asset: " + alt.replace("**", "") + "**"
+                    # Keep the authored URL as the default. Admins can upload a
+                    # replacement without changing the Markdown or manifest.
+                    asset_key = "remote/" + _sha(raw_path.encode("utf-8"))
+                    stable_id = _stable_asset_id(course["slug"], asset_key)
+                    if asset_key not in asset_records:
+                        asset_records[asset_key] = {
+                            "asset_key": asset_key,
+                            "stable_asset_id": stable_id,
+                            "alt_text": alt,
+                            "source_path": "",
+                            "original_url": raw_path,
+                            "available_in_source": True,
+                            "source_error": "",
+                            "sha256": "",
+                        }
+                    elif not asset_records[asset_key]["alt_text"] and alt:
+                        asset_records[asset_key]["alt_text"] = alt
+                    return "![" + alt.replace("]", "") + "](asset://" + stable_id + ")"
+                if re.match(r"^[a-z][a-z0-9+.-]*:", raw_path, re.IGNORECASE):
+                    raise ValueError(
+                        f"Unsupported image URL scheme in lesson {source_id}: {raw_path.split(':', 1)[0]}"
+                    )
                 asset_path = (source_path.parent / raw_path).resolve()
                 if asset_path != package_root.resolve() and package_root.resolve() not in asset_path.parents:
                     raise ValueError(f"Image reference escapes course package in lesson {source_id}: {raw_path}")
@@ -212,6 +232,7 @@ def inspect_manifest(manifest_path):
                         "stable_asset_id": stable_id,
                         "alt_text": alt,
                         "source_path": asset_key,
+                        "original_url": "",
                         "available_in_source": bool(image_info),
                         "source_error": image_error or "",
                         "sha256": image_info["sha256"] if image_info else "",
@@ -283,6 +304,7 @@ def stage_course_import(*, manifest_path, payload, asset_sources, warnings, impo
                 stable_asset_id=spec["stable_asset_id"],
                 alt_text=spec["alt_text"],
                 source_path=spec["source_path"],
+                original_url=spec.get("original_url", ""),
                 source_error=spec["source_error"],
             )
             source_file = asset_sources.get(spec["asset_key"])
@@ -321,9 +343,14 @@ def validate_import_for_publish(record):
         live_asset = live.get(asset_id)
         staged_has_file = bool(stage_asset and stage_asset.file)
         live_has_file = bool(live_asset and live_asset.file)
-        if not staged_has_file and not live_has_file:
+        source_url = (stage_asset.original_url if stage_asset else "") or (live_asset.original_url if live_asset else "")
+        has_source_url = bool(re.match(r"^https?://", source_url, re.IGNORECASE))
+        if not staged_has_file and not live_has_file and not has_source_url:
             key = stage_asset.asset_key if stage_asset else asset_id
-            errors.append("Missing course image " + key + ". Upload a valid JPEG, PNG or WebP in Course import assets before publishing.")
+            errors.append(
+                "Missing course image " + key
+                + ". Upload a valid JPEG, PNG or WebP in Course import assets before publishing."
+            )
     return list(dict.fromkeys(errors))
 
 
@@ -435,6 +462,7 @@ def publish_course_import(record, *, user):
                 media_asset = CourseMediaAsset(
                     id=asset_id, course=course, asset_key=asset_data["asset_key"],
                     alt_text=asset_data.get("alt_text", ""), source_path=asset_data.get("source_path", ""),
+                    original_url=asset_data.get("original_url", ""),
                     updated_by=user,
                 )
             else:
@@ -442,6 +470,7 @@ def publish_course_import(record, *, user):
                 media_asset.asset_key = asset_data["asset_key"]
                 media_asset.alt_text = (staged_asset.alt_text if staged_asset and staged_asset.alt_text else asset_data.get("alt_text", "")) or media_asset.alt_text
                 media_asset.source_path = asset_data.get("source_path", "")
+                media_asset.original_url = asset_data.get("original_url", "") or media_asset.original_url
                 media_asset.updated_by = user
             if staged_asset and staged_asset.file:
                 media_asset.file.name = staged_asset.file.name

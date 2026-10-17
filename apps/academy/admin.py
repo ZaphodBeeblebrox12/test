@@ -265,6 +265,10 @@ class CourseImportAdmin(admin.ModelAdmin):
                 asset_urls[str(asset.stable_asset_id)] = reverse(
                     "admin:academy_courseimport_asset", args=[record.pk, asset.stable_asset_id]
                 )
+            elif asset.original_url.startswith(("https://", "http://")):
+                asset_urls[str(asset.stable_asset_id)] = asset.original_url
+            elif live_asset and live_asset.original_url.startswith(("https://", "http://")):
+                asset_urls[str(asset.stable_asset_id)] = live_asset.original_url
 
         review_modules = []
         for module in record.payload.get("modules", []):
@@ -285,6 +289,8 @@ class CourseImportAdmin(admin.ModelAdmin):
             asset_rows.append({
                 "asset": asset,
                 "has_file": bool(asset.file) or bool(live_asset and live_asset.file),
+                "preview_url": asset_urls.get(str(asset.stable_asset_id), ""),
+                "original_url": asset.original_url or (live_asset.original_url if live_asset else ""),
                 "edit_url": reverse("admin:academy_courseimportasset_change", args=[asset.pk]),
             })
         context = {
@@ -342,8 +348,8 @@ class CourseImportAssetAdmin(admin.ModelAdmin):
     list_display = ("course_import", "asset_key", "source_error", "file", "updated_at")
     list_filter = ("course_import__status",)
     search_fields = ("course_import__title", "asset_key", "alt_text")
-    readonly_fields = ("course_import", "asset_key", "stable_asset_id", "source_path", "source_error", "created_at", "updated_at")
-    fields = ("course_import", "asset_key", "stable_asset_id", "source_path", "source_error", "alt_text", "file", "created_at", "updated_at")
+    readonly_fields = ("course_import", "asset_key", "stable_asset_id", "source_path", "original_url", "source_error", "created_at", "updated_at")
+    fields = ("course_import", "asset_key", "stable_asset_id", "source_path", "original_url", "source_error", "alt_text", "file", "created_at", "updated_at")
 
     def has_module_permission(self, request):
         return is_course_content_admin(request.user)
@@ -378,8 +384,8 @@ class CourseMediaAssetAdmin(admin.ModelAdmin):
     list_display = ("course", "asset_key", "alt_text", "updated_at", "updated_by")
     list_filter = ("course",)
     search_fields = ("course__title", "asset_key", "alt_text")
-    readonly_fields = ("course", "asset_key", "source_path", "created_at", "updated_at", "updated_by")
-    fields = ("course", "asset_key", "source_path", "alt_text", "file", "created_at", "updated_at", "updated_by")
+    readonly_fields = ("course", "asset_key", "source_path", "original_url", "created_at", "updated_at", "updated_by")
+    fields = ("course", "asset_key", "source_path", "original_url", "alt_text", "file", "created_at", "updated_at", "updated_by")
 
     def has_module_permission(self, request):
         return is_course_content_admin(request.user)

@@ -32,7 +32,7 @@
   {% if asset_rows %}
     <section class="tt-asset-review" aria-labelledby="tt-assets-heading">
       <h2 id="tt-assets-heading">Figures and image assets</h2>
-      <p>Images are shared by stable asset ID. Replace missing or unsuitable assets here before publishing.</p>
+      <p>Original Markdown image links are used by default. Administrators can replace any image here; missing local figure files need an uploaded replacement before publishing.</p>
       <ul>
         {% for row in asset_rows %}
           <li><span>{% if row.has_file %}✓{% else %}Needs image{% endif %}</span><div><strong>{{ row.asset.alt_text|default:row.asset.asset_key }}</strong><small>{{ row.asset.asset_key }}</small></div><a href="{{ row.edit_url }}">Review / replace</a></li>

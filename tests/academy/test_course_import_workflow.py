@@ -8,7 +8,7 @@ from django.core.management import call_command
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from apps.academy.content_rendering import validate_markdown_source
+from apps.academy.content_rendering import build_lesson_sections, validate_markdown_source
 from apps.academy.importing import publish_course_import, validate_import_for_publish
 from apps.academy.models import (
     Course,

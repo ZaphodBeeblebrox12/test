@@ -108,3 +108,9 @@
   .tt-completion { align-items:flex-start; flex-direction:column; }
   .tt-review-actions { padding:14px; }
 }
+
+.tt-asset-row { align-items: center; }
+.tt-asset-preview { display:block; width:130px; max-height:88px; object-fit:contain; background:#fff; border:1px solid var(--tt-line); padding:4px; }
+@media(max-width:620px) {
+  .tt-asset-preview { width:84px; max-height:68px; }
+}

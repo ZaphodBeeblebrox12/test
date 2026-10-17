@@ -7,7 +7,7 @@ Create one reliable path from approved course sources to a reviewed, database-ba
 ## Workflow
 
 1. Author student content in course Markdown and update that course's schema-version-1 course-manifest.json. Keep module and lesson slugs stable across edits. Markdown lesson headings must match manifest source IDs and titles exactly.
-2. Run python manage.py import_microcourse --manifest PATH_TO_MANIFEST --dry-run. Resolve structural errors. Missing or unsupported images are reported as review warnings; the course can be staged but cannot be published until every referenced image is supplied.
+2. Run python manage.py import_microcourse --manifest PATH_TO_MANIFEST --dry-run. Resolve structural errors. External image URLs remain the default image source. Missing local files are reported as review warnings and require an administrator-uploaded replacement before publishing; existing external links do not require a separate upload.
 3. Run the same command without --dry-run. This creates a review snapshot. It does not create, edit or publish the live Course, CourseModule or Lesson records.
 4. Sign into Django Admin as a superuser or a user whose role is explicitly Admin. Open Academy → Course imports → Preview course. Review every module and lesson in the shared Learning Room design.
 5. Replace missing or unsuitable images under Course import assets with valid JPEG, PNG or WebP. The server validates decoded format and enforces a 10 MB limit. Asset replacement controls are not available to ordinary staff or learners.
@@ -26,7 +26,7 @@ The exact relative path depends on the checkout locations. The import command mu
 
 ## Manifest shape
 
-A manifest has schema_version 1, course metadata, a notebook pattern, and ordered modules. Each module points to one Markdown source file and lists source IDs, stable lesson slugs, titles, order, durations and release days. The source Markdown groups lessons under headings such as “Lesson 1.1 — Title”. Figures are discovered from Markdown image references and assigned deterministic IDs derived from course slug plus normalized asset key.
+A manifest has schema_version 1, course metadata, a notebook pattern, and ordered modules. Each module points to one Markdown source file and lists source IDs, stable lesson slugs, titles, order, durations and release days. The source Markdown groups lessons under headings such as “Lesson 1.1 — Title”. Figures are discovered from Markdown image references and assigned deterministic IDs derived from course slug plus normalized asset key. External URLs remain stored as fallbacks; replacing an image stores a shared uploaded override keyed to the original reference, leaving authored Markdown unchanged.
 
 Do not edit generated preview JavaScript to change lesson content. Edit the Markdown and manifest, then re-import. A repeated import with the same content hash reuses the existing staged record.
 

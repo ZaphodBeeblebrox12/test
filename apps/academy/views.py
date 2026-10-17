@@ -131,11 +131,13 @@ def lesson_detail(request, course_slug, lesson_id):
     entitlement = get_active_entitlement(request.user, course)
     progress = LessonProgress.objects.filter(user=request.user, lesson=lesson).first()
     asset_ids = lesson.content_json.get("asset_ids", []) if isinstance(lesson.content_json, dict) else []
-    media_assets = CourseMediaAsset.objects.filter(course=course, pk__in=asset_ids, file__gt="")
-    asset_urls = {
-        str(asset.pk): reverse("academy:media-asset", args=[asset.pk])
-        for asset in media_assets
-    }
+    media_assets = CourseMediaAsset.objects.filter(course=course, pk__in=asset_ids)
+    asset_urls = {}
+    for asset in media_assets:
+        if asset.file:
+            asset_urls[str(asset.pk)] = reverse("academy:media-asset", args=[asset.pk])
+        elif asset.original_url.startswith(("https://", "http://")):
+            asset_urls[str(asset.pk)] = asset.original_url
     outline_modules = []
     modules = CourseModule.objects.filter(course=course).prefetch_related("lessons").order_by("position", "title")
     now = timezone.now()
