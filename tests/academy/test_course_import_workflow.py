@@ -85,7 +85,7 @@ class CourseImportWorkflowTests(TestCase):
 
     def import_draft(self):
         call_command("import_microcourse", manifest=str(self.manifest_path), verbosity=0)
-        return CourseImport.objects.get(course_slug="import-test-course")
+        return CourseImport.objects.get(course_slug="import-test-course", status=CourseImport.Status.REVIEW)
 
     def test_repeated_import_is_idempotent_and_does_not_create_live_course(self):
         first = self.import_draft()
