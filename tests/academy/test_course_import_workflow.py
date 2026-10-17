@@ -265,6 +265,60 @@ class CourseImportWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertFalse(CourseMediaAsset.objects.filter(course=course, asset_key__startswith="admin-added/").exists())
 
+    def test_ordinary_staff_and_learner_cannot_add_or_replace_shared_images(self):
+        course = publish_course_import(self.import_draft(), user=self.admin)
+        lesson = Lesson.objects.get(module__course=course)
+        source_url = "https://example.com/charts/admin-only.png"
+        asset = CourseMediaAsset.objects.create(
+            course=course,
+            asset_key="remote/admin-only-chart",
+            original_url=source_url,
+            alt_text="Original administrator image",
+        )
+        add_url = reverse("admin:academy_lesson_add_figure", args=[lesson.pk])
+        replace_url = reverse("admin:academy_coursemediaasset_change", args=[asset.pk])
+
+        for user, expected_status in (
+            (self.ordinary_staff, 403),
+            (self.learner, 302),
+        ):
+            with self.subTest(user=user.username, action="add"):
+                self.client.force_login(user)
+                response = self.client.post(
+                    add_url,
+                    {
+                        "alt_text": "Unauthorized addition",
+                        "original_url": "https://example.com/charts/unauthorized.png",
+                        "placement": "examples",
+                    },
+                )
+                self.assertEqual(response.status_code, expected_status)
+                self.assertFalse(
+                    CourseMediaAsset.objects.filter(
+                        course=course,
+                        asset_key__startswith="admin-added/",
+                    ).exists()
+                )
+
+            with self.subTest(user=user.username, action="replace"):
+                response = self.client.post(
+                    replace_url,
+                    {"alt_text": "Unauthorized replacement"},
+                )
+                self.assertEqual(response.status_code, expected_status)
+                asset.refresh_from_db()
+                self.assertFalse(asset.file)
+                self.assertEqual(asset.alt_text, "Original administrator image")
+                self.assertEqual(asset.original_url, source_url)
+
+        self.assertFalse(
+            AuditLog.objects.filter(
+                action="academy_course_media_replaced",
+                object_type="course_media_asset",
+                object_id=str(asset.pk),
+            ).exists()
+        )
+
     def test_lesson_add_figure_requires_csrf_token(self):
         course = publish_course_import(self.import_draft(), user=self.admin)
         lesson = Lesson.objects.get(module__course=course)
