@@ -6,11 +6,12 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Prefetch, Q
 from django.http import FileResponse, JsonResponse
-from django.urls import reverse
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from .content_rendering import build_lesson_sections
 from .models import (
     Course,
     CourseEntitlement,
@@ -20,7 +21,6 @@ from .models import (
     Lesson,
     LessonProgress,
 )
-from .content_rendering import build_lesson_sections
 from .permissions import is_course_content_admin
 from .services import (
     can_access_lesson,

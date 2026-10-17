@@ -3,14 +3,22 @@ import tempfile
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
-from django.core.management import call_command
 from django.core.exceptions import ValidationError
+from django.core.management import call_command
 from django.test import Client, TestCase
 from django.urls import reverse
 
 from apps.academy.content_rendering import validate_markdown_source
 from apps.academy.importing import publish_course_import, validate_import_for_publish
-from apps.academy.models import Course, CourseContentRevision, CourseImport, CourseModule, Lesson, LessonProgress
+from apps.academy.models import (
+    Course,
+    CourseContentRevision,
+    CourseImport,
+    CourseModule,
+    Lesson,
+    LessonProgress,
+)
+
 
 User = get_user_model()
 

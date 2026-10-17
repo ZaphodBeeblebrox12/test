@@ -26,8 +26,7 @@ def validate_upload_image(upload):
             raise ValidationError("Use a valid JPEG, PNG or WebP image. SVG uploads are not accepted.")
         image.load()
         # Use a server-selected suffix rather than the browser-supplied filename.
-        if getattr(upload, "content_type", None):
-            upload.name = "course-image" + _ALLOWED_IMAGE_FORMATS[image_format]
+        upload.name = "course-image" + _ALLOWED_IMAGE_FORMATS[image_format]
     except ValidationError:
         raise
     except (UnidentifiedImageError, OSError, ValueError) as exc:

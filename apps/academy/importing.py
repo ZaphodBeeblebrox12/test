@@ -194,7 +194,7 @@ def inspect_manifest(manifest_path):
 
             content = source_lessons[source_id]["content"]
 
-            def replace_image(match):
+            def replace_image(match, source_id=source_id, source_path=source_path):
                 alt = match.group("alt").strip() or "Course figure"
                 raw_path = match.group("path").strip()
                 if re.match(r"^https?://", raw_path, re.IGNORECASE):
@@ -329,8 +329,6 @@ def validate_import_for_publish(record):
 
 def publish_course_import(record, *, user):
     """Atomically apply an approved import, matching by stable slugs and preserving learner rows."""
-    from django.core.exceptions import ValidationError
-
     errors = validate_import_for_publish(record)
     if errors:
         raise ValidationError(errors)

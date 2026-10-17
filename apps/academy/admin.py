@@ -1,4 +1,5 @@
 import mimetypes
+
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
 from django.http import FileResponse, HttpResponseForbidden, HttpResponseNotAllowed
@@ -9,21 +10,21 @@ from django.utils.html import format_html
 from .content_rendering import build_lesson_sections
 from .forms import CourseImportAssetAdminForm, CourseMediaAssetAdminForm, LessonAdminForm
 from .importing import publish_course_import, validate_import_for_publish
-from .permissions import is_course_content_admin
 from .models import (
+    Course,
     CourseContentRevision,
+    CourseEntitlement,
+    CourseEntitlementEvent,
     CourseImport,
     CourseImportAsset,
     CourseMediaAsset,
-    Course,
-    CourseEntitlement,
-    CourseEntitlementEvent,
     CourseModule,
     CourseOffer,
     Lesson,
     LessonInstructorMaterial,
     LessonProgress,
 )
+from .permissions import is_course_content_admin
 
 
 class CourseModuleInline(admin.TabularInline):

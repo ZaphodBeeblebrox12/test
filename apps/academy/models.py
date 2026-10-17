@@ -2,14 +2,14 @@
 import uuid
 from pathlib import Path
 
-from .storage import course_asset_storage
-
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+
+from .storage import course_asset_storage
 
 
 class Course(models.Model):
