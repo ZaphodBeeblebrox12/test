@@ -46,7 +46,26 @@ def test_global_plus_geo_overrides_save(client):
     }
     r = client.post(reverse("admin:subscriptions_plan_add"), data, follow=True)
     from apps.subscriptions.models import Plan, PlanPrice, GeoPlanPrice
-    assert Plan.objects.filter(name="Pro").exists(), "valid global+geo config must save"
+    if not Plan.objects.filter(name="Pro").exists():
+        # Surface the ModelAdmin and inline validation messages in CI so
+        # a rejected POST is diagnosable without guessing which form failed.
+        context = r.context
+        if context:
+            admin_form = context.get("adminform")
+            errors = {
+                "plan": str(admin_form.form.errors) if admin_form else None,
+                "inlines": {},
+            }
+            for inline in context.get("inline_admin_formsets", []):
+                formset = inline.formset
+                errors["inlines"][formset.model.__name__] = {
+                    "non_form_errors": str(formset.non_form_errors()),
+                    "forms": [str(form.errors) for form in formset.forms],
+                }
+            detail = repr(errors)
+        else:
+            detail = r.content.decode(errors="replace")[-8000:]
+        assert False, f"valid global+geo config must save; status={r.status_code}; errors={detail}"
     assert PlanPrice.objects.filter(plan__name="Pro").count() == 1
     assert GeoPlanPrice.objects.filter(plan__name="Pro").count() == 2
 
